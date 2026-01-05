@@ -6,6 +6,7 @@ require (
 	github.com/anthropics/anthropic-sdk-go v1.19.0
 	github.com/fatih/color v1.18.0
 	github.com/google/go-github/v57 v57.0.0
+	github.com/mattn/go-runewidth v0.0.19
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/oauth2 v0.34.0
 	golang.org/x/term v0.38.0
@@ -13,6 +14,7 @@ require (
 )
 
 require (
+	github.com/clipperhouse/uax29/v2 v2.2.0 // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect

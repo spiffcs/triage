@@ -9,6 +9,7 @@ import (
 
 	"github.com/fatih/color"
 	"github.com/hal/github-prio/internal/priority"
+	"github.com/mattn/go-runewidth"
 	"golang.org/x/term"
 )
 
@@ -25,6 +26,33 @@ func hyperlink(text, url string) string {
 	return fmt.Sprintf("\033]8;;%s\033\\%s\033]8;;\033\\", url, text)
 }
 
+// displayWidth returns the visible width of a string in terminal columns
+// accounting for wide characters like emojis (which take 2 columns)
+func displayWidth(s string) int {
+	return runewidth.StringWidth(s)
+}
+
+// truncateToWidth truncates a string to fit within maxWidth display columns
+func truncateToWidth(s string, maxWidth int) (string, int) {
+	width := 0
+	for i, r := range s {
+		rw := runewidth.RuneWidth(r)
+		if width+rw > maxWidth-3 { // Leave room for "..."
+			return s[:i] + "...", maxWidth
+		}
+		width += rw
+	}
+	return s, width
+}
+
+// padRight pads a string with spaces to reach the target visible width
+func padRight(s string, visibleWidth, targetWidth int) string {
+	if visibleWidth >= targetWidth {
+		return s
+	}
+	return s + strings.Repeat(" ", targetWidth-visibleWidth)
+}
+
 // Format outputs prioritized items as a table
 func (f *TableFormatter) Format(items []priority.PrioritizedItem, w io.Writer) error {
 	if len(items) == 0 {
@@ -32,56 +60,77 @@ func (f *TableFormatter) Format(items []priority.PrioritizedItem, w io.Writer) e
 		return nil
 	}
 
+	// Column widths
+	const (
+		colPriority = 8
+		colCategory = 12
+		colRepo     = 30
+		colTitle    = 50
+		colReason   = 18
+	)
+
 	// Header
-	fmt.Fprintf(w, "%-8s  %-12s  %-30s  %-45s  %-15s  %s\n",
-		"Priority", "Category", "Repository", "Title", "Reason", "Age")
-	fmt.Fprintln(w, strings.Repeat("-", 120))
+	fmt.Fprintf(w, "%-*s  %-*s  %-*s  %-*s  %-*s  %s\n",
+		colPriority, "Priority",
+		colCategory, "Category",
+		colRepo, "Repository",
+		colTitle, "Title",
+		colReason, "Reason",
+		"Age")
+	fmt.Fprintln(w, strings.Repeat("-", colPriority+colCategory+colRepo+colTitle+colReason+20))
 
 	for _, item := range items {
 		n := item.Notification
 
-		// Truncate title if too long
+		// Truncate title if too long (using display width for emoji support)
 		title := n.Subject.Title
-		if len(title) > 45 {
-			title = title[:42] + "..."
+		title, visibleTitleLen := truncateToWidth(title, colTitle)
+
+		// Add state indicator for closed items
+		if n.Details != nil && n.Details.State == "closed" {
+			suffix := " [closed]"
+			suffixWidth := displayWidth(suffix)
+			if visibleTitleLen+suffixWidth > colTitle {
+				title, _ = truncateToWidth(n.Subject.Title, colTitle-suffixWidth)
+			}
+			title = title + suffix
+			visibleTitleLen = displayWidth(title)
 		}
 
 		// Truncate repo if too long
 		repo := n.Repository.FullName
-		if len(repo) > 30 {
-			repo = repo[:27] + "..."
-		}
-
-		// Calculate age
-		age := formatAge(time.Since(n.UpdatedAt))
-
-		// Format priority with color
-		priorityStr := colorPriority(item.Priority)
-		categoryStr := item.Category.Display()
+		repo, _ = truncateToWidth(repo, colRepo)
 
 		// Get URL for hyperlink
 		url := ""
 		if n.Details != nil && n.Details.HTMLURL != "" {
 			url = n.Details.HTMLURL
 		} else {
-			// Fallback to repo URL
 			url = n.Repository.HTMLURL
 		}
 
-		// Create hyperlinked title
+		// Create hyperlinked title and pad it
 		linkedTitle := hyperlink(title, url)
+		linkedTitle = padRight(linkedTitle, visibleTitleLen, colTitle)
 
-		// Add state indicator for closed items
-		if n.Details != nil && n.Details.State == "closed" {
-			linkedTitle = linkedTitle + " [closed]"
-		}
+		// Format priority with color and pad
+		priorityDisplay := item.Priority.Display()
+		priorityStr := padRight(colorPriority(item.Priority), len(priorityDisplay), colPriority)
 
-		fmt.Fprintf(w, "%-8s  %-12s  %-30s  %-45s  %-15s  %s\n",
+		// Reason
+		reason := string(n.Reason)
+		reason, reasonWidth := truncateToWidth(reason, colReason)
+		reason = padRight(reason, reasonWidth, colReason)
+
+		// Calculate age
+		age := formatAge(time.Since(n.UpdatedAt))
+
+		fmt.Fprintf(w, "%s  %-*s  %s  %s  %s  %s\n",
 			priorityStr,
-			categoryStr,
-			repo,
+			colCategory, item.Category.Display(),
+			padRight(repo, displayWidth(repo), colRepo),
 			linkedTitle,
-			string(n.Reason),
+			reason,
 			age,
 		)
 	}
