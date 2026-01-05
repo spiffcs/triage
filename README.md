@@ -1,37 +1,26 @@
-# github-prio
+# priority
 
 A CLI tool that analyzes your GitHub notifications to help you prioritize work. It fetches unread notifications, enriches them with issue/PR details, and ranks them using heuristics. Optionally uses Claude AI for deeper analysis.
 
 ## Installation
 
 ```bash
-go install github.com/hal/github-prio/cmd/github-prio@latest
+go install github.com/spiffcs/priority/cmd/priority@latest
 ```
 
 Or build from source:
 
 ```bash
-git clone https://github.com/hal/github-prio.git
-cd github-prio
-go build -o github-prio ./cmd/github-prio
+git clone https://github.com/spiffcs/priority.git
+cd priority
+go build -o priority ./cmd/priority
 ```
 
 ## Setup
 
-### GitHub Token
-
-Create a [Personal Access Token](https://github.com/settings/tokens) with the following scopes:
-- `notifications` - Read notifications
-- `repo` - Access private repo details (optional, for private repos)
-
-Set the token:
-
-```bash
-# Via environment variable
-export GITHUB_TOKEN=ghp_xxxxxxxxxxxx
-
-# Or save to config
-github-prio config set token ghp_xxxxxxxxxxxx
+### Github token
+```
+GITHUB_TOKEN=(gh auth token) priority list
 ```
 
 ### Claude API Key (Optional)
@@ -42,7 +31,7 @@ For AI-powered analysis, set your Anthropic API key:
 export ANTHROPIC_API_KEY=sk-ant-xxxxxxxxxxxx
 
 # Or save to config
-github-prio config set claude-key sk-ant-xxxxxxxxxxxx
+priority config set claude-key sk-ant-xxxxxxxxxxxx
 ```
 
 ## Usage
@@ -51,54 +40,54 @@ github-prio config set claude-key sk-ant-xxxxxxxxxxxx
 
 ```bash
 # List prioritized notifications (default: last 6 months)
-github-prio list
+priority list
 
 # Limit time range
-github-prio list --since 1w      # Last week
-github-prio list --since 30d     # Last 30 days
+priority list --since 1w      # Last week
+priority list --since 30d     # Last 30 days
 
 # Quick mode - skip fetching details (faster but less accurate)
-github-prio list -q
+priority list -q
 
 # Filter by category
-github-prio list -c urgent
-github-prio list -c important
-github-prio list -c low-hanging
-github-prio list -c fyi
+priority list -c urgent
+priority list -c important
+priority list -c low-hanging
+priority list -c fyi
 
 # Filter by notification reason
-github-prio list -r mention
-github-prio list -r review_requested
-github-prio list -r author
+priority list -r mention
+priority list -r review_requested
+priority list -r author
 
 # Include merged/closed items (hidden by default)
-github-prio list --include-merged
-github-prio list --include-closed
+priority list --include-merged
+priority list --include-closed
 
 # Output formats
-github-prio list -f table      # Default
-github-prio list -f json       # JSON for scripting
-github-prio list -f markdown   # Markdown for notes
+priority list -f table      # Default
+priority list -f json       # JSON for scripting
+priority list -f markdown   # Markdown for notes
 
 # Limit results
-github-prio list -l 20         # Top 20 only
+priority list -l 20         # Top 20 only
 
 # With AI analysis
-github-prio list -a            # Adds AI insights
-github-prio list -a -v         # Verbose with full analysis
+priority list -a            # Adds AI insights
+priority list -a -v         # Verbose with full analysis
 ```
 
 ### Summary
 
 ```bash
-github-prio summary
+priority summary
 ```
 
 ### AI Analysis
 
 ```bash
 # Analyze top 5 notifications with Claude
-github-prio analyze
+priority analyze
 ```
 
 ### Cache Management
@@ -106,17 +95,17 @@ github-prio analyze
 Details are cached for 24 hours to speed up subsequent runs:
 
 ```bash
-github-prio cache stats    # Show cache statistics
-github-prio cache clear    # Clear the cache
+priority cache stats    # Show cache statistics
+priority cache clear    # Clear the cache
 ```
 
 ### Configuration
 
 ```bash
-github-prio config show                    # Show current config
-github-prio config set token <TOKEN>       # Set GitHub token
-github-prio config set claude-key <KEY>    # Set Claude API key
-github-prio config set format json         # Set default output format
+priority config show                    # Show current config
+priority config set token <TOKEN>       # Set GitHub token
+priority config set claude-key <KEY>    # Set Claude API key
+priority config set format json         # Set default output format
 ```
 
 ## Priority Scoring
@@ -189,17 +178,17 @@ MEDIUM    FYI           other/repo                      Discussion on API design
 
 1. **First run is slow** - Fetching details for many notifications takes time. Subsequent runs use the cache.
 
-2. **Use quick mode for triage** - `github-prio list -q` skips detail fetching for a fast overview.
+2. **Use quick mode for triage** - `priority list -q` skips detail fetching for a fast overview.
 
-3. **Focus on urgent items** - `github-prio list -c urgent -l 10` shows your top 10 urgent items.
+3. **Focus on urgent items** - `priority list -c urgent -l 10` shows your top 10 urgent items.
 
-4. **Clear old notifications** - Use `github-prio mark-read <id>` or mark them as read on GitHub to reduce noise.
+4. **Clear old notifications** - Use `priority mark-read <id>` or mark them as read on GitHub to reduce noise.
 
-5. **Adjust concurrency** - If you hit rate limits, reduce workers: `github-prio list -w 5`
+5. **Adjust concurrency** - If you hit rate limits, reduce workers: `priority list -w 5`
 
 ## Configuration File
 
-Config is stored at `~/.config/github-prio/config.yaml`:
+Config is stored at `~/.config/priority/config.yaml`:
 
 ```yaml
 github_token: ghp_xxxxxxxxxxxx
@@ -211,7 +200,7 @@ exclude_repos:
 
 ## Cache Location
 
-Notification details are cached at `~/.cache/github-prio/details/` for 24 hours.
+Notification details are cached at `~/.cache/priority/details/` for 24 hours.
 
 ## License
 
