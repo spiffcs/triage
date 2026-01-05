@@ -15,16 +15,18 @@ import (
 
 var (
 	// Global flags
-	formatFlag   string
-	limitFlag    int
-	sinceFlag    string
-	categoryFlag string
-	reasonFlag   string
-	repoFlag     string
-	analyzeFlag  bool
-	verboseFlag  bool
-	quickFlag    bool
-	workersFlag  int
+	formatFlag      string
+	limitFlag       int
+	sinceFlag       string
+	categoryFlag    string
+	reasonFlag      string
+	repoFlag        string
+	analyzeFlag     bool
+	verboseFlag     bool
+	quickFlag       bool
+	workersFlag     int
+	includeMerged   bool
+	includeClosed   bool
 )
 
 func main() {
@@ -123,6 +125,8 @@ func init() {
 	listCmd.Flags().BoolVarP(&verboseFlag, "verbose", "v", false, "Show detailed output")
 	listCmd.Flags().BoolVarP(&quickFlag, "quick", "q", false, "Skip fetching details (faster but less accurate prioritization)")
 	listCmd.Flags().IntVarP(&workersFlag, "workers", "w", 20, "Number of concurrent workers for fetching details")
+	listCmd.Flags().BoolVar(&includeMerged, "include-merged", false, "Include notifications for merged PRs")
+	listCmd.Flags().BoolVar(&includeClosed, "include-closed", false, "Include notifications for closed issues/PRs")
 
 	// Summary command flags
 	summaryCmd.Flags().StringVarP(&sinceFlag, "since", "s", "6mo", "Show notifications since")
@@ -238,6 +242,13 @@ func runList(cmd *cobra.Command, args []string) error {
 	}
 
 	// Apply filters
+	if !includeMerged {
+		items = priority.FilterOutMerged(items)
+	}
+	if !includeClosed {
+		items = priority.FilterOutClosed(items)
+	}
+
 	if categoryFlag != "" {
 		items = priority.FilterByCategory(items, priority.Category(categoryFlag))
 	}

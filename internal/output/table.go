@@ -3,15 +3,27 @@ package output
 import (
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/fatih/color"
 	"github.com/hal/github-prio/internal/priority"
+	"golang.org/x/term"
 )
 
 // TableFormatter formats output as a terminal table
 type TableFormatter struct{}
+
+// hyperlink creates a clickable terminal hyperlink using OSC 8
+// Format: \033]8;;URL\033\\TEXT\033]8;;\033\\
+func hyperlink(text, url string) string {
+	// Only use hyperlinks if stdout is a terminal
+	if !term.IsTerminal(int(os.Stdout.Fd())) {
+		return text
+	}
+	return fmt.Sprintf("\033]8;;%s\033\\%s\033]8;;\033\\", url, text)
+}
 
 // Format outputs prioritized items as a table
 func (f *TableFormatter) Format(items []priority.PrioritizedItem, w io.Writer) error {
@@ -47,19 +59,28 @@ func (f *TableFormatter) Format(items []priority.PrioritizedItem, w io.Writer) e
 		priorityStr := colorPriority(item.Priority)
 		categoryStr := item.Category.Display()
 
+		// Get URL for hyperlink
+		url := ""
+		if n.Details != nil && n.Details.HTMLURL != "" {
+			url = n.Details.HTMLURL
+		} else {
+			// Fallback to repo URL
+			url = n.Repository.HTMLURL
+		}
+
+		// Create hyperlinked title
+		linkedTitle := hyperlink(title, url)
+
 		// Add state indicator for closed items
-		if n.Details != nil && (n.Details.State == "closed" || n.Details.State == "merged") {
-			if len(title) > 35 {
-				title = title[:32] + "..."
-			}
-			title = title + " [" + n.Details.State + "]"
+		if n.Details != nil && n.Details.State == "closed" {
+			linkedTitle = linkedTitle + " [closed]"
 		}
 
 		fmt.Fprintf(w, "%-8s  %-12s  %-30s  %-45s  %-15s  %s\n",
 			priorityStr,
 			categoryStr,
 			repo,
-			title,
+			linkedTitle,
 			string(n.Reason),
 			age,
 		)

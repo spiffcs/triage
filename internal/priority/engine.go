@@ -111,6 +111,34 @@ func FilterByReason(items []PrioritizedItem, reasons []github.NotificationReason
 	return filtered
 }
 
+// FilterOutMerged removes notifications for merged PRs
+func FilterOutMerged(items []PrioritizedItem) []PrioritizedItem {
+	filtered := make([]PrioritizedItem, 0, len(items))
+	for _, item := range items {
+		// Skip if it's a merged PR
+		if item.Notification.Details != nil && item.Notification.Details.Merged {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+	return filtered
+}
+
+// FilterOutClosed removes notifications for closed issues/PRs
+func FilterOutClosed(items []PrioritizedItem) []PrioritizedItem {
+	filtered := make([]PrioritizedItem, 0, len(items))
+	for _, item := range items {
+		if item.Notification.Details != nil {
+			state := item.Notification.Details.State
+			if state == "closed" || state == "merged" {
+				continue
+			}
+		}
+		filtered = append(filtered, item)
+	}
+	return filtered
+}
+
 // Summary provides an overview of prioritized items
 type Summary struct {
 	Total       int            `json:"total"`
