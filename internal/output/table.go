@@ -4,14 +4,19 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/fatih/color"
+	"github.com/hal/github-prio/internal/github"
 	"github.com/hal/github-prio/internal/priority"
 	"github.com/mattn/go-runewidth"
 	"golang.org/x/term"
 )
+
+// ansiRegex matches ANSI escape sequences
+var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
 // TableFormatter formats output as a terminal table
 type TableFormatter struct{}
@@ -26,23 +31,48 @@ func hyperlink(text, url string) string {
 	return fmt.Sprintf("\033]8;;%s\033\\%s\033]8;;\033\\", url, text)
 }
 
+// stripAnsi removes ANSI escape sequences from a string
+func stripAnsi(s string) string {
+	return ansiRegex.ReplaceAllString(s, "")
+}
+
 // displayWidth returns the visible width of a string in terminal columns
 // accounting for wide characters like emojis (which take 2 columns)
+// and stripping ANSI escape sequences
 func displayWidth(s string) int {
-	return runewidth.StringWidth(s)
+	return runewidth.StringWidth(stripAnsi(s))
 }
 
 // truncateToWidth truncates a string to fit within maxWidth display columns
+// It handles ANSI escape sequences by stripping them for width calculation
 func truncateToWidth(s string, maxWidth int) (string, int) {
-	width := 0
-	for i, r := range s {
-		rw := runewidth.RuneWidth(r)
-		if width+rw > maxWidth-3 { // Leave room for "..."
-			return s[:i] + "...", maxWidth
-		}
-		width += rw
+	// Strip ANSI codes for width calculation
+	plain := stripAnsi(s)
+	width := runewidth.StringWidth(plain)
+
+	// If it fits, return as-is
+	if width <= maxWidth {
+		return s, width
 	}
-	return s, width
+
+	// Need to truncate - work with plain text to find cut point
+	cutWidth := 0
+	cutIndex := 0
+	for i, r := range plain {
+		rw := runewidth.RuneWidth(r)
+		if cutWidth+rw > maxWidth-3 { // Leave room for "..."
+			cutIndex = i
+			break
+		}
+		cutWidth += rw
+	}
+
+	// For strings with ANSI codes, we need to be smarter about where to cut
+	// Just strip and truncate the plain version, then add ellipsis
+	if cutIndex > 0 && cutIndex < len(plain) {
+		return plain[:cutIndex] + "...", maxWidth
+	}
+	return plain[:maxWidth-3] + "...", maxWidth
 }
 
 // padRight pads a string with spaces to reach the target visible width
@@ -63,35 +93,59 @@ func (f *TableFormatter) Format(items []priority.PrioritizedItem, w io.Writer) e
 	// Column widths
 	const (
 		colPriority = 8
-		colCategory = 12
-		colRepo     = 30
-		colTitle    = 50
-		colReason   = 18
+		colType     = 5
+		colRepo     = 26
+		colTitle    = 40
+		colStatus   = 20
+		colAge      = 5
 	)
 
 	// Header
 	fmt.Fprintf(w, "%-*s  %-*s  %-*s  %-*s  %-*s  %s\n",
 		colPriority, "Priority",
-		colCategory, "Category",
+		colType, "Type",
 		colRepo, "Repository",
 		colTitle, "Title",
-		colReason, "Reason",
+		colStatus, "Status",
 		"Age")
-	fmt.Fprintln(w, strings.Repeat("-", colPriority+colCategory+colRepo+colTitle+colReason+20))
+	fmt.Fprintln(w, strings.Repeat("-", colPriority+colType+colRepo+colTitle+colStatus+colAge+12))
 
 	for _, item := range items {
 		n := item.Notification
 
-		// Truncate title if too long (using display width for emoji support)
+		// Determine type indicator
+		typeStr := "ISS"
+		if n.Details != nil && n.Details.IsPR {
+			typeStr = "PR"
+		} else if n.Subject.Type == "PullRequest" {
+			typeStr = "PR"
+		}
+
+		// Build title with indicators
 		title := n.Subject.Title
+
+		// Add quick win indicator
+		if item.Category == priority.CategoryLowHanging {
+			title = "⚡ " + title
+		}
+
+		// Add hot topic indicator (>10 comments)
+		if n.Details != nil && n.Details.CommentCount > 10 {
+			title = "🔥 " + title
+		}
+
+		// Truncate title if too long (using display width for emoji support)
 		title, visibleTitleLen := truncateToWidth(title, colTitle)
 
 		// Add state indicator for closed items
-		if n.Details != nil && n.Details.State == "closed" {
+		if n.Details != nil && (n.Details.State == "closed" || n.Details.Merged) {
 			suffix := " [closed]"
+			if n.Details.Merged {
+				suffix = " [merged]"
+			}
 			suffixWidth := displayWidth(suffix)
 			if visibleTitleLen+suffixWidth > colTitle {
-				title, _ = truncateToWidth(n.Subject.Title, colTitle-suffixWidth)
+				title, _ = truncateToWidth(title, colTitle-suffixWidth)
 			}
 			title = title + suffix
 			visibleTitleLen = displayWidth(title)
@@ -117,37 +171,169 @@ func (f *TableFormatter) Format(items []priority.PrioritizedItem, w io.Writer) e
 		priorityDisplay := item.Priority.Display()
 		priorityStr := padRight(colorPriority(item.Priority), len(priorityDisplay), colPriority)
 
-		// Reason
-		reason := string(n.Reason)
-		reason, reasonWidth := truncateToWidth(reason, colReason)
-		reason = padRight(reason, reasonWidth, colReason)
+		// Build status column (review state, PR size, or comment count)
+		statusRes := formatStatus(n, item)
+		statusText := statusRes.text
+		statusWidth := statusRes.visibleWidth
+		if statusWidth > colStatus {
+			// Truncate if needed - use plain text truncation
+			statusText, statusWidth = truncateToWidth(statusText, colStatus)
+		}
+		statusText = padRight(statusText, statusWidth, colStatus)
 
 		// Calculate age
 		age := formatAge(time.Since(n.UpdatedAt))
 
 		fmt.Fprintf(w, "%s  %-*s  %s  %s  %s  %s\n",
 			priorityStr,
-			colCategory, item.Category.Display(),
+			colType, typeStr,
 			padRight(repo, displayWidth(repo), colRepo),
 			linkedTitle,
-			reason,
+			statusText,
 			age,
 		)
 	}
 
-	// Print action summary if there are urgent items
-	urgentCount := 0
-	for _, item := range items {
-		if item.Priority == priority.PriorityUrgent {
-			urgentCount++
+	// Print enhanced footer summary
+	printFooterSummary(items, w)
+
+	return nil
+}
+
+// statusResult holds both the display string and its visible width
+type statusResult struct {
+	text        string
+	visibleWidth int
+}
+
+// formatStatus builds the status column showing review state, PR size, or activity
+// Returns the formatted string and its visible width (excluding ANSI codes)
+func formatStatus(n github.Notification, _ priority.PrioritizedItem) statusResult {
+	if n.Details == nil {
+		reason := string(n.Reason)
+		return statusResult{reason, len(reason)}
+	}
+
+	d := n.Details
+
+	// For PRs, show review state and size
+	if d.IsPR {
+		var textParts []string
+		var plainParts []string
+
+		// Review state with color
+		switch d.ReviewState {
+		case "approved":
+			textParts = append(textParts, color.GreenString("✓ APPROVED"))
+			plainParts = append(plainParts, "✓ APPROVED")
+		case "changes_requested":
+			textParts = append(textParts, color.YellowString("△ CHANGES"))
+			plainParts = append(plainParts, "△ CHANGES")
+		case "pending", "review_required":
+			textParts = append(textParts, color.CyanString("○ REVIEW"))
+			plainParts = append(plainParts, "○ REVIEW")
+		}
+
+		// PR size (compact format)
+		totalChanges := d.Additions + d.Deletions
+		if totalChanges > 0 {
+			sizeText, sizePlain := formatPRSize(d.Additions, d.Deletions)
+			textParts = append(textParts, sizeText)
+			plainParts = append(plainParts, sizePlain)
+		}
+
+		if len(textParts) > 0 {
+			text := strings.Join(textParts, " ")
+			plain := strings.Join(plainParts, " ")
+			return statusResult{text, runewidth.StringWidth(plain)}
 		}
 	}
 
-	if urgentCount > 0 {
-		fmt.Fprintf(w, "\n%s urgent items need your attention.\n", color.RedString("%d", urgentCount))
+	// For issues or PRs without specific status, show comment activity
+	if d.CommentCount > 0 {
+		text := fmt.Sprintf("💬 %d comments", d.CommentCount)
+		return statusResult{text, runewidth.StringWidth(text)}
 	}
 
-	return nil
+	reason := string(n.Reason)
+	return statusResult{reason, len(reason)}
+}
+
+// formatPRSize returns a compact representation of PR size
+// Returns both the colored string and the plain string for width calculation
+func formatPRSize(additions, deletions int) (colored string, plain string) {
+	total := additions + deletions
+
+	// T-shirt sizing based on total changes
+	var sizeColored, sizePlain string
+	switch {
+	case total <= 10:
+		sizePlain = "XS"
+		sizeColored = color.GreenString(sizePlain)
+	case total <= 50:
+		sizePlain = "S"
+		sizeColored = color.GreenString(sizePlain)
+	case total <= 200:
+		sizePlain = "M"
+		sizeColored = color.YellowString(sizePlain)
+	case total <= 500:
+		sizePlain = "L"
+		sizeColored = color.YellowString(sizePlain)
+	default:
+		sizePlain = "XL"
+		sizeColored = color.RedString(sizePlain)
+	}
+
+	plain = fmt.Sprintf("%s+%d/-%d", sizePlain, additions, deletions)
+	colored = fmt.Sprintf("%s+%d/-%d", sizeColored, additions, deletions)
+	return colored, plain
+}
+
+// printFooterSummary prints an enhanced summary footer
+func printFooterSummary(items []priority.PrioritizedItem, w io.Writer) {
+	var urgentCount, quickWinCount, reviewCount, hotCount int
+
+	for _, item := range items {
+		n := item.Notification
+
+		if item.Priority == priority.PriorityUrgent {
+			urgentCount++
+		}
+		if item.Category == priority.CategoryLowHanging {
+			quickWinCount++
+		}
+		if n.Reason == "review_requested" {
+			reviewCount++
+		}
+		if n.Details != nil && n.Details.CommentCount > 10 {
+			hotCount++
+		}
+	}
+
+	// Only print if there's something actionable
+	if urgentCount == 0 && quickWinCount == 0 && reviewCount == 0 && hotCount == 0 {
+		return
+	}
+
+	fmt.Fprintln(w)
+	fmt.Fprintln(w, strings.Repeat("━", 60))
+
+	if urgentCount > 0 {
+		fmt.Fprintf(w, "  %s %s urgent items need attention\n",
+			color.RedString("●"),
+			color.RedString("%d", urgentCount))
+	}
+	if reviewCount > 0 {
+		fmt.Fprintf(w, "  %s %d PRs awaiting your review\n",
+			color.CyanString("○"),
+			reviewCount)
+	}
+	if quickWinCount > 0 {
+		fmt.Fprintf(w, "  ⚡ %d quick wins available\n", quickWinCount)
+	}
+	if hotCount > 0 {
+		fmt.Fprintf(w, "  🔥 %d hot discussions\n", hotCount)
+	}
 }
 
 // FormatSummary outputs a summary
