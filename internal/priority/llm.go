@@ -23,7 +23,7 @@ func NewLLMClient(apiKey string) (*LLMClient, error) {
 		apiKey = os.Getenv("ANTHROPIC_API_KEY")
 	}
 	if apiKey == "" {
-		return nil, fmt.Errorf("Claude API key not provided. Set ANTHROPIC_API_KEY env var or use 'github-prio config set claude-key <KEY>'")
+		return nil, fmt.Errorf("Claude API key not provided. Set ANTHROPIC_API_KEY env var or use 'priority config set claude-key <KEY>'")
 	}
 
 	client := anthropic.NewClient(option.WithAPIKey(apiKey))

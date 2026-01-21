@@ -33,9 +33,9 @@ type WeightOverrides struct {
 func DefaultConfigDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return ".github-prio"
+		return ".priority"
 	}
-	return filepath.Join(home, ".config", "github-prio")
+	return filepath.Join(home, ".config", "priority")
 }
 
 // ConfigPath returns the path to the config file
