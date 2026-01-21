@@ -186,13 +186,8 @@ func runList(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to fetch notifications: %w", err)
 	}
 
-	if len(notifications) == 0 {
-		fmt.Println("No unread notifications found.")
-		return nil
-	}
-
 	// Enrich with details (unless quick mode)
-	if !quickFlag {
+	if !quickFlag && len(notifications) > 0 {
 		fmt.Fprintf(os.Stderr, "Found %d notifications. Fetching details (use -q for quick mode)...\n", len(notifications))
 
 		// Progress callback
@@ -209,8 +204,39 @@ func runList(cmd *cobra.Command, args []string) error {
 			fmt.Fprintf(os.Stderr, "\nWarning: some notifications could not be enriched: %v\n", err)
 		}
 		fmt.Fprintf(os.Stderr, "\rFetching details: %d/%d (100%%)... done\n", len(notifications), len(notifications))
-	} else {
+	} else if quickFlag && len(notifications) > 0 {
 		fmt.Fprintf(os.Stderr, "Found %d notifications. Skipping detail fetch (quick mode)...\n", len(notifications))
+	}
+
+	// Fetch PRs where user is a requested reviewer (adds any not already in notifications)
+	reviewPRs, err := ghClient.ListReviewRequestedPRs(currentUser)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to fetch review-requested PRs: %v\n", err)
+	} else if len(reviewPRs) > 0 {
+		notifications = mergeReviewRequests(notifications, reviewPRs)
+	}
+
+	// Fetch user's own open PRs (to track stale PRs, PRs ready to merge, etc.)
+	authoredPRs, err := ghClient.ListAuthoredPRs(currentUser)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to fetch authored PRs: %v\n", err)
+	} else if len(authoredPRs) > 0 {
+		// Enrich authored PRs with review state and mergeable info
+		if !quickFlag {
+			fmt.Fprintf(os.Stderr, "Enriching %d of your open PRs...\n", len(authoredPRs))
+			for i := range authoredPRs {
+				if err := ghClient.EnrichAuthoredPR(&authoredPRs[i]); err != nil {
+					// Log but continue - basic info is still useful
+					continue
+				}
+			}
+		}
+		notifications = mergeAuthoredPRs(notifications, authoredPRs)
+	}
+
+	if len(notifications) == 0 {
+		fmt.Println("No unread notifications, pending reviews, or open PRs found.")
+		return nil
 	}
 
 	// Create LLM client if analyze flag is set
@@ -508,4 +534,91 @@ func runCacheStats(cmd *cobra.Command, args []string) error {
 	fmt.Printf("  Valid (< 24h): %d\n", valid)
 	fmt.Printf("  Expired: %d\n", total-valid)
 	return nil
+}
+
+// mergeReviewRequests adds review-requested PRs that aren't already in notifications
+func mergeReviewRequests(notifications []github.Notification, reviewPRs []github.Notification) []github.Notification {
+	// Build a set of existing PR identifiers (repo/number and also Subject.URL for fallback)
+	existing := make(map[string]bool)
+	existingURLs := make(map[string]bool)
+
+	for _, n := range notifications {
+		if n.Subject.Type == github.SubjectPullRequest {
+			// Track by URL (always available)
+			if n.Subject.URL != "" {
+				existingURLs[n.Subject.URL] = true
+			}
+			// Track by repo#number if Details available
+			if n.Details != nil {
+				key := fmt.Sprintf("%s#%d", n.Repository.FullName, n.Details.Number)
+				existing[key] = true
+			}
+		}
+	}
+
+	// Add review PRs that aren't already in the list
+	added := 0
+	for _, pr := range reviewPRs {
+		if pr.Details == nil {
+			continue
+		}
+
+		// Check both key formats to avoid duplicates
+		key := fmt.Sprintf("%s#%d", pr.Repository.FullName, pr.Details.Number)
+		if existing[key] || existingURLs[pr.Subject.URL] {
+			continue
+		}
+
+		notifications = append(notifications, pr)
+		existing[key] = true
+		added++
+	}
+
+	if added > 0 {
+		fmt.Fprintf(os.Stderr, "Added %d PRs awaiting your review\n", added)
+	}
+
+	return notifications
+}
+
+// mergeAuthoredPRs adds user's open PRs that aren't already in notifications
+func mergeAuthoredPRs(notifications []github.Notification, authoredPRs []github.Notification) []github.Notification {
+	// Build a set of existing PR identifiers
+	existing := make(map[string]bool)
+	existingURLs := make(map[string]bool)
+
+	for _, n := range notifications {
+		if n.Subject.Type == github.SubjectPullRequest {
+			if n.Subject.URL != "" {
+				existingURLs[n.Subject.URL] = true
+			}
+			if n.Details != nil {
+				key := fmt.Sprintf("%s#%d", n.Repository.FullName, n.Details.Number)
+				existing[key] = true
+			}
+		}
+	}
+
+	// Add authored PRs that aren't already in the list
+	added := 0
+	for _, pr := range authoredPRs {
+		if pr.Details == nil {
+			continue
+		}
+
+		key := fmt.Sprintf("%s#%d", pr.Repository.FullName, pr.Details.Number)
+		if existing[key] || existingURLs[pr.Subject.URL] {
+			continue
+		}
+
+		notifications = append(notifications, pr)
+		existing[key] = true
+		added++
+	}
+
+	if added > 0 {
+		fmt.Fprintf(os.Stderr, "Added %d of your open PRs\n", added)
+	}
+
+	return notifications
 }

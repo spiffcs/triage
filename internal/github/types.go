@@ -76,11 +76,15 @@ type ItemDetails struct {
 	CommentCount int      `json:"commentCount"`
 
 	// PR-specific
-	IsPR          bool   `json:"isPR"`
-	Merged        bool   `json:"merged,omitempty"`
-	MergedAt      *time.Time `json:"mergedAt,omitempty"`
-	Additions     int    `json:"additions,omitempty"`
-	Deletions     int    `json:"deletions,omitempty"`
-	ChangedFiles  int    `json:"changedFiles,omitempty"`
-	ReviewState   string `json:"reviewState,omitempty"` // approved, changes_requested, pending
+	IsPR           bool       `json:"isPR"`
+	Merged         bool       `json:"merged,omitempty"`
+	MergedAt       *time.Time `json:"mergedAt,omitempty"`
+	Additions      int        `json:"additions,omitempty"`
+	Deletions      int        `json:"deletions,omitempty"`
+	ChangedFiles   int        `json:"changedFiles,omitempty"`
+	ReviewState    string     `json:"reviewState,omitempty"` // approved, changes_requested, pending
+	ReviewComments int        `json:"reviewComments,omitempty"`
+	Mergeable      bool       `json:"mergeable,omitempty"`
+	CIStatus       string     `json:"ciStatus,omitempty"` // success, failure, pending
+	Draft          bool       `json:"draft,omitempty"`
 }

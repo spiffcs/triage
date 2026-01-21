@@ -127,9 +127,45 @@ func (h *Heuristics) detailModifiers(n *github.Notification) int {
 		modifier += h.Weights.LowHangingBonus
 	}
 
-	// If user is author and PR needs updates, boost priority
-	if d.Author == h.CurrentUser && d.ReviewState == "changes_requested" {
+	// Author-specific modifiers for their own PRs
+	if d.Author == h.CurrentUser && d.IsPR {
+		modifier += h.authoredPRModifiers(d)
+	}
+
+	return modifier
+}
+
+// authoredPRModifiers calculates score modifiers for user's own PRs
+func (h *Heuristics) authoredPRModifiers(d *github.ItemDetails) int {
+	modifier := 0
+
+	// PR is approved and ready to merge - urgent action needed!
+	if d.ReviewState == "approved" {
+		modifier += 25
+		if d.Mergeable {
+			modifier += 15 // Extra boost if actually mergeable
+		}
+	}
+
+	// PR has changes requested - needs work
+	if d.ReviewState == "changes_requested" {
 		modifier += 20
+	}
+
+	// PR has review comments - might need response
+	if d.ReviewComments > 0 {
+		modifier += min(d.ReviewComments*3, 15) // +3 per comment, max +15
+	}
+
+	// Stale PR - no activity in 7+ days, needs a kick
+	daysSinceUpdate := int(time.Since(d.UpdatedAt).Hours() / 24)
+	if daysSinceUpdate >= 7 {
+		modifier += min((daysSinceUpdate-6)*2, 20) // +2 per day after 7, max +20
+	}
+
+	// Draft PR - lower priority (not ready for review yet)
+	if d.Draft {
+		modifier -= 15
 	}
 
 	return modifier
@@ -177,6 +213,18 @@ func (h *Heuristics) Categorize(n *github.Notification, score int) Category {
 		return CategoryUrgent
 	}
 
+	// Authored PRs that are approved and mergeable are urgent
+	if reason == github.ReasonAuthor && n.Details != nil {
+		d := n.Details
+		if d.IsPR && d.ReviewState == "approved" && d.Mergeable {
+			return CategoryUrgent
+		}
+		// PRs with changes requested need attention
+		if d.IsPR && d.ReviewState == "changes_requested" {
+			return CategoryUrgent
+		}
+	}
+
 	// Check for low-hanging fruit
 	if n.Details != nil && h.isLowHangingFruit(n.Details) {
 		return CategoryLowHanging
@@ -204,13 +252,10 @@ func (h *Heuristics) DetermineAction(n *github.Notification) string {
 	case github.ReasonTeamMention:
 		return "Team mentioned - check if relevant"
 	case github.ReasonAuthor:
-		if details != nil && details.ReviewState == "changes_requested" {
-			return "Address review feedback"
+		if details == nil {
+			return "Check activity on your item"
 		}
-		if details != nil && details.ReviewState == "approved" {
-			return "Merge PR"
-		}
-		return "Check activity on your item"
+		return h.determineAuthoredPRAction(details)
 	case github.ReasonAssign:
 		return "Work on assigned item"
 	case github.ReasonComment:
@@ -225,6 +270,54 @@ func (h *Heuristics) DetermineAction(n *github.Notification) string {
 	default:
 		return "Review notification"
 	}
+}
+
+// determineAuthoredPRAction suggests actions for user's own PRs
+func (h *Heuristics) determineAuthoredPRAction(d *github.ItemDetails) string {
+	if !d.IsPR {
+		return "Check activity on your issue"
+	}
+
+	// Draft PR
+	if d.Draft {
+		return "Finish draft PR"
+	}
+
+	// Approved and mergeable - merge it!
+	if d.ReviewState == "approved" && d.Mergeable {
+		return "Merge PR"
+	}
+
+	// Approved but not mergeable (conflicts?)
+	if d.ReviewState == "approved" && !d.Mergeable {
+		return "Resolve conflicts & merge"
+	}
+
+	// Changes requested
+	if d.ReviewState == "changes_requested" {
+		return "Address review feedback"
+	}
+
+	// Has review comments that might need response
+	if d.ReviewComments > 0 {
+		return "Respond to review comments"
+	}
+
+	// Stale PR - needs attention
+	daysSinceUpdate := int(time.Since(d.UpdatedAt).Hours() / 24)
+	if daysSinceUpdate >= 7 {
+		if d.ReviewState == "pending" {
+			return "Request review (stale)"
+		}
+		return "Follow up on PR"
+	}
+
+	// Pending review
+	if d.ReviewState == "pending" {
+		return "Awaiting review"
+	}
+
+	return "Check PR status"
 }
 
 // DeterminePriorityLevel converts a score to a priority level
