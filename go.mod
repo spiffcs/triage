@@ -1,4 +1,4 @@
-module github.com/hal/github-prio
+module github.com/hal/priority
 
 go 1.25.1
 

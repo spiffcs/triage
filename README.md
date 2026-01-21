@@ -190,8 +190,7 @@ MEDIUM    FYI           other/repo                      Discussion on API design
 1. **First run is slow** - Fetching details for many notifications takes time. Subsequent runs use the cache.
 2. **Use quick mode for triage** - `priority list -q` skips detail fetching for a fast overview.
 3. **Focus on urgent items** - `priority list -c urgent -l 10` shows your top 10 urgent items.
-4. **Clear old notifications** - Use `priority mark-read <id>` or mark them as read on GitHub to reduce noise.
-5. **Adjust concurrency** - If you hit rate limits, reduce workers: `priority list -w 5`
+4. **Adjust concurrency** - If you hit rate limits, reduce workers: `priority list -w 5`
 
 ## Configuration File
 

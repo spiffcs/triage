@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hal/github-prio/internal/priority"
+	"github.com/hal/priority/internal/priority"
 )
 
 // MarkdownFormatter formats output as Markdown

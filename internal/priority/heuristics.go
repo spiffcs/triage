@@ -4,7 +4,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hal/github-prio/internal/github"
+	"github.com/hal/priority/internal/github"
 )
 
 // ScoreWeights defines the base scores for different notification reasons

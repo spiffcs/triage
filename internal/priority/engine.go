@@ -3,7 +3,7 @@ package priority
 import (
 	"sort"
 
-	"github.com/hal/github-prio/internal/github"
+	"github.com/hal/priority/internal/github"
 )
 
 // Engine orchestrates the prioritization process

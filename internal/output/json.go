@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"io"
 
-	"github.com/hal/github-prio/internal/priority"
+	"github.com/hal/priority/internal/priority"
 )
 
 // JSONFormatter formats output as JSON

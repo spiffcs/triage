@@ -1,7 +1,7 @@
 package priority
 
 import (
-	"github.com/hal/github-prio/internal/github"
+	"github.com/hal/priority/internal/github"
 )
 
 // Category represents a priority category

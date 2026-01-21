@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/fatih/color"
-	"github.com/hal/github-prio/internal/github"
-	"github.com/hal/github-prio/internal/priority"
+	"github.com/hal/priority/internal/github"
+	"github.com/hal/priority/internal/priority"
 	"github.com/mattn/go-runewidth"
 	"golang.org/x/term"
 )

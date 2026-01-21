@@ -3,7 +3,7 @@ package output
 import (
 	"io"
 
-	"github.com/hal/github-prio/internal/priority"
+	"github.com/hal/priority/internal/priority"
 )
 
 // Format represents the output format

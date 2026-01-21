@@ -7,10 +7,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/hal/github-prio/config"
-	"github.com/hal/github-prio/internal/github"
-	"github.com/hal/github-prio/internal/output"
-	"github.com/hal/github-prio/internal/priority"
+	"github.com/hal/priority/config"
+	"github.com/hal/priority/internal/github"
+	"github.com/hal/priority/internal/output"
+	"github.com/hal/priority/internal/priority"
 )
 
 var (
