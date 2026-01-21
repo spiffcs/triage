@@ -27,7 +27,7 @@ func NewCache() (*Cache, error) {
 		return nil, err
 	}
 
-	cacheDir := filepath.Join(home, ".cache", "github-prio", "details")
+	cacheDir := filepath.Join(home, ".cache", "priority", "details")
 	if err := os.MkdirAll(cacheDir, 0700); err != nil {
 		return nil, fmt.Errorf("failed to create cache directory: %w", err)
 	}
@@ -125,14 +125,31 @@ func (c *Cache) Clear() error {
 	return nil
 }
 
+// CacheStats contains detailed cache statistics
+type CacheStats struct {
+	DetailTotal   int
+	DetailValid   int
+	PRListTotal   int
+	PRListValid   int
+}
+
 // Stats returns cache statistics
 func (c *Cache) Stats() (total int, validCount int, err error) {
-	entries, err := os.ReadDir(c.dir)
+	stats, err := c.DetailedStats()
 	if err != nil {
 		return 0, 0, err
 	}
+	return stats.DetailTotal + stats.PRListTotal, stats.DetailValid + stats.PRListValid, nil
+}
 
-	total = len(entries)
+// DetailedStats returns detailed cache statistics broken down by type
+func (c *Cache) DetailedStats() (*CacheStats, error) {
+	entries, err := os.ReadDir(c.dir)
+	if err != nil {
+		return nil, err
+	}
+
+	stats := &CacheStats{}
 	now := time.Now()
 
 	for _, entry := range entries {
@@ -142,15 +159,82 @@ func (c *Cache) Stats() (total int, validCount int, err error) {
 			continue
 		}
 
-		var cacheEntry CacheEntry
-		if err := json.Unmarshal(data, &cacheEntry); err != nil {
-			continue
-		}
-
-		if now.Sub(cacheEntry.CachedAt) <= 24*time.Hour {
-			validCount++
+		// Check if it's a PR list cache entry (starts with "prlist_")
+		if len(entry.Name()) > 7 && entry.Name()[:7] == "prlist_" {
+			stats.PRListTotal++
+			var prEntry PRListCacheEntry
+			if err := json.Unmarshal(data, &prEntry); err != nil {
+				continue
+			}
+			if now.Sub(prEntry.CachedAt) <= PRListCacheTTL {
+				stats.PRListValid++
+			}
+		} else {
+			stats.DetailTotal++
+			var cacheEntry CacheEntry
+			if err := json.Unmarshal(data, &cacheEntry); err != nil {
+				continue
+			}
+			if now.Sub(cacheEntry.CachedAt) <= 24*time.Hour {
+				stats.DetailValid++
+			}
 		}
 	}
 
-	return total, validCount, nil
+	return stats, nil
+}
+
+// PRListCacheEntry represents a cached list of PRs
+type PRListCacheEntry struct {
+	PRs      []Notification `json:"prs"`
+	CachedAt time.Time      `json:"cachedAt"`
+}
+
+// PRListCacheTTL is shorter than details cache since PR lists change more frequently
+const PRListCacheTTL = 5 * time.Minute
+
+// prListCacheKey generates a cache key for a PR list
+func (c *Cache) prListCacheKey(username string, listType string) string {
+	return fmt.Sprintf("prlist_%s_%s.json", listType, username)
+}
+
+// GetPRList retrieves cached PR list
+func (c *Cache) GetPRList(username string, listType string) ([]Notification, bool) {
+	key := c.prListCacheKey(username, listType)
+	path := filepath.Join(c.dir, key)
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, false
+	}
+
+	var entry PRListCacheEntry
+	if err := json.Unmarshal(data, &entry); err != nil {
+		return nil, false
+	}
+
+	// Check TTL
+	if time.Since(entry.CachedAt) > PRListCacheTTL {
+		return nil, false
+	}
+
+	return entry.PRs, true
+}
+
+// SetPRList caches a PR list
+func (c *Cache) SetPRList(username string, listType string, prs []Notification) error {
+	entry := PRListCacheEntry{
+		PRs:      prs,
+		CachedAt: time.Now(),
+	}
+
+	data, err := json.Marshal(entry)
+	if err != nil {
+		return err
+	}
+
+	key := c.prListCacheKey(username, listType)
+	path := filepath.Join(c.dir, key)
+
+	return os.WriteFile(path, data, 0600)
 }

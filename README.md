@@ -1,6 +1,8 @@
 # priority
 
-A CLI tool that analyzes your GitHub notifications to help you prioritize work. It fetches unread notifications, enriches them with issue/PR details, and ranks them using heuristics. Optionally uses Claude AI for deeper analysis.
+A CLI tool that analyzes your GitHub notifications to help you prioritize work. It aggregates data from multiple sources—unread notifications, PRs awaiting your review, and your own open PRs—enriches them with details, and ranks them using heuristics. Optionally uses Claude AI for deeper analysis.
+
+![Demo](.github/demo.png)
 
 ## Installation
 
@@ -60,6 +62,13 @@ priority list -r mention
 priority list -r review_requested
 priority list -r author
 
+# Filter by type
+priority list -t pr          # Show only pull requests
+priority list -t issue       # Show only issues
+
+# Filter by repository
+priority list --repo owner/repo
+
 # Include merged/closed items (hidden by default)
 priority list --include-merged
 priority list --include-closed
@@ -92,11 +101,13 @@ priority analyze
 
 ### Cache Management
 
-Details are cached for 24 hours to speed up subsequent runs:
+The tool uses a two-tier caching strategy:
+- **Item details** (issue/PR metadata): cached for 24 hours
+- **PR lists** (review-requested and authored PRs): cached for 5 minutes
 
 ```bash
 priority cache stats    # Show cache statistics
-priority cache clear    # Clear the cache
+priority cache clear    # Clear all caches
 ```
 
 ### Configuration
@@ -196,7 +207,11 @@ exclude_repos:
 
 ## Cache Location
 
-Notification details are cached at `~/.cache/priority/details/` for 24 hours.
+Cached data is stored at `~/.cache/priority/details/`.
+
+## Architecture
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for details on data flow, caching strategy, and project structure.
 
 ## License
 

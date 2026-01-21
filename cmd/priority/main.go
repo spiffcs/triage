@@ -21,6 +21,7 @@ var (
 	categoryFlag    string
 	reasonFlag      string
 	repoFlag        string
+	typeFlag        string
 	analyzeFlag     bool
 	verboseFlag     bool
 	quickFlag       bool
@@ -37,7 +38,7 @@ func main() {
 }
 
 var rootCmd = &cobra.Command{
-	Use:   "github-prio",
+	Use:   "priority",
 	Short: "GitHub notification priority manager",
 	Long: `A CLI tool that analyzes your GitHub notifications to help you
 prioritize your work. It uses heuristics to score notifications and
@@ -127,6 +128,7 @@ func init() {
 	listCmd.Flags().IntVarP(&workersFlag, "workers", "w", 20, "Number of concurrent workers for fetching details")
 	listCmd.Flags().BoolVar(&includeMerged, "include-merged", false, "Include notifications for merged PRs")
 	listCmd.Flags().BoolVar(&includeClosed, "include-closed", false, "Include notifications for closed issues/PRs")
+	listCmd.Flags().StringVarP(&typeFlag, "type", "t", "", "Filter by type (pr, issue)")
 
 	// Summary command flags
 	summaryCmd.Flags().StringVarP(&sinceFlag, "since", "s", "6mo", "Show notifications since")
@@ -158,7 +160,7 @@ func runList(cmd *cobra.Command, args []string) error {
 	// Create GitHub client
 	token := cfg.GetGitHubToken()
 	if token == "" {
-		return fmt.Errorf("GitHub token not configured. Set GITHUB_TOKEN env var or run: github-prio config set token <TOKEN>")
+		return fmt.Errorf("GitHub token not configured. Set GITHUB_TOKEN env var or run: priority config set token <TOKEN>")
 	}
 
 	ghClient, err := github.NewClient(token)
@@ -208,30 +210,50 @@ func runList(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(os.Stderr, "Found %d notifications. Skipping detail fetch (quick mode)...\n", len(notifications))
 	}
 
-	// Fetch PRs where user is a requested reviewer (adds any not already in notifications)
-	reviewPRs, err := ghClient.ListReviewRequestedPRs(currentUser)
+	// Create cache for PR lists
+	prCache, cacheErr := github.NewCache()
+	if cacheErr != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to initialize cache: %v\n", cacheErr)
+	}
+
+	// Fetch PRs where user is a requested reviewer
+	reviewPRs, reviewFromCache, err := ghClient.ListReviewRequestedPRsCached(currentUser, prCache)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to fetch review-requested PRs: %v\n", err)
 	} else if len(reviewPRs) > 0 {
-		notifications = mergeReviewRequests(notifications, reviewPRs)
+		var added int
+		notifications, added = mergeReviewRequests(notifications, reviewPRs)
+		if added > 0 {
+			if reviewFromCache {
+				fmt.Fprintf(os.Stderr, "PRs awaiting your review: %d (cached)\n", added)
+			} else {
+				fmt.Fprintf(os.Stderr, "PRs awaiting your review: %d\n", added)
+			}
+		}
 	}
 
-	// Fetch user's own open PRs (to track stale PRs, PRs ready to merge, etc.)
-	authoredPRs, err := ghClient.ListAuthoredPRs(currentUser)
+	// Fetch user's own open PRs
+	authoredPRs, authoredFromCache, err := ghClient.ListAuthoredPRsCached(currentUser, prCache)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to fetch authored PRs: %v\n", err)
 	} else if len(authoredPRs) > 0 {
-		// Enrich authored PRs with review state and mergeable info
-		if !quickFlag {
-			fmt.Fprintf(os.Stderr, "Enriching %d of your open PRs...\n", len(authoredPRs))
+		// Enrich authored PRs with review state and mergeable info (only if fresh fetch)
+		if !quickFlag && !authoredFromCache {
 			for i := range authoredPRs {
 				if err := ghClient.EnrichAuthoredPR(&authoredPRs[i]); err != nil {
-					// Log but continue - basic info is still useful
 					continue
 				}
 			}
 		}
-		notifications = mergeAuthoredPRs(notifications, authoredPRs)
+		var added int
+		notifications, added = mergeAuthoredPRs(notifications, authoredPRs)
+		if added > 0 {
+			if authoredFromCache {
+				fmt.Fprintf(os.Stderr, "Your open PRs: %d (cached)\n", added)
+			} else {
+				fmt.Fprintf(os.Stderr, "Your open PRs: %d\n", added)
+			}
+		}
 	}
 
 	if len(notifications) == 0 {
@@ -283,6 +305,19 @@ func runList(cmd *cobra.Command, args []string) error {
 		items = priority.FilterByReason(items, []github.NotificationReason{github.NotificationReason(reasonFlag)})
 	}
 
+	if typeFlag != "" {
+		var subjectType github.SubjectType
+		switch typeFlag {
+		case "pr", "PR", "pullrequest", "PullRequest":
+			subjectType = github.SubjectPullRequest
+		case "issue", "Issue":
+			subjectType = github.SubjectIssue
+		default:
+			return fmt.Errorf("invalid type: %s (must be 'pr' or 'issue')", typeFlag)
+		}
+		items = priority.FilterByType(items, subjectType)
+	}
+
 	// Apply limit
 	if limitFlag > 0 && len(items) > limitFlag {
 		items = items[:limitFlag]
@@ -313,7 +348,7 @@ func runAnalyze(cmd *cobra.Command, args []string) error {
 
 	claudeKey := cfg.GetClaudeAPIKey()
 	if claudeKey == "" {
-		return fmt.Errorf("Claude API key not configured. Set ANTHROPIC_API_KEY env var or run: github-prio config set claude-key <KEY>")
+		return fmt.Errorf("Claude API key not configured. Set ANTHROPIC_API_KEY env var or run: priority config set claude-key <KEY>")
 	}
 
 	// If no specific notification, analyze top items
@@ -524,20 +559,26 @@ func runCacheStats(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to access cache: %w", err)
 	}
 
-	total, valid, err := cache.Stats()
+	stats, err := cache.DetailedStats()
 	if err != nil {
 		return fmt.Errorf("failed to get cache stats: %w", err)
 	}
 
 	fmt.Printf("Cache statistics:\n")
-	fmt.Printf("  Total entries: %d\n", total)
-	fmt.Printf("  Valid (< 24h): %d\n", valid)
-	fmt.Printf("  Expired: %d\n", total-valid)
+	fmt.Printf("  Item details (TTL: 24h):\n")
+	fmt.Printf("    Total: %d\n", stats.DetailTotal)
+	fmt.Printf("    Valid: %d\n", stats.DetailValid)
+	fmt.Printf("    Expired: %d\n", stats.DetailTotal-stats.DetailValid)
+	fmt.Printf("  PR lists (TTL: 5m):\n")
+	fmt.Printf("    Total: %d\n", stats.PRListTotal)
+	fmt.Printf("    Valid: %d\n", stats.PRListValid)
+	fmt.Printf("    Expired: %d\n", stats.PRListTotal-stats.PRListValid)
 	return nil
 }
 
 // mergeReviewRequests adds review-requested PRs that aren't already in notifications
-func mergeReviewRequests(notifications []github.Notification, reviewPRs []github.Notification) []github.Notification {
+// Returns the merged list and the count of newly added items
+func mergeReviewRequests(notifications []github.Notification, reviewPRs []github.Notification) ([]github.Notification, int) {
 	// Build a set of existing PR identifiers (repo/number and also Subject.URL for fallback)
 	existing := make(map[string]bool)
 	existingURLs := make(map[string]bool)
@@ -574,15 +615,12 @@ func mergeReviewRequests(notifications []github.Notification, reviewPRs []github
 		added++
 	}
 
-	if added > 0 {
-		fmt.Fprintf(os.Stderr, "Added %d PRs awaiting your review\n", added)
-	}
-
-	return notifications
+	return notifications, added
 }
 
 // mergeAuthoredPRs adds user's open PRs that aren't already in notifications
-func mergeAuthoredPRs(notifications []github.Notification, authoredPRs []github.Notification) []github.Notification {
+// Returns the merged list and the count of newly added items
+func mergeAuthoredPRs(notifications []github.Notification, authoredPRs []github.Notification) ([]github.Notification, int) {
 	// Build a set of existing PR identifiers
 	existing := make(map[string]bool)
 	existingURLs := make(map[string]bool)
@@ -616,9 +654,5 @@ func mergeAuthoredPRs(notifications []github.Notification, authoredPRs []github.
 		added++
 	}
 
-	if added > 0 {
-		fmt.Fprintf(os.Stderr, "Added %d of your open PRs\n", added)
-	}
-
-	return notifications
+	return notifications, added
 }

@@ -21,7 +21,7 @@ func NewClient(token string) (*Client, error) {
 		token = os.Getenv("GITHUB_TOKEN")
 	}
 	if token == "" {
-		return nil, fmt.Errorf("GitHub token not provided. Set GITHUB_TOKEN env var or use 'github-prio config set token <TOKEN>'")
+		return nil, fmt.Errorf("GitHub token not provided. Set GITHUB_TOKEN env var or use 'priority config set token <TOKEN>'")
 	}
 
 	ctx := context.Background()
@@ -274,6 +274,52 @@ func (c *Client) authoredPRToNotification(issue *github.Issue) Notification {
 	}
 
 	return notification
+}
+
+// ListReviewRequestedPRsCached fetches PRs with caching support
+func (c *Client) ListReviewRequestedPRsCached(username string, cache *Cache) ([]Notification, bool, error) {
+	// Check cache first
+	if cache != nil {
+		if prs, ok := cache.GetPRList(username, "review-requested"); ok {
+			return prs, true, nil
+		}
+	}
+
+	// Fetch from API
+	prs, err := c.ListReviewRequestedPRs(username)
+	if err != nil {
+		return nil, false, err
+	}
+
+	// Cache the result
+	if cache != nil {
+		_ = cache.SetPRList(username, "review-requested", prs)
+	}
+
+	return prs, false, nil
+}
+
+// ListAuthoredPRsCached fetches authored PRs with caching support
+func (c *Client) ListAuthoredPRsCached(username string, cache *Cache) ([]Notification, bool, error) {
+	// Check cache first
+	if cache != nil {
+		if prs, ok := cache.GetPRList(username, "authored"); ok {
+			return prs, true, nil
+		}
+	}
+
+	// Fetch from API
+	prs, err := c.ListAuthoredPRs(username)
+	if err != nil {
+		return nil, false, err
+	}
+
+	// Cache the result
+	if cache != nil {
+		_ = cache.SetPRList(username, "authored", prs)
+	}
+
+	return prs, false, nil
 }
 
 // EnrichAuthoredPR fetches additional PR details like review state, mergeable status

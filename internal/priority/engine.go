@@ -139,6 +139,17 @@ func FilterOutClosed(items []PrioritizedItem) []PrioritizedItem {
 	return filtered
 }
 
+// FilterByType filters items by subject type (pr, issue)
+func FilterByType(items []PrioritizedItem, subjectType github.SubjectType) []PrioritizedItem {
+	filtered := make([]PrioritizedItem, 0)
+	for _, item := range items {
+		if item.Notification.Subject.Type == subjectType {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
+}
+
 // Summary provides an overview of prioritized items
 type Summary struct {
 	Total       int            `json:"total"`
