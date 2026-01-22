@@ -11,7 +11,6 @@ import (
 // Config represents the application configuration
 type Config struct {
 	GitHubToken   string   `yaml:"github_token,omitempty"`
-	ClaudeAPIKey  string   `yaml:"claude_api_key,omitempty"`
 	DefaultFormat string   `yaml:"default_format,omitempty"`
 	ExcludeRepos  []string `yaml:"exclude_repos,omitempty"`
 
@@ -102,23 +101,9 @@ func (c *Config) GetGitHubToken() string {
 	return c.GitHubToken
 }
 
-// GetClaudeAPIKey returns the Claude API key from config or environment
-func (c *Config) GetClaudeAPIKey() string {
-	if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {
-		return key
-	}
-	return c.ClaudeAPIKey
-}
-
 // SetToken sets the GitHub token and saves
 func (c *Config) SetToken(token string) error {
 	c.GitHubToken = token
-	return c.Save()
-}
-
-// SetClaudeKey sets the Claude API key and saves
-func (c *Config) SetClaudeKey(key string) error {
-	c.ClaudeAPIKey = key
 	return c.Save()
 }
 

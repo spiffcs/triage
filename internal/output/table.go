@@ -388,8 +388,8 @@ func (f *TableFormatter) FormatSummary(summary priority.Summary, w io.Writer) er
 	return nil
 }
 
-// FormatWithAnalysis outputs items with LLM analysis
-func (f *TableFormatter) FormatWithAnalysis(items []priority.PrioritizedItem, w io.Writer) error {
+// FormatVerbose outputs items with detailed information
+func (f *TableFormatter) FormatVerbose(items []priority.PrioritizedItem, w io.Writer) error {
 	for i, item := range items {
 		n := item.Notification
 
@@ -409,20 +409,6 @@ func (f *TableFormatter) FormatWithAnalysis(items []priority.PrioritizedItem, w 
 			}
 			if len(d.Labels) > 0 {
 				fmt.Fprintf(w, "  Labels: %s\n", strings.Join(d.Labels, ", "))
-			}
-		}
-
-		if item.Analysis != nil {
-			a := item.Analysis
-			fmt.Fprintf(w, "\n  AI Analysis:\n")
-			fmt.Fprintf(w, "    Summary: %s\n", a.Summary)
-			fmt.Fprintf(w, "    Action: %s\n", a.ActionNeeded)
-			fmt.Fprintf(w, "    Effort: %s\n", a.EffortEstimate)
-			if len(a.Tags) > 0 {
-				fmt.Fprintf(w, "    Tags: %s\n", strings.Join(a.Tags, ", "))
-			}
-			if len(a.Blockers) > 0 {
-				fmt.Fprintf(w, "    Blockers: %s\n", strings.Join(a.Blockers, ", "))
 			}
 		}
 

@@ -9,14 +9,12 @@ import (
 // Engine orchestrates the prioritization process
 type Engine struct {
 	heuristics *Heuristics
-	llm        *LLMClient
 }
 
 // NewEngine creates a new priority engine
-func NewEngine(currentUser string, llmClient *LLMClient) *Engine {
+func NewEngine(currentUser string) *Engine {
 	return &Engine{
 		heuristics: NewHeuristics(currentUser),
-		llm:        llmClient,
 	}
 }
 
@@ -45,28 +43,6 @@ func (e *Engine) Prioritize(notifications []github.Notification) []PrioritizedIt
 	})
 
 	return items
-}
-
-// PrioritizeWithAnalysis adds LLM analysis to prioritized items
-func (e *Engine) PrioritizeWithAnalysis(notifications []github.Notification) ([]PrioritizedItem, error) {
-	items := e.Prioritize(notifications)
-
-	if e.llm == nil {
-		return items, nil
-	}
-
-	// Only analyze top items to save API costs
-	maxAnalyze := min(len(items), 10)
-	for i := 0; i < maxAnalyze; i++ {
-		analysis, err := e.llm.Analyze(&items[i])
-		if err != nil {
-			// Log but don't fail - heuristics still work
-			continue
-		}
-		items[i].Analysis = analysis
-	}
-
-	return items, nil
 }
 
 // FilterByCategory filters items to a specific category

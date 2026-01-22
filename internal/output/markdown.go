@@ -91,18 +91,6 @@ func (f *MarkdownFormatter) formatItem(item priority.PrioritizedItem, w io.Write
 		}
 	}
 
-	// LLM Analysis
-	if item.Analysis != nil {
-		a := item.Analysis
-		fmt.Fprintln(w, "\n**AI Analysis:**")
-		fmt.Fprintf(w, "> %s\n", a.Summary)
-		fmt.Fprintf(w, ">\n> **Recommended Action:** %s\n", a.ActionNeeded)
-		fmt.Fprintf(w, "> **Effort:** %s\n", a.EffortEstimate)
-		if len(a.Blockers) > 0 {
-			fmt.Fprintf(w, "> **Blockers:** %s\n", strings.Join(a.Blockers, ", "))
-		}
-	}
-
 	fmt.Fprintln(w)
 }
 

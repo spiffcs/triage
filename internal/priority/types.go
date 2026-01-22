@@ -63,16 +63,4 @@ type PrioritizedItem struct {
 	Priority     PriorityLevel       `json:"priority"`
 	Category     Category            `json:"category"`
 	ActionNeeded string              `json:"actionNeeded"`
-
-	// LLM analysis (optional)
-	Analysis *LLMAnalysis `json:"analysis,omitempty"`
-}
-
-// LLMAnalysis contains Claude's analysis of the item
-type LLMAnalysis struct {
-	Summary        string   `json:"summary"`
-	ActionNeeded   string   `json:"actionNeeded"`
-	EffortEstimate string   `json:"effortEstimate"` // quick, medium, large
-	Blockers       []string `json:"blockers,omitempty"`
-	Tags           []string `json:"tags,omitempty"`
 }

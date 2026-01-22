@@ -15,19 +15,18 @@ import (
 
 var (
 	// Global flags
-	formatFlag      string
-	limitFlag       int
-	sinceFlag       string
-	categoryFlag    string
-	reasonFlag      string
-	repoFlag        string
-	typeFlag        string
-	analyzeFlag     bool
-	verboseFlag     bool
-	quickFlag       bool
-	workersFlag     int
-	includeMerged   bool
-	includeClosed   bool
+	formatFlag    string
+	limitFlag     int
+	sinceFlag     string
+	categoryFlag  string
+	reasonFlag    string
+	repoFlag      string
+	typeFlag      string
+	verboseFlag   bool
+	quickFlag     bool
+	workersFlag   int
+	includeMerged bool
+	includeClosed bool
 )
 
 func main() {
@@ -41,8 +40,7 @@ var rootCmd = &cobra.Command{
 	Use:   "priority",
 	Short: "GitHub notification priority manager",
 	Long: `A CLI tool that analyzes your GitHub notifications to help you
-prioritize your work. It uses heuristics to score notifications and
-optionally uses Claude AI for deeper analysis.`,
+prioritize your work. It uses heuristics to score notifications.`,
 }
 
 var listCmd = &cobra.Command{
@@ -51,15 +49,6 @@ var listCmd = &cobra.Command{
 	Long: `Fetches your unread GitHub notifications, enriches them with
 issue/PR details, and displays them sorted by priority.`,
 	RunE: runList,
-}
-
-var analyzeCmd = &cobra.Command{
-	Use:   "analyze [notification-id or url]",
-	Short: "Get detailed AI analysis of a notification",
-	Long: `Uses Claude AI to provide detailed analysis of a specific
-notification, including suggested actions and effort estimates.`,
-	Args: cobra.MaximumNArgs(1),
-	RunE: runAnalyze,
 }
 
 var configCmd = &cobra.Command{
@@ -72,7 +61,6 @@ var configSetCmd = &cobra.Command{
 	Short: "Set a configuration value",
 	Long: `Set a configuration value. Available keys:
   token       - GitHub personal access token
-  claude-key  - Claude API key
   format      - Default output format (table, json, markdown)`,
 	Args: cobra.ExactArgs(2),
 	RunE: runConfigSet,
@@ -122,7 +110,6 @@ func init() {
 	listCmd.Flags().StringVarP(&categoryFlag, "category", "c", "", "Filter by category (urgent, important, low-hanging, fyi)")
 	listCmd.Flags().StringVarP(&reasonFlag, "reason", "r", "", "Filter by reason (mention, review_requested, author, etc.)")
 	listCmd.Flags().StringVar(&repoFlag, "repo", "", "Filter to specific repo (owner/repo)")
-	listCmd.Flags().BoolVarP(&analyzeFlag, "analyze", "a", false, "Include AI analysis (requires Claude API key)")
 	listCmd.Flags().BoolVarP(&verboseFlag, "verbose", "v", false, "Show detailed output")
 	listCmd.Flags().BoolVarP(&quickFlag, "quick", "q", false, "Skip fetching details (faster but less accurate prioritization)")
 	listCmd.Flags().IntVarP(&workersFlag, "workers", "w", 20, "Number of concurrent workers for fetching details")
@@ -144,7 +131,6 @@ func init() {
 
 	// Root command
 	rootCmd.AddCommand(listCmd)
-	rootCmd.AddCommand(analyzeCmd)
 	rootCmd.AddCommand(configCmd)
 	rootCmd.AddCommand(markReadCmd)
 	rootCmd.AddCommand(summaryCmd)
@@ -261,33 +247,9 @@ func runList(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	// Create LLM client if analyze flag is set
-	var llmClient *priority.LLMClient
-	if analyzeFlag {
-		claudeKey := cfg.GetClaudeAPIKey()
-		if claudeKey == "" {
-			fmt.Fprintf(os.Stderr, "Warning: Claude API key not set. Skipping AI analysis.\n")
-		} else {
-			llmClient, err = priority.NewLLMClient(claudeKey)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: failed to create LLM client: %v\n", err)
-			}
-		}
-	}
-
 	// Prioritize
-	engine := priority.NewEngine(currentUser, llmClient)
-	var items []priority.PrioritizedItem
-
-	if analyzeFlag && llmClient != nil {
-		fmt.Fprintf(os.Stderr, "Analyzing with AI...\n")
-		items, err = engine.PrioritizeWithAnalysis(notifications)
-		if err != nil {
-			return fmt.Errorf("failed to prioritize: %w", err)
-		}
-	} else {
-		items = engine.Prioritize(notifications)
-	}
+	engine := priority.NewEngine(currentUser)
+	items := engine.Prioritize(notifications)
 
 	// Apply filters
 	if !includeMerged {
@@ -334,34 +296,10 @@ func runList(cmd *cobra.Command, args []string) error {
 
 	if verboseFlag && format == output.FormatTable {
 		tableFormatter := formatter.(*output.TableFormatter)
-		return tableFormatter.FormatWithAnalysis(items, os.Stdout)
+		return tableFormatter.FormatVerbose(items, os.Stdout)
 	}
 
 	return formatter.Format(items, os.Stdout)
-}
-
-func runAnalyze(cmd *cobra.Command, args []string) error {
-	cfg, err := config.Load()
-	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
-	}
-
-	claudeKey := cfg.GetClaudeAPIKey()
-	if claudeKey == "" {
-		return fmt.Errorf("Claude API key not configured. Set ANTHROPIC_API_KEY env var or run: priority config set claude-key <KEY>")
-	}
-
-	// If no specific notification, analyze top items
-	if len(args) == 0 {
-		// List top items and analyze them
-		analyzeFlag = true
-		verboseFlag = true
-		limitFlag = 5
-		return runList(cmd, args)
-	}
-
-	// TODO: Implement single notification analysis by ID/URL
-	return fmt.Errorf("single notification analysis not yet implemented")
 }
 
 func runConfigSet(cmd *cobra.Command, args []string) error {
@@ -379,11 +317,6 @@ func runConfigSet(cmd *cobra.Command, args []string) error {
 			return err
 		}
 		fmt.Println("GitHub token saved.")
-	case "claude-key":
-		if err := cfg.SetClaudeKey(value); err != nil {
-			return err
-		}
-		fmt.Println("Claude API key saved.")
 	case "format":
 		if value != "table" && value != "json" && value != "markdown" {
 			return fmt.Errorf("invalid format: %s (must be table, json, or markdown)", value)
@@ -415,14 +348,6 @@ func runConfigShow(cmd *cobra.Command, args []string) error {
 		fmt.Println("  GitHub token: (set via GITHUB_TOKEN env)")
 	} else {
 		fmt.Println("  GitHub token: (not set)")
-	}
-
-	if cfg.ClaudeAPIKey != "" {
-		fmt.Println("  Claude API key: (set)")
-	} else if os.Getenv("ANTHROPIC_API_KEY") != "" {
-		fmt.Println("  Claude API key: (set via ANTHROPIC_API_KEY env)")
-	} else {
-		fmt.Println("  Claude API key: (not set)")
 	}
 
 	if len(cfg.ExcludeRepos) > 0 {
@@ -494,7 +419,7 @@ func runSummary(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
 	}
 
-	engine := priority.NewEngine(currentUser, nil)
+	engine := priority.NewEngine(currentUser)
 	items := engine.Prioritize(notifications)
 	summary := priority.Summarize(items)
 
