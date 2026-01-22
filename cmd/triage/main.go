@@ -78,12 +78,6 @@ var markReadCmd = &cobra.Command{
 	RunE:  runMarkRead,
 }
 
-var summaryCmd = &cobra.Command{
-	Use:   "summary",
-	Short: "Show a summary of notifications",
-	RunE:  runSummary,
-}
-
 var cacheCmd = &cobra.Command{
 	Use:   "cache",
 	Short: "Manage the notification details cache",
@@ -117,10 +111,6 @@ func init() {
 		cmd.Flags().StringVarP(&typeFlag, "type", "t", "", "Filter by type (pr, issue)")
 	}
 
-	// Summary command flags
-	summaryCmd.Flags().StringVarP(&sinceFlag, "since", "s", "1w", "Show notifications since")
-	summaryCmd.Flags().StringVarP(&formatFlag, "format", "f", "", "Output format")
-
 	// Config subcommands
 	configCmd.AddCommand(configSetCmd)
 	configCmd.AddCommand(configShowCmd)
@@ -133,7 +123,6 @@ func init() {
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(configCmd)
 	rootCmd.AddCommand(markReadCmd)
-	rootCmd.AddCommand(summaryCmd)
 	rootCmd.AddCommand(cacheCmd)
 }
 
@@ -379,54 +368,6 @@ func runMarkRead(cmd *cobra.Command, args []string) error {
 
 	fmt.Println("Notification marked as read.")
 	return nil
-}
-
-func runSummary(cmd *cobra.Command, args []string) error {
-	cfg, err := config.Load()
-	if err != nil {
-		return err
-	}
-
-	token := cfg.GetGitHubToken()
-	if token == "" {
-		return fmt.Errorf("GitHub token not configured. Set the GITHUB_TOKEN environment variable")
-	}
-
-	ghClient, err := github.NewClient(token)
-	if err != nil {
-		return err
-	}
-
-	currentUser, err := ghClient.GetAuthenticatedUser()
-	if err != nil {
-		return err
-	}
-
-	since, err := parseDuration(sinceFlag)
-	if err != nil {
-		return err
-	}
-
-	notifications, err := ghClient.ListUnreadNotifications(since)
-	if err != nil {
-		return err
-	}
-
-	if err := ghClient.EnrichNotifications(notifications); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
-	}
-
-	engine := triage.NewEngine(currentUser)
-	items := engine.Prioritize(notifications)
-	summary := triage.Summarize(items)
-
-	format := output.Format(formatFlag)
-	if format == "" {
-		format = output.Format(cfg.DefaultFormat)
-	}
-
-	formatter := output.NewFormatter(format)
-	return formatter.FormatSummary(summary, os.Stdout)
 }
 
 func parseDuration(s string) (time.Time, error) {

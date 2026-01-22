@@ -399,58 +399,6 @@ func printFooterSummary(items []triage.PrioritizedItem, w io.Writer) {
 	}
 }
 
-// FormatSummary outputs a summary
-func (f *TableFormatter) FormatSummary(summary triage.Summary, w io.Writer) error {
-	fmt.Fprintf(w, "Total notifications: %d\n\n", summary.Total)
-
-	fmt.Fprintln(w, "By Priority:")
-	priorities := []triage.PriorityLevel{
-		triage.PriorityUrgent,
-		triage.PriorityImportant,
-		triage.PriorityQuickWin,
-		triage.PriorityFYI,
-	}
-	for _, p := range priorities {
-		count := summary.ByPriority[p]
-		if count > 0 {
-			fmt.Fprintf(w, "  %s: %d\n", colorPriority(p), count)
-		}
-	}
-
-	fmt.Fprintln(w, "\nBy Category:")
-	for cat := triage.CategoryUrgent; cat >= triage.CategoryLow; cat-- {
-		count := summary.ByCategory[cat]
-		if count > 0 {
-			fmt.Fprintf(w, "  %s: %d\n", cat.Display(), count)
-		}
-	}
-
-	if len(summary.TopUrgent) > 0 {
-		fmt.Fprintln(w, "\nTop Urgent Items:")
-		for i, item := range summary.TopUrgent {
-			fmt.Fprintf(w, "  %d. [%s] %s - %s\n",
-				i+1,
-				item.Notification.Repository.FullName,
-				truncate(item.Notification.Subject.Title, 50),
-				item.ActionNeeded,
-			)
-		}
-	}
-
-	if len(summary.QuickWins) > 0 {
-		fmt.Fprintln(w, "\nQuick Wins:")
-		for i, item := range summary.QuickWins {
-			fmt.Fprintf(w, "  %d. [%s] %s\n",
-				i+1,
-				item.Notification.Repository.FullName,
-				truncate(item.Notification.Subject.Title, 50),
-			)
-		}
-	}
-
-	return nil
-}
-
 // FormatVerbose outputs items with detailed information
 func (f *TableFormatter) FormatVerbose(items []triage.PrioritizedItem, w io.Writer) error {
 	for i, item := range items {
@@ -514,11 +462,4 @@ func formatAge(d time.Duration) string {
 	}
 	months := days / 30
 	return fmt.Sprintf("%dmo", months)
-}
-
-func truncate(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	return s[:maxLen-3] + "..."
 }

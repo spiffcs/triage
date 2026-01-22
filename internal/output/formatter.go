@@ -17,7 +17,6 @@ const (
 // Formatter defines the interface for output formatters
 type Formatter interface {
 	Format(items []triage.PrioritizedItem, w io.Writer) error
-	FormatSummary(summary triage.Summary, w io.Writer) error
 }
 
 // NewFormatter creates a formatter for the specified format

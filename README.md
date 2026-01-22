@@ -1,6 +1,6 @@
 # triage
 
-A CLI tool that analyzes your GitHub notifications to help you triage work. It aggregates data from multiple sources—unread notifications, PRs awaiting your review, and your own open PRs—enriches them with details, and ranks them using configurable heuristics.
+A CLI tool that analyzes your GitHub notifications to help you triage work. It aggregates data from multiple sources—unread notifications, PRs awaiting your review, and your own open PRs. It enriches them with details, and ranks them using configurable heuristics.
 
 ![Demo](.github/demo.png)
 
@@ -79,11 +79,6 @@ triage -f json       # JSON for scripting
 # Limit results
 triage -l 20         # Top 20 only
 
-```
-### Summary
-
-```bash
-triage summary
 ```
 
 ### Cache Management
