@@ -18,7 +18,7 @@ var (
 	formatFlag    string
 	limitFlag     int
 	sinceFlag     string
-	categoryFlag  string
+	priorityFlag  string
 	reasonFlag    string
 	repoFlag      string
 	typeFlag      string
@@ -101,7 +101,7 @@ func init() {
 		cmd.Flags().StringVarP(&formatFlag, "format", "f", "", "Output format (table, json)")
 		cmd.Flags().IntVarP(&limitFlag, "limit", "l", 0, "Limit number of results")
 		cmd.Flags().StringVarP(&sinceFlag, "since", "s", "1w", "Show notifications since (e.g., 1w, 30d, 6mo)")
-		cmd.Flags().StringVarP(&categoryFlag, "priority", "p", "", "Filter by priority (urgent, important, quick-win, fyi)")
+		cmd.Flags().StringVarP(&priorityFlag, "priority", "p", "", "Filter by priority (urgent, important, quick-win, fyi)")
 		cmd.Flags().StringVarP(&reasonFlag, "reason", "r", "", "Filter by reason (mention, review_requested, author, etc.)")
 		cmd.Flags().StringVar(&repoFlag, "repo", "", "Filter to specific repo (owner/repo)")
 		cmd.Flags().BoolVarP(&verboseFlag, "verbose", "v", false, "Show detailed output")
@@ -250,8 +250,8 @@ func runList(cmd *cobra.Command, args []string) error {
 		items = triage.FilterOutClosed(items)
 	}
 
-	if categoryFlag != "" {
-		items = triage.FilterByPriority(items, triage.PriorityLevel(categoryFlag))
+	if priorityFlag != "" {
+		items = triage.FilterByPriority(items, triage.PriorityLevel(priorityFlag))
 	}
 
 	if reasonFlag != "" {

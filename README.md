@@ -1,6 +1,6 @@
 # triage
 
-A CLI tool that analyzes your GitHub notifications to help you triage work. It aggregates data from multiple sources—unread notifications, PRs awaiting your review, and your own open PRs. It enriches them with details, and ranks them using configurable heuristics.
+A CLI tool that organizes GitHub notifications to help you triage work. It aggregates data from multiple sources—unread notifications, PRs awaiting your review, and your own open PRs. It enriches them with details, and ranks them using configurable heuristics.
 
 ![Demo](.github/demo.png)
 
@@ -53,7 +53,7 @@ triage --since 1y      # Last year
 # Filter by priority
 triage -p urgent
 triage -p important
-triage -p low-hanging
+triage -p quick-win
 triage -p fyi
 
 # Filter by notification reason
@@ -128,49 +128,19 @@ Notifications are scored based on multiple factors to determine priority.
 | Age bonus | +2/day | Older unread items (capped at +30) |
 | Needs update | +20 | Your PR has "changes requested" |
 
-### Priority Levels
-
-| Level | Score Range | Display |
-|-------|-------------|---------|
-| URGENT | 90+ | Red |
-| HIGH | 60-89 | Yellow |
-| MEDIUM | 30-59 | Cyan |
-| LOW | 0-29 | White |
-
-### Categories
+### Priority
 
 - **Urgent**: Review requests and direct mentions
 - **Important**: Your authored PRs needing attention, assignments
 - **Quick Win**: Small PRs, items labeled "good first issue", "help wanted", etc.
 - **FYI**: Subscribed notifications, general activity
 
-### Low-Hanging Fruit Detection
+### Quick Win Detection
 
 Items are marked as "Quick Win" if they match any of these criteria:
 
 - Labels containing: `good first issue`, `help wanted`, `easy`, `beginner`, `trivial`, `documentation`, `docs`, `typo`
 - Pull requests with ≤3 files changed AND ≤50 lines changed
-
-## Output Example
-
-```
-Priority  Category      Repository                      Title                                               Reason              Age
-------------------------------------------------------------------------------------------------------------------------
-URGENT    Urgent        anchore/syft                    Fix SBOM parsing for container images               review_requested    3d
-URGENT    Urgent        my-org/api                      Production crash on auth endpoint                   mention             1w
-HIGH      Important     golang/go                       Add new feature for error handling                  author              2d
-HIGH      Quick Win     some/repo                       Fix typo in README                                  subscribed          1d
-MEDIUM    FYI           other/repo                      Discussion on API design                            comment             5d
-
-2 urgent items need your attention.
-```
-
-## Tips
-
-1. **First run is slow** - Fetching details for many notifications takes time. Subsequent runs use the cache.
-2. **Use quick mode for triage** - `triage list -q` skips detail fetching for a fast overview.
-3. **Focus on urgent items** - `triage list -c urgent -l 10` shows your top 10 urgent items.
-4. **Adjust concurrency** - If you hit rate limits, reduce workers: `triage list -w 5`
 
 ## Configuration File
 

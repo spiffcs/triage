@@ -319,17 +319,3 @@ func (h *Heuristics) determineAuthoredPRAction(d *github.ItemDetails) string {
 
 	return "Check PR status"
 }
-
-// DetermineCategory converts a score to a category level (not displayed in table)
-func DetermineCategory(score int) Category {
-	switch {
-	case score >= 90:
-		return CategoryUrgent
-	case score >= 60:
-		return CategoryHigh
-	case score >= 30:
-		return CategoryMedium
-	default:
-		return CategoryLow
-	}
-}

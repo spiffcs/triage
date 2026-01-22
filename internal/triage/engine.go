@@ -26,13 +26,11 @@ func (e *Engine) Prioritize(notifications []github.Notification) []PrioritizedIt
 		score := e.heuristics.Score(&n)
 		priority := e.heuristics.DeterminePriority(&n)
 		action := e.heuristics.DetermineAction(&n)
-		category := DetermineCategory(score)
 
 		items = append(items, PrioritizedItem{
 			Notification: n,
 			Score:        score,
 			Priority:     priority,
-			Category:     category,
 			ActionNeeded: action,
 		})
 	}
@@ -53,17 +51,6 @@ func (e *Engine) Prioritize(notifications []github.Notification) []PrioritizedIt
 	})
 
 	return items
-}
-
-// FilterByCategory filters items to a specific category
-func FilterByCategory(items []PrioritizedItem, category Category) []PrioritizedItem {
-	filtered := make([]PrioritizedItem, 0)
-	for _, item := range items {
-		if item.Category == category {
-			filtered = append(filtered, item)
-		}
-	}
-	return filtered
 }
 
 // FilterByPriority filters items by a specific priority level

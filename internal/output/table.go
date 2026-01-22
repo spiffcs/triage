@@ -408,7 +408,6 @@ func (f *TableFormatter) FormatVerbose(items []triage.PrioritizedItem, w io.Writ
 		fmt.Fprintf(w, "  Repository: %s\n", n.Repository.FullName)
 		fmt.Fprintf(w, "  Type: %s | Reason: %s | Age: %s\n",
 			n.Subject.Type, n.Reason, formatAge(time.Since(n.UpdatedAt)))
-		fmt.Fprintf(w, "  Category: %s\n", item.Category.Display())
 		fmt.Fprintf(w, "  Action: %s\n", item.ActionNeeded)
 
 		if n.Details != nil {
