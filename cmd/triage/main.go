@@ -23,7 +23,6 @@ var (
 	repoFlag      string
 	typeFlag      string
 	verboseFlag   bool
-	quickFlag     bool
 	workersFlag   int
 	includeMerged bool
 	includeClosed bool
@@ -41,6 +40,7 @@ var rootCmd = &cobra.Command{
 	Short: "GitHub notification triage manager",
 	Long: `A CLI tool that analyzes your GitHub notifications to help you
 triage your work. It uses heuristics to score notifications.`,
+	RunE: runList,
 }
 
 var listCmd = &cobra.Command{
@@ -60,7 +60,7 @@ var configSetCmd = &cobra.Command{
 	Use:   "set <key> <value>",
 	Short: "Set a configuration value",
 	Long: `Set a configuration value. Available keys:
-  format      - Default output format (table, json, markdown)`,
+  format      - Default output format (table, json)`,
 	Args: cobra.ExactArgs(2),
 	RunE: runConfigSet,
 }
@@ -102,22 +102,23 @@ var cacheStatsCmd = &cobra.Command{
 }
 
 func init() {
-	// List command flags
-	listCmd.Flags().StringVarP(&formatFlag, "format", "f", "", "Output format (table, json, markdown)")
-	listCmd.Flags().IntVarP(&limitFlag, "limit", "l", 0, "Limit number of results")
-	listCmd.Flags().StringVarP(&sinceFlag, "since", "s", "6mo", "Show notifications since (e.g., 1w, 30d, 6mo)")
-	listCmd.Flags().StringVarP(&categoryFlag, "priority", "p", "", "Filter by priority (urgent, important, quick-win, fyi)")
-	listCmd.Flags().StringVarP(&reasonFlag, "reason", "r", "", "Filter by reason (mention, review_requested, author, etc.)")
-	listCmd.Flags().StringVar(&repoFlag, "repo", "", "Filter to specific repo (owner/repo)")
-	listCmd.Flags().BoolVarP(&verboseFlag, "verbose", "v", false, "Show detailed output")
-	listCmd.Flags().BoolVarP(&quickFlag, "quick", "q", false, "Skip fetching details (faster but less accurate prioritization)")
-	listCmd.Flags().IntVarP(&workersFlag, "workers", "w", 20, "Number of concurrent workers for fetching details")
-	listCmd.Flags().BoolVar(&includeMerged, "include-merged", false, "Include notifications for merged PRs")
-	listCmd.Flags().BoolVar(&includeClosed, "include-closed", false, "Include notifications for closed issues/PRs")
-	listCmd.Flags().StringVarP(&typeFlag, "type", "t", "", "Filter by type (pr, issue)")
+	// List command flags (on both root and list commands so `triage` and `triage list` work identically)
+	for _, cmd := range []*cobra.Command{rootCmd, listCmd} {
+		cmd.Flags().StringVarP(&formatFlag, "format", "f", "", "Output format (table, json)")
+		cmd.Flags().IntVarP(&limitFlag, "limit", "l", 0, "Limit number of results")
+		cmd.Flags().StringVarP(&sinceFlag, "since", "s", "1w", "Show notifications since (e.g., 1w, 30d, 6mo)")
+		cmd.Flags().StringVarP(&categoryFlag, "priority", "p", "", "Filter by priority (urgent, important, quick-win, fyi)")
+		cmd.Flags().StringVarP(&reasonFlag, "reason", "r", "", "Filter by reason (mention, review_requested, author, etc.)")
+		cmd.Flags().StringVar(&repoFlag, "repo", "", "Filter to specific repo (owner/repo)")
+		cmd.Flags().BoolVarP(&verboseFlag, "verbose", "v", false, "Show detailed output")
+		cmd.Flags().IntVarP(&workersFlag, "workers", "w", 20, "Number of concurrent workers for fetching details")
+		cmd.Flags().BoolVar(&includeMerged, "include-merged", false, "Include notifications for merged PRs")
+		cmd.Flags().BoolVar(&includeClosed, "include-closed", false, "Include notifications for closed issues/PRs")
+		cmd.Flags().StringVarP(&typeFlag, "type", "t", "", "Filter by type (pr, issue)")
+	}
 
 	// Summary command flags
-	summaryCmd.Flags().StringVarP(&sinceFlag, "since", "s", "6mo", "Show notifications since")
+	summaryCmd.Flags().StringVarP(&sinceFlag, "since", "s", "1w", "Show notifications since")
 	summaryCmd.Flags().StringVarP(&formatFlag, "format", "f", "", "Output format")
 
 	// Config subcommands
@@ -173,9 +174,9 @@ func runList(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to fetch notifications: %w", err)
 	}
 
-	// Enrich with details (unless quick mode)
-	if !quickFlag && len(notifications) > 0 {
-		fmt.Fprintf(os.Stderr, "Found %d notifications. Fetching details (use -q for quick mode)...\n", len(notifications))
+	// Enrich with details
+	if len(notifications) > 0 {
+		fmt.Fprintf(os.Stderr, "Found %d notifications. Fetching details...\n", len(notifications))
 
 		// Progress callback
 		lastPercent := -1
@@ -191,8 +192,6 @@ func runList(cmd *cobra.Command, args []string) error {
 			fmt.Fprintf(os.Stderr, "\nWarning: some notifications could not be enriched: %v\n", err)
 		}
 		fmt.Fprintf(os.Stderr, "\rFetching details: %d/%d (100%%)... done\n", len(notifications), len(notifications))
-	} else if quickFlag && len(notifications) > 0 {
-		fmt.Fprintf(os.Stderr, "Found %d notifications. Skipping detail fetch (quick mode)...\n", len(notifications))
 	}
 
 	// Create cache for PR lists
@@ -206,12 +205,10 @@ func runList(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to fetch review-requested PRs: %v\n", err)
 	} else if len(reviewPRs) > 0 {
-		// Enrich review-requested PRs with additions/deletions (always, since search API doesn't return them)
-		if !quickFlag {
-			for i := range reviewPRs {
-				if err := ghClient.EnrichAuthoredPR(&reviewPRs[i]); err != nil {
-					continue
-				}
+		// Enrich review-requested PRs with additions/deletions (search API doesn't return them)
+		for i := range reviewPRs {
+			if err := ghClient.EnrichAuthoredPR(&reviewPRs[i]); err != nil {
+				continue
 			}
 		}
 		var added int
@@ -230,12 +227,10 @@ func runList(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to fetch authored PRs: %v\n", err)
 	} else if len(authoredPRs) > 0 {
-		// Enrich authored PRs with additions/deletions (always, since search API doesn't return them)
-		if !quickFlag {
-			for i := range authoredPRs {
-				if err := ghClient.EnrichAuthoredPR(&authoredPRs[i]); err != nil {
-					continue
-				}
+		// Enrich authored PRs with additions/deletions (search API doesn't return them)
+		for i := range authoredPRs {
+			if err := ghClient.EnrichAuthoredPR(&authoredPRs[i]); err != nil {
+				continue
 			}
 		}
 		var added int
@@ -322,8 +317,8 @@ func runConfigSet(cmd *cobra.Command, args []string) error {
 	case "token":
 		return fmt.Errorf("tokens cannot be stored in config files for security reasons. Set the GITHUB_TOKEN environment variable instead")
 	case "format":
-		if value != "table" && value != "json" && value != "markdown" {
-			return fmt.Errorf("invalid format: %s (must be table, json, or markdown)", value)
+		if value != "table" && value != "json" {
+			return fmt.Errorf("invalid format: %s (must be table or json)", value)
 		}
 		if err := cfg.SetDefaultFormat(value); err != nil {
 			return err

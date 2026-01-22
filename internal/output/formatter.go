@@ -10,9 +10,8 @@ import (
 type Format string
 
 const (
-	FormatTable    Format = "table"
-	FormatJSON     Format = "json"
-	FormatMarkdown Format = "markdown"
+	FormatTable Format = "table"
+	FormatJSON  Format = "json"
 )
 
 // Formatter defines the interface for output formatters
@@ -26,8 +25,6 @@ func NewFormatter(format Format) Formatter {
 	switch format {
 	case FormatJSON:
 		return &JSONFormatter{}
-	case FormatMarkdown:
-		return &MarkdownFormatter{}
 	default:
 		return &TableFormatter{}
 	}

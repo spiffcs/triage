@@ -22,7 +22,7 @@ go build -o triage ./cmd/triage
 
 ### Github token
 ```
-GITHUB_TOKEN=$(gh auth token) triage list
+GITHUB_TOKEN=$(gh auth token) triage
 ```
 
 ## Usage
@@ -30,17 +30,17 @@ GITHUB_TOKEN=$(gh auth token) triage list
 ### List Notifications
 
 ```bash
-# List prioritized notifications (default: last 6 months)
-triage list
+# List prioritized notifications (default: last 1 week)
+triage
 
-# Limit time range (default: 6mo)
-triage list --since 30m     # Last 30 minutes
-triage list --since 2h      # Last 2 hours
-triage list --since 1d      # Last day
-triage list --since 1w      # Last week
-triage list --since 30d     # Last 30 days
-triage list --since 6mo     # Last 6 months
-triage list --since 1y      # Last year
+# Limit time range (default: 1w)
+triage --since 30m     # Last 30 minutes
+triage --since 2h      # Last 2 hours
+triage --since 1d      # Last day
+triage --since 1w      # Last week
+triage --since 30d     # Last 30 days
+triage --since 6mo     # Last 6 months
+triage --since 1y      # Last year
 
 # Supported time units:
 #   Minutes: m, min, mins
@@ -50,55 +50,40 @@ triage list --since 1y      # Last year
 #   Months:  mo, month, months (30 days)
 #   Years:   y, yr, yrs, year, years (365 days)
 
-# Quick mode - skip fetching details (faster but less accurate)
-triage list -q
-
 # Filter by category
-triage list -c urgent
-triage list -c important
-triage list -c low-hanging
-triage list -c fyi
+triage -c urgent
+triage -c important
+triage -c low-hanging
+triage -c fyi
 
 # Filter by notification reason
-triage list -r mention
-triage list -r review_requested
-triage list -r author
+triage -r mention
+triage -r review_requested
+triage -r author
 
 # Filter by type
-triage list -t pr          # Show only pull requests
-triage list -t issue       # Show only issues
+triage -t pr          # Show only pull requests
+triage -t issue       # Show only issues
 
 # Filter by repository
-triage list --repo owner/repo
+triage --repo owner/repo
 
 # Include merged/closed items (hidden by default)
-triage list --include-merged
-triage list --include-closed
+triage --include-merged
+triage --include-closed
 
 # Output formats
-triage list -f table      # Default
-triage list -f json       # JSON for scripting
-triage list -f markdown   # Markdown for notes
+triage -f table      # Default
+triage -f json       # JSON for scripting
 
 # Limit results
-triage list -l 20         # Top 20 only
+triage -l 20         # Top 20 only
 
-# With AI analysis
-triage list -a            # Adds AI insights
-triage list -a -v         # Verbose with full analysis
 ```
-
 ### Summary
 
 ```bash
 triage summary
-```
-
-### AI Analysis
-
-```bash
-# Analyze top 5 notifications with Claude
-triage analyze
 ```
 
 ### Cache Management
