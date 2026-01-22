@@ -50,11 +50,11 @@ triage --since 1y      # Last year
 #   Months:  mo, month, months (30 days)
 #   Years:   y, yr, yrs, year, years (365 days)
 
-# Filter by category
-triage -c urgent
-triage -c important
-triage -c low-hanging
-triage -c fyi
+# Filter by priority
+triage -p urgent
+triage -p important
+triage -p low-hanging
+triage -p fyi
 
 # Filter by notification reason
 triage -r mention
@@ -103,8 +103,6 @@ triage cache clear    # Clear all caches
 triage config show                    # Show current config
 triage config set format json         # Set default output format
 ```
-
-**Note:** GitHub tokens must be set via the `GITHUB_TOKEN` environment variable (not stored in config files) following [12-factor app](https://12factor.net/config) security best practices.
 
 ## Priority Scoring
 
