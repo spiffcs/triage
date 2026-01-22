@@ -52,7 +52,7 @@ The tool uses a two-tier caching strategy to balance freshness with API efficien
 | PR Lists | 5 minutes | Review-requested and authored PR search results |
 | Item Details | 24 hours | Issue/PR metadata (labels, size, review state, etc.) |
 
-Cache location: `~/.cache/priority/details/`
+Cache location: `~/.cache/triage/details/`
 
 The shorter TTL for PR lists ensures you see new review requests quickly, while the longer TTL for details reduces API calls for metadata that changes less frequently.
 
@@ -78,8 +78,8 @@ For each item, the tool fetches additional details:
 ## Project Structure
 
 ```
-priority/
-├── cmd/priority/
+triage/
+├── cmd/triage/
 │   └── main.go              # CLI entry point, command definitions
 ├── internal/
 │   ├── github/
@@ -88,7 +88,7 @@ priority/
 │   │   ├── details.go       # Enrichment logic, concurrent workers
 │   │   ├── notifications.go # Notification fetching
 │   │   └── types.go         # Data structures
-│   ├── priority/
+│   ├── triage/
 │   │   ├── engine.go        # Prioritization engine, filters
 │   │   ├── heuristics.go    # Scoring logic
 │   │   ├── llm.go           # Claude AI integration

@@ -1,4 +1,4 @@
-# VHS Demo for Priority CLI
+# VHS Demo for Triage CLI
 # Run with: vhs .github/demo.tape
 
 Output .github/demo.gif
@@ -13,7 +13,7 @@ Set CursorBlink false
 Set LoopOffset 50%
 
 # Start with a clean terminal
-Type "# Priority - GitHub Notification Prioritizer"
+Type "# Triage - GitHub Notification Prioritizer"
 Enter
 Sleep 500ms
 
@@ -22,7 +22,7 @@ Enter
 Sleep 1s
 
 # Run the main list command with GitHub token
-Type "GITHUB_TOKEN=$(gh auth token) priority list --since 1w"
+Type "GITHUB_TOKEN=$(gh auth token) triage list --since 1w"
 Enter
 Sleep 10s
 
@@ -34,7 +34,7 @@ Type "# Filter to just urgent items"
 Enter
 Sleep 500ms
 
-Type "GITHUB_TOKEN=$(gh auth token) priority list -c urgent --since 1w"
+Type "GITHUB_TOKEN=$(gh auth token) triage list -c urgent --since 1w"
 Enter
 Sleep 10s
 
@@ -43,7 +43,7 @@ Type "# What are our quick wins?"
 Enter
 Sleep 500ms
 
-Type "GITHUB_TOKEN=$(gh auth token) priority list -c low-hanging --since 1w"
+Type "GITHUB_TOKEN=$(gh auth token) triage list -c low-hanging --since 1w"
 Enter
 Sleep 10s
 
@@ -52,7 +52,7 @@ Type "# Get a summary overview"
 Enter
 Sleep 500ms
 
-Type "GITHUB_TOKEN=$(gh auth token) priority summary --since 1w"
+Type "GITHUB_TOKEN=$(gh auth token) triage summary --since 1w"
 Enter
 Sleep 10s
 

@@ -31,9 +31,9 @@ type WeightOverrides struct {
 func DefaultConfigDir() string {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return ".priority"
+		return ".triage"
 	}
-	return filepath.Join(home, ".config", "priority")
+	return filepath.Join(home, ".config", "triage")
 }
 
 // ConfigPath returns the path to the config file

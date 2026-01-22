@@ -3,7 +3,7 @@ package output
 import (
 	"io"
 
-	"github.com/hal/priority/internal/priority"
+	"github.com/hal/triage/internal/triage"
 )
 
 // Format represents the output format
@@ -17,8 +17,8 @@ const (
 
 // Formatter defines the interface for output formatters
 type Formatter interface {
-	Format(items []priority.PrioritizedItem, w io.Writer) error
-	FormatSummary(summary priority.Summary, w io.Writer) error
+	Format(items []triage.PrioritizedItem, w io.Writer) error
+	FormatSummary(summary triage.Summary, w io.Writer) error
 }
 
 // NewFormatter creates a formatter for the specified format

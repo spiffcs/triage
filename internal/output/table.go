@@ -10,8 +10,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/fatih/color"
-	"github.com/hal/priority/internal/github"
-	"github.com/hal/priority/internal/priority"
+	"github.com/hal/triage/internal/github"
+	"github.com/hal/triage/internal/triage"
 	"github.com/mattn/go-runewidth"
 	"golang.org/x/term"
 )
@@ -107,7 +107,7 @@ func padRight(s string, visibleWidth, targetWidth int) string {
 }
 
 // Format outputs prioritized items as a table
-func (f *TableFormatter) Format(items []priority.PrioritizedItem, w io.Writer) error {
+func (f *TableFormatter) Format(items []triage.PrioritizedItem, w io.Writer) error {
 	if len(items) == 0 {
 		fmt.Fprintln(w, "No notifications found.")
 		return nil
@@ -148,7 +148,7 @@ func (f *TableFormatter) Format(items []priority.PrioritizedItem, w io.Writer) e
 		title := n.Subject.Title
 
 		// Add quick win indicator
-		if item.Priority == priority.PriorityQuickWin {
+		if item.Priority == triage.PriorityQuickWin {
 			title = "⚡ " + title
 		}
 
@@ -231,7 +231,7 @@ type statusResult struct {
 
 // formatStatus builds the status column showing review state, PR size, or activity
 // Returns the formatted string and its visible width (excluding ANSI codes)
-func formatStatus(n github.Notification, _ priority.PrioritizedItem) statusResult {
+func formatStatus(n github.Notification, _ triage.PrioritizedItem) statusResult {
 	if n.Details == nil {
 		reason := string(n.Reason)
 		return statusResult{reason, len(reason)}
@@ -313,16 +313,16 @@ func formatPRSize(additions, deletions int) (colored string, plain string) {
 }
 
 // printFooterSummary prints an enhanced summary footer
-func printFooterSummary(items []priority.PrioritizedItem, w io.Writer) {
+func printFooterSummary(items []triage.PrioritizedItem, w io.Writer) {
 	var urgentCount, quickWinCount, reviewCount, hotCount int
 
 	for _, item := range items {
 		n := item.Notification
 
-		if item.Priority == priority.PriorityUrgent {
+		if item.Priority == triage.PriorityUrgent {
 			urgentCount++
 		}
-		if item.Priority == priority.PriorityQuickWin {
+		if item.Priority == triage.PriorityQuickWin {
 			quickWinCount++
 		}
 		if n.Reason == "review_requested" {
@@ -360,15 +360,15 @@ func printFooterSummary(items []priority.PrioritizedItem, w io.Writer) {
 }
 
 // FormatSummary outputs a summary
-func (f *TableFormatter) FormatSummary(summary priority.Summary, w io.Writer) error {
+func (f *TableFormatter) FormatSummary(summary triage.Summary, w io.Writer) error {
 	fmt.Fprintf(w, "Total notifications: %d\n\n", summary.Total)
 
 	fmt.Fprintln(w, "By Priority:")
-	priorities := []priority.PriorityLevel{
-		priority.PriorityUrgent,
-		priority.PriorityImportant,
-		priority.PriorityQuickWin,
-		priority.PriorityFYI,
+	priorities := []triage.PriorityLevel{
+		triage.PriorityUrgent,
+		triage.PriorityImportant,
+		triage.PriorityQuickWin,
+		triage.PriorityFYI,
 	}
 	for _, p := range priorities {
 		count := summary.ByPriority[p]
@@ -378,7 +378,7 @@ func (f *TableFormatter) FormatSummary(summary priority.Summary, w io.Writer) er
 	}
 
 	fmt.Fprintln(w, "\nBy Category:")
-	for cat := priority.CategoryUrgent; cat >= priority.CategoryLow; cat-- {
+	for cat := triage.CategoryUrgent; cat >= triage.CategoryLow; cat-- {
 		count := summary.ByCategory[cat]
 		if count > 0 {
 			fmt.Fprintf(w, "  %s: %d\n", cat.Display(), count)
@@ -412,7 +412,7 @@ func (f *TableFormatter) FormatSummary(summary priority.Summary, w io.Writer) er
 }
 
 // FormatVerbose outputs items with detailed information
-func (f *TableFormatter) FormatVerbose(items []priority.PrioritizedItem, w io.Writer) error {
+func (f *TableFormatter) FormatVerbose(items []triage.PrioritizedItem, w io.Writer) error {
 	for i, item := range items {
 		n := item.Notification
 
@@ -441,13 +441,13 @@ func (f *TableFormatter) FormatVerbose(items []priority.PrioritizedItem, w io.Wr
 	return nil
 }
 
-func colorPriority(p priority.PriorityLevel) string {
+func colorPriority(p triage.PriorityLevel) string {
 	switch p {
-	case priority.PriorityUrgent:
+	case triage.PriorityUrgent:
 		return color.RedString("Urgent")
-	case priority.PriorityImportant:
+	case triage.PriorityImportant:
 		return color.YellowString("Important")
-	case priority.PriorityQuickWin:
+	case triage.PriorityQuickWin:
 		return color.GreenString("Quick Win")
 	default:
 		return color.WhiteString("FYI")

@@ -1,9 +1,9 @@
-package priority
+package triage
 
 import (
 	"sort"
 
-	"github.com/hal/priority/internal/github"
+	"github.com/hal/triage/internal/github"
 )
 
 // Engine orchestrates the prioritization process

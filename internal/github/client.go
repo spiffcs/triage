@@ -21,7 +21,7 @@ func NewClient(token string) (*Client, error) {
 		token = os.Getenv("GITHUB_TOKEN")
 	}
 	if token == "" {
-		return nil, fmt.Errorf("GitHub token not provided. Set GITHUB_TOKEN env var or use 'priority config set token <TOKEN>'")
+		return nil, fmt.Errorf("GitHub token not provided. Set the GITHUB_TOKEN environment variable")
 	}
 
 	ctx := context.Background()

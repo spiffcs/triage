@@ -6,14 +6,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hal/priority/internal/priority"
+	"github.com/hal/triage/internal/triage"
 )
 
 // MarkdownFormatter formats output as Markdown
 type MarkdownFormatter struct{}
 
 // Format outputs prioritized items as Markdown
-func (f *MarkdownFormatter) Format(items []priority.PrioritizedItem, w io.Writer) error {
+func (f *MarkdownFormatter) Format(items []triage.PrioritizedItem, w io.Writer) error {
 	if len(items) == 0 {
 		fmt.Fprintln(w, "No notifications found.")
 		return nil
@@ -23,11 +23,11 @@ func (f *MarkdownFormatter) Format(items []priority.PrioritizedItem, w io.Writer
 	fmt.Fprintf(w, "\n*Generated: %s*\n\n", time.Now().Format("2006-01-02 15:04"))
 
 	// Group by priority
-	priorities := map[priority.PriorityLevel][]priority.PrioritizedItem{
-		priority.PriorityUrgent:    {},
-		priority.PriorityImportant: {},
-		priority.PriorityQuickWin:  {},
-		priority.PriorityFYI:       {},
+	priorities := map[triage.PriorityLevel][]triage.PrioritizedItem{
+		triage.PriorityUrgent:    {},
+		triage.PriorityImportant: {},
+		triage.PriorityQuickWin:  {},
+		triage.PriorityFYI:       {},
 	}
 
 	for _, item := range items {
@@ -35,11 +35,11 @@ func (f *MarkdownFormatter) Format(items []priority.PrioritizedItem, w io.Writer
 	}
 
 	// Output each priority
-	priorityOrder := []priority.PriorityLevel{
-		priority.PriorityUrgent,
-		priority.PriorityImportant,
-		priority.PriorityQuickWin,
-		priority.PriorityFYI,
+	priorityOrder := []triage.PriorityLevel{
+		triage.PriorityUrgent,
+		triage.PriorityImportant,
+		triage.PriorityQuickWin,
+		triage.PriorityFYI,
 	}
 
 	for _, p := range priorityOrder {
@@ -58,7 +58,7 @@ func (f *MarkdownFormatter) Format(items []priority.PrioritizedItem, w io.Writer
 	return nil
 }
 
-func (f *MarkdownFormatter) formatItem(item priority.PrioritizedItem, w io.Writer) {
+func (f *MarkdownFormatter) formatItem(item triage.PrioritizedItem, w io.Writer) {
 	n := item.Notification
 	d := n.Details
 
@@ -95,18 +95,18 @@ func (f *MarkdownFormatter) formatItem(item priority.PrioritizedItem, w io.Write
 }
 
 // FormatSummary outputs a summary as Markdown
-func (f *MarkdownFormatter) FormatSummary(summary priority.Summary, w io.Writer) error {
+func (f *MarkdownFormatter) FormatSummary(summary triage.Summary, w io.Writer) error {
 	fmt.Fprintln(w, "# Notification Summary")
 	fmt.Fprintf(w, "\n*Total: %d notifications*\n\n", summary.Total)
 
 	fmt.Fprintln(w, "## By Priority")
 	fmt.Fprintln(w, "| Priority | Count |")
 	fmt.Fprintln(w, "|----------|-------|")
-	for _, p := range []priority.PriorityLevel{
-		priority.PriorityUrgent,
-		priority.PriorityImportant,
-		priority.PriorityQuickWin,
-		priority.PriorityFYI,
+	for _, p := range []triage.PriorityLevel{
+		triage.PriorityUrgent,
+		triage.PriorityImportant,
+		triage.PriorityQuickWin,
+		triage.PriorityFYI,
 	} {
 		if count := summary.ByPriority[p]; count > 0 {
 			fmt.Fprintf(w, "| %s %s | %d |\n", getPriorityEmoji(p), p.Display(), count)
@@ -116,7 +116,7 @@ func (f *MarkdownFormatter) FormatSummary(summary priority.Summary, w io.Writer)
 	fmt.Fprintln(w, "\n## By Category")
 	fmt.Fprintln(w, "| Category | Count |")
 	fmt.Fprintln(w, "|----------|-------|")
-	for cat := priority.CategoryUrgent; cat >= priority.CategoryLow; cat-- {
+	for cat := triage.CategoryUrgent; cat >= triage.CategoryLow; cat-- {
 		if count := summary.ByCategory[cat]; count > 0 {
 			fmt.Fprintf(w, "| %s | %d |\n", cat.Display(), count)
 		}
@@ -148,15 +148,15 @@ func (f *MarkdownFormatter) FormatSummary(summary priority.Summary, w io.Writer)
 	return nil
 }
 
-func getPriorityEmoji(p priority.PriorityLevel) string {
+func getPriorityEmoji(p triage.PriorityLevel) string {
 	switch p {
-	case priority.PriorityUrgent:
+	case triage.PriorityUrgent:
 		return "🔴"
-	case priority.PriorityImportant:
+	case triage.PriorityImportant:
 		return "🟡"
-	case priority.PriorityQuickWin:
+	case triage.PriorityQuickWin:
 		return "🟢"
-	case priority.PriorityFYI:
+	case triage.PriorityFYI:
 		return "ℹ️"
 	default:
 		return "📋"

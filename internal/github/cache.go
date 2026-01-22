@@ -27,7 +27,7 @@ func NewCache() (*Cache, error) {
 		return nil, err
 	}
 
-	cacheDir := filepath.Join(home, ".cache", "priority", "details")
+	cacheDir := filepath.Join(home, ".cache", "triage", "details")
 	if err := os.MkdirAll(cacheDir, 0700); err != nil {
 		return nil, fmt.Errorf("failed to create cache directory: %w", err)
 	}

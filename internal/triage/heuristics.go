@@ -1,10 +1,10 @@
-package priority
+package triage
 
 import (
 	"strings"
 	"time"
 
-	"github.com/hal/priority/internal/github"
+	"github.com/hal/triage/internal/github"
 )
 
 // ScoreWeights defines the base scores for different notification reasons

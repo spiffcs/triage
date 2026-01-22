@@ -1,7 +1,7 @@
-package priority
+package triage
 
 import (
-	"github.com/hal/priority/internal/github"
+	"github.com/hal/triage/internal/github"
 )
 
 // Category represents the severity/importance level (not displayed in table)

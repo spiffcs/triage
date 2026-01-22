@@ -1,28 +1,28 @@
-# priority
+# triage
 
-A CLI tool that analyzes your GitHub notifications to help you prioritize work. It aggregates data from multiple sources—unread notifications, PRs awaiting your review, and your own open PRs—enriches them with details, and ranks them using heuristics. Optionally uses Claude AI for deeper analysis.
+A CLI tool that analyzes your GitHub notifications to help you triage work. It aggregates data from multiple sources—unread notifications, PRs awaiting your review, and your own open PRs—enriches them with details, and ranks them using configurable heuristics.
 
 ![Demo](.github/demo.png)
 
 ## Installation
 
 ```bash
-go install github.com/spiffcs/priority/cmd/priority@latest
+go install github.com/hal/triage/cmd/triage@latest
 ```
 
 Or build from source:
 
 ```bash
-git clone https://github.com/spiffcs/priority.git
-cd priority
-go build -o priority ./cmd/priority
+git clone https://github.com/hal/triage.git
+cd triage
+go build -o triage ./cmd/triage
 ```
 
 ## Setup
 
 ### Github token
 ```
-GITHUB_TOKEN=(gh auth token) priority list
+GITHUB_TOKEN=$(gh auth token) triage list
 ```
 
 ## Usage
@@ -31,16 +31,16 @@ GITHUB_TOKEN=(gh auth token) priority list
 
 ```bash
 # List prioritized notifications (default: last 6 months)
-priority list
+triage list
 
 # Limit time range (default: 6mo)
-priority list --since 30m     # Last 30 minutes
-priority list --since 2h      # Last 2 hours
-priority list --since 1d      # Last day
-priority list --since 1w      # Last week
-priority list --since 30d     # Last 30 days
-priority list --since 6mo     # Last 6 months
-priority list --since 1y      # Last year
+triage list --since 30m     # Last 30 minutes
+triage list --since 2h      # Last 2 hours
+triage list --since 1d      # Last day
+triage list --since 1w      # Last week
+triage list --since 30d     # Last 30 days
+triage list --since 6mo     # Last 6 months
+triage list --since 1y      # Last year
 
 # Supported time units:
 #   Minutes: m, min, mins
@@ -51,54 +51,54 @@ priority list --since 1y      # Last year
 #   Years:   y, yr, yrs, year, years (365 days)
 
 # Quick mode - skip fetching details (faster but less accurate)
-priority list -q
+triage list -q
 
 # Filter by category
-priority list -c urgent
-priority list -c important
-priority list -c low-hanging
-priority list -c fyi
+triage list -c urgent
+triage list -c important
+triage list -c low-hanging
+triage list -c fyi
 
 # Filter by notification reason
-priority list -r mention
-priority list -r review_requested
-priority list -r author
+triage list -r mention
+triage list -r review_requested
+triage list -r author
 
 # Filter by type
-priority list -t pr          # Show only pull requests
-priority list -t issue       # Show only issues
+triage list -t pr          # Show only pull requests
+triage list -t issue       # Show only issues
 
 # Filter by repository
-priority list --repo owner/repo
+triage list --repo owner/repo
 
 # Include merged/closed items (hidden by default)
-priority list --include-merged
-priority list --include-closed
+triage list --include-merged
+triage list --include-closed
 
 # Output formats
-priority list -f table      # Default
-priority list -f json       # JSON for scripting
-priority list -f markdown   # Markdown for notes
+triage list -f table      # Default
+triage list -f json       # JSON for scripting
+triage list -f markdown   # Markdown for notes
 
 # Limit results
-priority list -l 20         # Top 20 only
+triage list -l 20         # Top 20 only
 
 # With AI analysis
-priority list -a            # Adds AI insights
-priority list -a -v         # Verbose with full analysis
+triage list -a            # Adds AI insights
+triage list -a -v         # Verbose with full analysis
 ```
 
 ### Summary
 
 ```bash
-priority summary
+triage summary
 ```
 
 ### AI Analysis
 
 ```bash
 # Analyze top 5 notifications with Claude
-priority analyze
+triage analyze
 ```
 
 ### Cache Management
@@ -108,15 +108,15 @@ The tool uses a two-tier caching strategy:
 - **PR lists** (review-requested and authored PRs): cached for 5 minutes
 
 ```bash
-priority cache stats    # Show cache statistics
-priority cache clear    # Clear all caches
+triage cache stats    # Show cache statistics
+triage cache clear    # Clear all caches
 ```
 
 ### Configuration
 
 ```bash
-priority config show                    # Show current config
-priority config set format json         # Set default output format
+triage config show                    # Show current config
+triage config set format json         # Set default output format
 ```
 
 **Note:** GitHub tokens must be set via the `GITHUB_TOKEN` environment variable (not stored in config files) following [12-factor app](https://12factor.net/config) security best practices.
@@ -190,13 +190,13 @@ MEDIUM    FYI           other/repo                      Discussion on API design
 ## Tips
 
 1. **First run is slow** - Fetching details for many notifications takes time. Subsequent runs use the cache.
-2. **Use quick mode for triage** - `priority list -q` skips detail fetching for a fast overview.
-3. **Focus on urgent items** - `priority list -c urgent -l 10` shows your top 10 urgent items.
-4. **Adjust concurrency** - If you hit rate limits, reduce workers: `priority list -w 5`
+2. **Use quick mode for triage** - `triage list -q` skips detail fetching for a fast overview.
+3. **Focus on urgent items** - `triage list -c urgent -l 10` shows your top 10 urgent items.
+4. **Adjust concurrency** - If you hit rate limits, reduce workers: `triage list -w 5`
 
 ## Configuration File
 
-Config is stored at `~/.config/priority/config.yaml`:
+Config is stored at `~/.config/triage/config.yaml`:
 
 ```yaml
 default_format: table
@@ -206,7 +206,7 @@ exclude_repos:
 
 ## Cache Location
 
-Cached data is stored at `~/.cache/priority/details/`.
+Cached data is stored at `~/.cache/triage/details/`.
 
 ## Architecture
 

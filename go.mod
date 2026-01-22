@@ -1,4 +1,4 @@
-module github.com/hal/priority
+module github.com/hal/triage
 
 go 1.25.1
 

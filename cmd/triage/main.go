@@ -7,10 +7,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/hal/priority/config"
-	"github.com/hal/priority/internal/github"
-	"github.com/hal/priority/internal/output"
-	"github.com/hal/priority/internal/priority"
+	"github.com/hal/triage/config"
+	"github.com/hal/triage/internal/github"
+	"github.com/hal/triage/internal/output"
+	"github.com/hal/triage/internal/triage"
 )
 
 var (
@@ -37,10 +37,10 @@ func main() {
 }
 
 var rootCmd = &cobra.Command{
-	Use:   "priority",
-	Short: "GitHub notification priority manager",
+	Use:   "triage",
+	Short: "GitHub notification triage manager",
 	Long: `A CLI tool that analyzes your GitHub notifications to help you
-prioritize your work. It uses heuristics to score notifications.`,
+triage your work. It uses heuristics to score notifications.`,
 }
 
 var listCmd = &cobra.Command{
@@ -255,23 +255,23 @@ func runList(cmd *cobra.Command, args []string) error {
 	}
 
 	// Prioritize
-	engine := priority.NewEngine(currentUser)
+	engine := triage.NewEngine(currentUser)
 	items := engine.Prioritize(notifications)
 
 	// Apply filters
 	if !includeMerged {
-		items = priority.FilterOutMerged(items)
+		items = triage.FilterOutMerged(items)
 	}
 	if !includeClosed {
-		items = priority.FilterOutClosed(items)
+		items = triage.FilterOutClosed(items)
 	}
 
 	if categoryFlag != "" {
-		items = priority.FilterByPriority(items, priority.PriorityLevel(categoryFlag))
+		items = triage.FilterByPriority(items, triage.PriorityLevel(categoryFlag))
 	}
 
 	if reasonFlag != "" {
-		items = priority.FilterByReason(items, []github.NotificationReason{github.NotificationReason(reasonFlag)})
+		items = triage.FilterByReason(items, []github.NotificationReason{github.NotificationReason(reasonFlag)})
 	}
 
 	if typeFlag != "" {
@@ -284,7 +284,7 @@ func runList(cmd *cobra.Command, args []string) error {
 		default:
 			return fmt.Errorf("invalid type: %s (must be 'pr' or 'issue')", typeFlag)
 		}
-		items = priority.FilterByType(items, subjectType)
+		items = triage.FilterByType(items, subjectType)
 	}
 
 	// Apply limit
@@ -421,9 +421,9 @@ func runSummary(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(os.Stderr, "Warning: %v\n", err)
 	}
 
-	engine := priority.NewEngine(currentUser)
+	engine := triage.NewEngine(currentUser)
 	items := engine.Prioritize(notifications)
-	summary := priority.Summarize(items)
+	summary := triage.Summarize(items)
 
 	format := output.Format(formatFlag)
 	if format == "" {
