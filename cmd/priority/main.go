@@ -106,7 +106,7 @@ func init() {
 	listCmd.Flags().StringVarP(&formatFlag, "format", "f", "", "Output format (table, json, markdown)")
 	listCmd.Flags().IntVarP(&limitFlag, "limit", "l", 0, "Limit number of results")
 	listCmd.Flags().StringVarP(&sinceFlag, "since", "s", "6mo", "Show notifications since (e.g., 1w, 30d, 6mo)")
-	listCmd.Flags().StringVarP(&categoryFlag, "category", "c", "", "Filter by category (urgent, important, low-hanging, fyi)")
+	listCmd.Flags().StringVarP(&categoryFlag, "priority", "p", "", "Filter by priority (urgent, important, quick-win, fyi)")
 	listCmd.Flags().StringVarP(&reasonFlag, "reason", "r", "", "Filter by reason (mention, review_requested, author, etc.)")
 	listCmd.Flags().StringVar(&repoFlag, "repo", "", "Filter to specific repo (owner/repo)")
 	listCmd.Flags().BoolVarP(&verboseFlag, "verbose", "v", false, "Show detailed output")
@@ -267,7 +267,7 @@ func runList(cmd *cobra.Command, args []string) error {
 	}
 
 	if categoryFlag != "" {
-		items = priority.FilterByCategory(items, priority.Category(categoryFlag))
+		items = priority.FilterByPriority(items, priority.PriorityLevel(categoryFlag))
 	}
 
 	if reasonFlag != "" {

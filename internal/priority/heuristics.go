@@ -204,39 +204,39 @@ func (h *Heuristics) isLowHangingFruit(d *github.ItemDetails) bool {
 	return false
 }
 
-// Categorize determines the category for a notification
-func (h *Heuristics) Categorize(n *github.Notification, score int) Category {
+// DeterminePriority determines the priority for a notification (displayed in table)
+func (h *Heuristics) DeterminePriority(n *github.Notification) PriorityLevel {
 	reason := n.Reason
 
 	// Urgent: review requests and direct mentions
 	if reason == github.ReasonReviewRequested || reason == github.ReasonMention {
-		return CategoryUrgent
+		return PriorityUrgent
 	}
 
 	// Authored PRs that are approved and mergeable are urgent
 	if reason == github.ReasonAuthor && n.Details != nil {
 		d := n.Details
 		if d.IsPR && d.ReviewState == "approved" && d.Mergeable {
-			return CategoryUrgent
+			return PriorityUrgent
 		}
 		// PRs with changes requested need attention
 		if d.IsPR && d.ReviewState == "changes_requested" {
-			return CategoryUrgent
+			return PriorityUrgent
 		}
 	}
 
-	// Check for low-hanging fruit
+	// Check for quick wins (low-hanging fruit)
 	if n.Details != nil && h.isLowHangingFruit(n.Details) {
-		return CategoryLowHanging
+		return PriorityQuickWin
 	}
 
 	// Important: author notifications, assignments
 	if reason == github.ReasonAuthor || reason == github.ReasonAssign || reason == github.ReasonTeamMention {
-		return CategoryImportant
+		return PriorityImportant
 	}
 
 	// Everything else is FYI
-	return CategoryFYI
+	return PriorityFYI
 }
 
 // DetermineAction suggests what action the user should take
@@ -320,16 +320,16 @@ func (h *Heuristics) determineAuthoredPRAction(d *github.ItemDetails) string {
 	return "Check PR status"
 }
 
-// DeterminePriorityLevel converts a score to a priority level
-func DeterminePriorityLevel(score int) PriorityLevel {
+// DetermineCategory converts a score to a category level (not displayed in table)
+func DetermineCategory(score int) Category {
 	switch {
 	case score >= 90:
-		return PriorityUrgent
+		return CategoryUrgent
 	case score >= 60:
-		return PriorityHigh
+		return CategoryHigh
 	case score >= 30:
-		return PriorityMedium
+		return CategoryMedium
 	default:
-		return PriorityLow
+		return CategoryLow
 	}
 }

@@ -22,35 +22,35 @@ func (f *MarkdownFormatter) Format(items []priority.PrioritizedItem, w io.Writer
 	fmt.Fprintln(w, "# GitHub Notifications Priority Report")
 	fmt.Fprintf(w, "\n*Generated: %s*\n\n", time.Now().Format("2006-01-02 15:04"))
 
-	// Group by category
-	categories := map[priority.Category][]priority.PrioritizedItem{
-		priority.CategoryUrgent:    {},
-		priority.CategoryImportant: {},
-		priority.CategoryLowHanging: {},
-		priority.CategoryFYI:        {},
+	// Group by priority
+	priorities := map[priority.PriorityLevel][]priority.PrioritizedItem{
+		priority.PriorityUrgent:    {},
+		priority.PriorityImportant: {},
+		priority.PriorityQuickWin:  {},
+		priority.PriorityFYI:       {},
 	}
 
 	for _, item := range items {
-		categories[item.Category] = append(categories[item.Category], item)
+		priorities[item.Priority] = append(priorities[item.Priority], item)
 	}
 
-	// Output each category
-	categoryOrder := []priority.Category{
-		priority.CategoryUrgent,
-		priority.CategoryImportant,
-		priority.CategoryLowHanging,
-		priority.CategoryFYI,
+	// Output each priority
+	priorityOrder := []priority.PriorityLevel{
+		priority.PriorityUrgent,
+		priority.PriorityImportant,
+		priority.PriorityQuickWin,
+		priority.PriorityFYI,
 	}
 
-	for _, cat := range categoryOrder {
-		catItems := categories[cat]
-		if len(catItems) == 0 {
+	for _, p := range priorityOrder {
+		pItems := priorities[p]
+		if len(pItems) == 0 {
 			continue
 		}
 
-		fmt.Fprintf(w, "## %s (%d)\n\n", getCategoryEmoji(cat)+" "+cat.Display(), len(catItems))
+		fmt.Fprintf(w, "## %s (%d)\n\n", getPriorityEmoji(p)+" "+p.Display(), len(pItems))
 
-		for _, item := range catItems {
+		for _, item := range pItems {
 			f.formatItem(item, w)
 		}
 	}
@@ -102,23 +102,23 @@ func (f *MarkdownFormatter) FormatSummary(summary priority.Summary, w io.Writer)
 	fmt.Fprintln(w, "## By Priority")
 	fmt.Fprintln(w, "| Priority | Count |")
 	fmt.Fprintln(w, "|----------|-------|")
-	for p := priority.PriorityUrgent; p >= priority.PriorityLow; p-- {
+	for _, p := range []priority.PriorityLevel{
+		priority.PriorityUrgent,
+		priority.PriorityImportant,
+		priority.PriorityQuickWin,
+		priority.PriorityFYI,
+	} {
 		if count := summary.ByPriority[p]; count > 0 {
-			fmt.Fprintf(w, "| %s | %d |\n", p.Display(), count)
+			fmt.Fprintf(w, "| %s %s | %d |\n", getPriorityEmoji(p), p.Display(), count)
 		}
 	}
 
 	fmt.Fprintln(w, "\n## By Category")
 	fmt.Fprintln(w, "| Category | Count |")
 	fmt.Fprintln(w, "|----------|-------|")
-	for _, cat := range []priority.Category{
-		priority.CategoryUrgent,
-		priority.CategoryImportant,
-		priority.CategoryLowHanging,
-		priority.CategoryFYI,
-	} {
+	for cat := priority.CategoryUrgent; cat >= priority.CategoryLow; cat-- {
 		if count := summary.ByCategory[cat]; count > 0 {
-			fmt.Fprintf(w, "| %s %s | %d |\n", getCategoryEmoji(cat), cat.Display(), count)
+			fmt.Fprintf(w, "| %s | %d |\n", cat.Display(), count)
 		}
 	}
 
@@ -148,15 +148,15 @@ func (f *MarkdownFormatter) FormatSummary(summary priority.Summary, w io.Writer)
 	return nil
 }
 
-func getCategoryEmoji(cat priority.Category) string {
-	switch cat {
-	case priority.CategoryUrgent:
+func getPriorityEmoji(p priority.PriorityLevel) string {
+	switch p {
+	case priority.PriorityUrgent:
 		return "🔴"
-	case priority.CategoryImportant:
+	case priority.PriorityImportant:
 		return "🟡"
-	case priority.CategoryLowHanging:
+	case priority.PriorityQuickWin:
 		return "🟢"
-	case priority.CategoryFYI:
+	case priority.PriorityFYI:
 		return "ℹ️"
 	default:
 		return "📋"

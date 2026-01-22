@@ -24,9 +24,9 @@ func (e *Engine) Prioritize(notifications []github.Notification) []PrioritizedIt
 
 	for _, n := range notifications {
 		score := e.heuristics.Score(&n)
-		category := e.heuristics.Categorize(&n, score)
+		priority := e.heuristics.DeterminePriority(&n)
 		action := e.heuristics.DetermineAction(&n)
-		priority := DeterminePriorityLevel(score)
+		category := DetermineCategory(score)
 
 		items = append(items, PrioritizedItem{
 			Notification: n,
@@ -37,8 +37,18 @@ func (e *Engine) Prioritize(notifications []github.Notification) []PrioritizedIt
 		})
 	}
 
-	// Sort by score descending
+	// Sort by priority first, then by score descending within each priority
+	priorityOrder := map[PriorityLevel]int{
+		PriorityUrgent:    0,
+		PriorityImportant: 1,
+		PriorityQuickWin:  2,
+		PriorityFYI:       3,
+	}
 	sort.Slice(items, func(i, j int) bool {
+		pi, pj := priorityOrder[items[i].Priority], priorityOrder[items[j].Priority]
+		if pi != pj {
+			return pi < pj
+		}
 		return items[i].Score > items[j].Score
 	})
 
@@ -56,11 +66,11 @@ func FilterByCategory(items []PrioritizedItem, category Category) []PrioritizedI
 	return filtered
 }
 
-// FilterByPriority filters items at or above a priority level
-func FilterByPriority(items []PrioritizedItem, minPriority PriorityLevel) []PrioritizedItem {
+// FilterByPriority filters items by a specific priority level
+func FilterByPriority(items []PrioritizedItem, targetPriority PriorityLevel) []PrioritizedItem {
 	filtered := make([]PrioritizedItem, 0)
 	for _, item := range items {
-		if item.Priority >= minPriority {
+		if item.Priority == targetPriority {
 			filtered = append(filtered, item)
 		}
 	}
@@ -157,7 +167,7 @@ func Summarize(items []PrioritizedItem) Summary {
 
 	// Quick wins
 	for _, item := range items {
-		if item.Category == CategoryLowHanging && len(summary.QuickWins) < 5 {
+		if item.Priority == PriorityQuickWin && len(summary.QuickWins) < 5 {
 			summary.QuickWins = append(summary.QuickWins, item)
 		}
 	}

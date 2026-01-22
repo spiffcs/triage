@@ -115,7 +115,7 @@ func (f *TableFormatter) Format(items []priority.PrioritizedItem, w io.Writer) e
 
 	// Column widths
 	const (
-		colPriority = 8
+		colPriority = 9
 		colType     = 5
 		colRepo     = 26
 		colTitle    = 40
@@ -148,7 +148,7 @@ func (f *TableFormatter) Format(items []priority.PrioritizedItem, w io.Writer) e
 		title := n.Subject.Title
 
 		// Add quick win indicator
-		if item.Category == priority.CategoryLowHanging {
+		if item.Priority == priority.PriorityQuickWin {
 			title = "⚡ " + title
 		}
 
@@ -191,8 +191,8 @@ func (f *TableFormatter) Format(items []priority.PrioritizedItem, w io.Writer) e
 		linkedTitle = padRight(linkedTitle, visibleTitleLen, colTitle)
 
 		// Format priority with color and pad
-		priorityDisplay := item.Priority.Display()
-		priorityStr := padRight(colorPriority(item.Priority), len(priorityDisplay), colPriority)
+		coloredPriority := colorPriority(item.Priority)
+		priorityStr := padRight(coloredPriority, displayWidth(coloredPriority), colPriority)
 
 		// Build status column (review state, PR size, or comment count)
 		statusRes := formatStatus(n, item)
@@ -244,17 +244,17 @@ func formatStatus(n github.Notification, _ priority.PrioritizedItem) statusResul
 		var textParts []string
 		var plainParts []string
 
-		// Review state with color
+		// Review state with color (using ASCII symbols for consistent terminal width)
 		switch d.ReviewState {
 		case "approved":
-			textParts = append(textParts, color.GreenString("✓ APPROVED"))
-			plainParts = append(plainParts, "✓ APPROVED")
+			textParts = append(textParts, color.GreenString("+ APPROVED"))
+			plainParts = append(plainParts, "+ APPROVED")
 		case "changes_requested":
-			textParts = append(textParts, color.YellowString("△ CHANGES"))
-			plainParts = append(plainParts, "△ CHANGES")
+			textParts = append(textParts, color.YellowString("! CHANGES"))
+			plainParts = append(plainParts, "! CHANGES")
 		case "pending", "review_required":
-			textParts = append(textParts, color.CyanString("○ REVIEW"))
-			plainParts = append(plainParts, "○ REVIEW")
+			textParts = append(textParts, color.CyanString("* REVIEW"))
+			plainParts = append(plainParts, "* REVIEW")
 		}
 
 		// PR size (compact format)
@@ -274,8 +274,8 @@ func formatStatus(n github.Notification, _ priority.PrioritizedItem) statusResul
 
 	// For issues or PRs without specific status, show comment activity
 	if d.CommentCount > 0 {
-		text := fmt.Sprintf("💬 %d comments", d.CommentCount)
-		return statusResult{text, runewidth.StringWidth(text)}
+		text := fmt.Sprintf("%d comments", d.CommentCount)
+		return statusResult{text, len(text)}
 	}
 
 	reason := string(n.Reason)
@@ -322,7 +322,7 @@ func printFooterSummary(items []priority.PrioritizedItem, w io.Writer) {
 		if item.Priority == priority.PriorityUrgent {
 			urgentCount++
 		}
-		if item.Category == priority.CategoryLowHanging {
+		if item.Priority == priority.PriorityQuickWin {
 			quickWinCount++
 		}
 		if n.Reason == "review_requested" {
@@ -343,12 +343,12 @@ func printFooterSummary(items []priority.PrioritizedItem, w io.Writer) {
 
 	if urgentCount > 0 {
 		fmt.Fprintf(w, "  %s %s urgent items need attention\n",
-			color.RedString("●"),
+			color.RedString("!"),
 			color.RedString("%d", urgentCount))
 	}
 	if reviewCount > 0 {
 		fmt.Fprintf(w, "  %s %d PRs awaiting your review\n",
-			color.CyanString("○"),
+			color.CyanString("*"),
 			reviewCount)
 	}
 	if quickWinCount > 0 {
@@ -364,7 +364,13 @@ func (f *TableFormatter) FormatSummary(summary priority.Summary, w io.Writer) er
 	fmt.Fprintf(w, "Total notifications: %d\n\n", summary.Total)
 
 	fmt.Fprintln(w, "By Priority:")
-	for p := priority.PriorityUrgent; p >= priority.PriorityLow; p-- {
+	priorities := []priority.PriorityLevel{
+		priority.PriorityUrgent,
+		priority.PriorityImportant,
+		priority.PriorityQuickWin,
+		priority.PriorityFYI,
+	}
+	for _, p := range priorities {
 		count := summary.ByPriority[p]
 		if count > 0 {
 			fmt.Fprintf(w, "  %s: %d\n", colorPriority(p), count)
@@ -372,13 +378,7 @@ func (f *TableFormatter) FormatSummary(summary priority.Summary, w io.Writer) er
 	}
 
 	fmt.Fprintln(w, "\nBy Category:")
-	categories := []priority.Category{
-		priority.CategoryUrgent,
-		priority.CategoryImportant,
-		priority.CategoryLowHanging,
-		priority.CategoryFYI,
-	}
-	for _, cat := range categories {
+	for cat := priority.CategoryUrgent; cat >= priority.CategoryLow; cat-- {
 		count := summary.ByCategory[cat]
 		if count > 0 {
 			fmt.Fprintf(w, "  %s: %d\n", cat.Display(), count)
@@ -444,13 +444,13 @@ func (f *TableFormatter) FormatVerbose(items []priority.PrioritizedItem, w io.Wr
 func colorPriority(p priority.PriorityLevel) string {
 	switch p {
 	case priority.PriorityUrgent:
-		return color.RedString("URGENT")
-	case priority.PriorityHigh:
-		return color.YellowString("HIGH")
-	case priority.PriorityMedium:
-		return color.CyanString("MEDIUM")
+		return color.RedString("Urgent")
+	case priority.PriorityImportant:
+		return color.YellowString("Important")
+	case priority.PriorityQuickWin:
+		return color.GreenString("Quick Win")
 	default:
-		return color.WhiteString("LOW")
+		return color.WhiteString("FYI")
 	}
 }
 
