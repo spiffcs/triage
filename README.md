@@ -33,9 +33,22 @@ GITHUB_TOKEN=(gh auth token) priority list
 # List prioritized notifications (default: last 6 months)
 priority list
 
-# Limit time range
+# Limit time range (default: 6mo)
+priority list --since 30m     # Last 30 minutes
+priority list --since 2h      # Last 2 hours
+priority list --since 1d      # Last day
 priority list --since 1w      # Last week
 priority list --since 30d     # Last 30 days
+priority list --since 6mo     # Last 6 months
+priority list --since 1y      # Last year
+
+# Supported time units:
+#   Minutes: m, min, mins
+#   Hours:   h, hr, hrs, hour, hours
+#   Days:    d, day, days
+#   Weeks:   w, wk, wks, week, weeks
+#   Months:  mo, month, months (30 days)
+#   Years:   y, yr, yrs, year, years (365 days)
 
 # Quick mode - skip fetching details (faster but less accurate)
 priority list -q
