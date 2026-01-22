@@ -238,8 +238,12 @@ func runList(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
+	// Get score weights and quick win labels (with any user overrides)
+	weights := cfg.GetScoreWeights()
+	quickWinLabels := cfg.GetQuickWinLabels()
+
 	// Prioritize
-	engine := triage.NewEngine(currentUser)
+	engine := triage.NewEngine(currentUser, weights, quickWinLabels)
 	items := engine.Prioritize(notifications)
 
 	// Apply filters

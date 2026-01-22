@@ -15,16 +15,140 @@ type Config struct {
 
 	// Priority weights (optional overrides)
 	Weights *WeightOverrides `yaml:"weights,omitempty"`
+
+	// Quick win label patterns (optional override)
+	QuickWinLabels []string `yaml:"quick_win_labels,omitempty"`
+}
+
+// BaseScoreOverrides allows customizing base scores for notification reasons
+type BaseScoreOverrides struct {
+	ReviewRequested *int `yaml:"review_requested,omitempty"`
+	Mention         *int `yaml:"mention,omitempty"`
+	TeamMention     *int `yaml:"team_mention,omitempty"`
+	Author          *int `yaml:"author,omitempty"`
+	Assign          *int `yaml:"assign,omitempty"`
+	Comment         *int `yaml:"comment,omitempty"`
+	StateChange     *int `yaml:"state_change,omitempty"`
+	Subscribed      *int `yaml:"subscribed,omitempty"`
+	CIActivity      *int `yaml:"ci_activity,omitempty"`
+}
+
+// ModifierOverrides allows customizing score modifiers
+type ModifierOverrides struct {
+	OldUnreadBonus     *int `yaml:"old_unread_bonus,omitempty"`
+	HotTopicBonus      *int `yaml:"hot_topic_bonus,omitempty"`
+	LowHangingBonus    *int `yaml:"low_hanging_bonus,omitempty"`
+	OpenStateBonus     *int `yaml:"open_state_bonus,omitempty"`
+	ClosedStatePenalty *int `yaml:"closed_state_penalty,omitempty"`
 }
 
 // WeightOverrides allows customizing priority weights
 type WeightOverrides struct {
-	ReviewRequested int `yaml:"review_requested,omitempty"`
-	Mention         int `yaml:"mention,omitempty"`
-	Author          int `yaml:"author,omitempty"`
-	Assign          int `yaml:"assign,omitempty"`
-	Comment         int `yaml:"comment,omitempty"`
-	Subscribed      int `yaml:"subscribed,omitempty"`
+	BaseScores *BaseScoreOverrides `yaml:"base_scores,omitempty"`
+	Modifiers  *ModifierOverrides  `yaml:"modifiers,omitempty"`
+}
+
+// ScoreWeights defines the complete set of scoring weights
+type ScoreWeights struct {
+	ReviewRequested int
+	Mention         int
+	TeamMention     int
+	Author          int
+	Assign          int
+	Comment         int
+	Subscribed      int
+	StateChange     int
+	CIActivity      int
+
+	OldUnreadBonus     int
+	HotTopicBonus      int
+	LowHangingBonus    int
+	OpenStateBonus     int
+	ClosedStatePenalty int
+}
+
+// DefaultScoreWeights returns the default scoring weights
+func DefaultScoreWeights() ScoreWeights {
+	return ScoreWeights{
+		ReviewRequested: 100,
+		Mention:         90,
+		TeamMention:     85,
+		Author:          70,
+		Assign:          60,
+		Comment:         30,
+		StateChange:     25,
+		Subscribed:      10,
+		CIActivity:      5,
+
+		OldUnreadBonus:     2,
+		HotTopicBonus:      15,
+		LowHangingBonus:    20,
+		OpenStateBonus:     10,
+		ClosedStatePenalty: -30,
+	}
+}
+
+// GetScoreWeights returns score weights with user overrides merged with defaults
+func (c *Config) GetScoreWeights() ScoreWeights {
+	weights := DefaultScoreWeights()
+
+	if c.Weights == nil {
+		return weights
+	}
+
+	// Apply base score overrides
+	if c.Weights.BaseScores != nil {
+		bs := c.Weights.BaseScores
+		if bs.ReviewRequested != nil {
+			weights.ReviewRequested = *bs.ReviewRequested
+		}
+		if bs.Mention != nil {
+			weights.Mention = *bs.Mention
+		}
+		if bs.TeamMention != nil {
+			weights.TeamMention = *bs.TeamMention
+		}
+		if bs.Author != nil {
+			weights.Author = *bs.Author
+		}
+		if bs.Assign != nil {
+			weights.Assign = *bs.Assign
+		}
+		if bs.Comment != nil {
+			weights.Comment = *bs.Comment
+		}
+		if bs.StateChange != nil {
+			weights.StateChange = *bs.StateChange
+		}
+		if bs.Subscribed != nil {
+			weights.Subscribed = *bs.Subscribed
+		}
+		if bs.CIActivity != nil {
+			weights.CIActivity = *bs.CIActivity
+		}
+	}
+
+	// Apply modifier overrides
+	if c.Weights.Modifiers != nil {
+		m := c.Weights.Modifiers
+		if m.OldUnreadBonus != nil {
+			weights.OldUnreadBonus = *m.OldUnreadBonus
+		}
+		if m.HotTopicBonus != nil {
+			weights.HotTopicBonus = *m.HotTopicBonus
+		}
+		if m.LowHangingBonus != nil {
+			weights.LowHangingBonus = *m.LowHangingBonus
+		}
+		if m.OpenStateBonus != nil {
+			weights.OpenStateBonus = *m.OpenStateBonus
+		}
+		if m.ClosedStatePenalty != nil {
+			weights.ClosedStatePenalty = *m.ClosedStatePenalty
+		}
+	}
+
+	return weights
 }
 
 // DefaultConfigDir returns the default config directory
@@ -112,4 +236,28 @@ func (c *Config) IsRepoExcluded(repoFullName string) bool {
 		}
 	}
 	return false
+}
+
+// DefaultQuickWinLabels returns the default labels that indicate quick wins
+func DefaultQuickWinLabels() []string {
+	return []string{
+		"good first issue",
+		"good-first-issue",
+		"help wanted",
+		"help-wanted",
+		"easy",
+		"beginner",
+		"trivial",
+		"documentation",
+		"docs",
+		"typo",
+	}
+}
+
+// GetQuickWinLabels returns the quick win labels, using defaults if not configured
+func (c *Config) GetQuickWinLabels() []string {
+	if len(c.QuickWinLabels) > 0 {
+		return c.QuickWinLabels
+	}
+	return DefaultQuickWinLabels()
 }

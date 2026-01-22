@@ -139,7 +139,7 @@ Notifications are scored based on multiple factors to determine priority.
 
 Items are marked as "Quick Win" if they match any of these criteria:
 
-- Labels containing: `good first issue`, `help wanted`, `easy`, `beginner`, `trivial`, `documentation`, `docs`, `typo`
+- Labels containing: `good first issue`, `help wanted`, `easy`, `beginner`, `trivial`, `documentation`, `docs`, `typo` (configurable via `quick_win_labels`)
 - Pull requests with ≤3 files changed AND ≤50 lines changed
 
 ## Configuration File
@@ -151,6 +151,60 @@ default_format: table
 exclude_repos:
   - some-org/noisy-repo
 ```
+
+### Customizing Score Weights
+
+You can override the default scoring weights in your config file. Any values not specified will use the defaults shown above.
+
+```yaml
+weights:
+  base_scores:
+    review_requested: 120    # Boost review requests
+    mention: 95
+    team_mention: 85
+    author: 70
+    assign: 60
+    comment: 30
+    state_change: 25
+    subscribed: 10
+    ci_activity: 5
+  modifiers:
+    old_unread_bonus: 2      # Per day
+    hot_topic_bonus: 15
+    low_hanging_bonus: 20
+    open_state_bonus: 10
+    closed_state_penalty: -50  # Penalize closed items more
+```
+
+Only specify the weights you want to change:
+
+```yaml
+weights:
+  base_scores:
+    review_requested: 200    # Really prioritize reviews
+  modifiers:
+    closed_state_penalty: -100  # Heavily penalize closed items
+```
+
+### Customizing Quick Win Labels
+
+By default, items with these label patterns are marked as "Quick Win":
+- `good first issue`, `good-first-issue`, `help wanted`, `help-wanted`
+- `easy`, `beginner`, `trivial`
+- `documentation`, `docs`, `typo`
+
+You can override these with your own labels:
+
+```yaml
+quick_win_labels:
+  - good first issue
+  - help wanted
+  - low-hanging-fruit
+  - quick-fix
+  - starter
+```
+
+Labels are matched case-insensitively and use substring matching (e.g., `doc` would match `documentation`).
 
 ## Cache Location
 

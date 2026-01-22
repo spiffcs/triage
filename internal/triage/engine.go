@@ -3,6 +3,7 @@ package triage
 import (
 	"sort"
 
+	"github.com/hal/triage/config"
 	"github.com/hal/triage/internal/github"
 )
 
@@ -11,10 +12,10 @@ type Engine struct {
 	heuristics *Heuristics
 }
 
-// NewEngine creates a new priority engine
-func NewEngine(currentUser string) *Engine {
+// NewEngine creates a new priority engine with the given weights and labels
+func NewEngine(currentUser string, weights config.ScoreWeights, quickWinLabels []string) *Engine {
 	return &Engine{
-		heuristics: NewHeuristics(currentUser),
+		heuristics: NewHeuristics(currentUser, weights, quickWinLabels),
 	}
 }
 

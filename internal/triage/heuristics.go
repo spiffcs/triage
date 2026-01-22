@@ -4,61 +4,23 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hal/triage/config"
 	"github.com/hal/triage/internal/github"
 )
 
-// ScoreWeights defines the base scores for different notification reasons
-type ScoreWeights struct {
-	ReviewRequested int
-	Mention         int
-	TeamMention     int
-	Author          int
-	Assign          int
-	Comment         int
-	Subscribed      int
-	StateChange     int
-	CIActivity      int
-
-	// Modifiers
-	OldUnreadBonus    int // Per day old
-	HotTopicBonus     int // Many recent comments
-	LowHangingBonus   int // Small PR or good-first-issue
-	OpenStateBonus    int // Still open
-	ClosedStatePenalty int // Already closed
-}
-
-// DefaultWeights returns the default scoring weights
-func DefaultWeights() ScoreWeights {
-	return ScoreWeights{
-		ReviewRequested: 100,
-		Mention:         90,
-		TeamMention:     85,
-		Author:          70,
-		Assign:          60,
-		Comment:         30,
-		StateChange:     25,
-		Subscribed:      10,
-		CIActivity:      5,
-
-		OldUnreadBonus:     2, // +2 per day
-		HotTopicBonus:      15,
-		LowHangingBonus:    20,
-		OpenStateBonus:     10,
-		ClosedStatePenalty: -30,
-	}
-}
-
 // Heuristics implements rule-based priority scoring
 type Heuristics struct {
-	Weights      ScoreWeights
-	CurrentUser  string
+	Weights        config.ScoreWeights
+	CurrentUser    string
+	QuickWinLabels []string
 }
 
-// NewHeuristics creates a new heuristics scorer
-func NewHeuristics(currentUser string) *Heuristics {
+// NewHeuristics creates a new heuristics scorer with the given weights and labels
+func NewHeuristics(currentUser string, weights config.ScoreWeights, quickWinLabels []string) *Heuristics {
 	return &Heuristics{
-		Weights:     DefaultWeights(),
-		CurrentUser: currentUser,
+		Weights:        weights,
+		CurrentUser:    currentUser,
+		QuickWinLabels: quickWinLabels,
 	}
 }
 
@@ -173,24 +135,11 @@ func (h *Heuristics) authoredPRModifiers(d *github.ItemDetails) int {
 
 // isLowHangingFruit detects items that are likely quick wins
 func (h *Heuristics) isLowHangingFruit(d *github.ItemDetails) bool {
-	// Check for specific labels
-	lowHangingLabels := []string{
-		"good first issue",
-		"good-first-issue",
-		"help wanted",
-		"help-wanted",
-		"easy",
-		"beginner",
-		"trivial",
-		"documentation",
-		"docs",
-		"typo",
-	}
-
+	// Check for configured quick win labels
 	for _, label := range d.Labels {
 		labelLower := strings.ToLower(label)
-		for _, target := range lowHangingLabels {
-			if strings.Contains(labelLower, target) {
+		for _, target := range h.QuickWinLabels {
+			if strings.Contains(labelLower, strings.ToLower(target)) {
 				return true
 			}
 		}
