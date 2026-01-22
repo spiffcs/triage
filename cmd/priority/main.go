@@ -207,6 +207,14 @@ func runList(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to fetch review-requested PRs: %v\n", err)
 	} else if len(reviewPRs) > 0 {
+		// Enrich review-requested PRs with additions/deletions (always, since search API doesn't return them)
+		if !quickFlag {
+			for i := range reviewPRs {
+				if err := ghClient.EnrichAuthoredPR(&reviewPRs[i]); err != nil {
+					continue
+				}
+			}
+		}
 		var added int
 		notifications, added = mergeReviewRequests(notifications, reviewPRs)
 		if added > 0 {
@@ -223,8 +231,8 @@ func runList(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to fetch authored PRs: %v\n", err)
 	} else if len(authoredPRs) > 0 {
-		// Enrich authored PRs with review state and mergeable info (only if fresh fetch)
-		if !quickFlag && !authoredFromCache {
+		// Enrich authored PRs with additions/deletions (always, since search API doesn't return them)
+		if !quickFlag {
 			for i := range authoredPRs {
 				if err := ghClient.EnrichAuthoredPR(&authoredPRs[i]); err != nil {
 					continue

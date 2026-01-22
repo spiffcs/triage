@@ -25,17 +25,6 @@ go build -o priority ./cmd/priority
 GITHUB_TOKEN=(gh auth token) priority list
 ```
 
-### Claude API Key (Optional)
-
-For AI-powered analysis, set your Anthropic API key:
-
-```bash
-export ANTHROPIC_API_KEY=sk-ant-xxxxxxxxxxxx
-
-# Or save to config
-priority config set claude-key sk-ant-xxxxxxxxxxxx
-```
-
 ## Usage
 
 ### List Notifications
@@ -115,7 +104,6 @@ priority cache clear    # Clear all caches
 ```bash
 priority config show                    # Show current config
 priority config set token <TOKEN>       # Set GitHub token
-priority config set claude-key <KEY>    # Set Claude API key
 priority config set format json         # Set default output format
 ```
 
@@ -197,8 +185,6 @@ MEDIUM    FYI           other/repo                      Discussion on API design
 Config is stored at `~/.config/priority/config.yaml`:
 
 ```yaml
-github_token: ghp_xxxxxxxxxxxx
-claude_api_key: sk-ant-xxxxxxxxxxxx
 default_format: table
 exclude_repos:
   - some-org/noisy-repo

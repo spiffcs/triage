@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/fatih/color"
 	"github.com/hal/priority/internal/github"
@@ -44,7 +45,7 @@ func displayWidth(s string) int {
 }
 
 // truncateToWidth truncates a string to fit within maxWidth display columns
-// It handles ANSI escape sequences by stripping them for width calculation
+// It handles ANSI escape sequences by preserving them in the output
 func truncateToWidth(s string, maxWidth int) (string, int) {
 	// Strip ANSI codes for width calculation
 	plain := stripAnsi(s)
@@ -55,24 +56,46 @@ func truncateToWidth(s string, maxWidth int) (string, int) {
 		return s, width
 	}
 
-	// Need to truncate - work with plain text to find cut point
-	cutWidth := 0
-	cutIndex := 0
-	for i, r := range plain {
+	// Need to truncate - find how many visible characters we can keep
+	targetWidth := maxWidth - 3 // Leave room for "..."
+
+	// Find all ANSI sequences and their positions in the original string
+	matches := ansiRegex.FindAllStringIndex(s, -1)
+
+	// Build result by walking through the string
+	var result strings.Builder
+	visibleWidth := 0
+	pos := 0
+	matchIdx := 0
+
+	for pos < len(s) && visibleWidth < targetWidth {
+		// Check if current position is the start of an ANSI sequence
+		if matchIdx < len(matches) && pos == matches[matchIdx][0] {
+			// Include the ANSI sequence without counting its width
+			result.WriteString(s[matches[matchIdx][0]:matches[matchIdx][1]])
+			pos = matches[matchIdx][1]
+			matchIdx++
+			continue
+		}
+
+		// Get the next rune
+		r, size := utf8.DecodeRuneInString(s[pos:])
 		rw := runewidth.RuneWidth(r)
-		if cutWidth+rw > maxWidth-3 { // Leave room for "..."
-			cutIndex = i
+
+		// Check if adding this rune would exceed our target
+		if visibleWidth+rw > targetWidth {
 			break
 		}
-		cutWidth += rw
+
+		result.WriteString(s[pos : pos+size])
+		visibleWidth += rw
+		pos += size
 	}
 
-	// For strings with ANSI codes, we need to be smarter about where to cut
-	// Just strip and truncate the plain version, then add ellipsis
-	if cutIndex > 0 && cutIndex < len(plain) {
-		return plain[:cutIndex] + "...", maxWidth
-	}
-	return plain[:maxWidth-3] + "...", maxWidth
+	// Add ellipsis and reset code (in case we were in the middle of a color)
+	result.WriteString("...\033[0m")
+
+	return result.String(), maxWidth
 }
 
 // padRight pads a string with spaces to reach the target visible width
