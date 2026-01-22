@@ -10,7 +10,6 @@ import (
 
 // Config represents the application configuration
 type Config struct {
-	GitHubToken   string   `yaml:"github_token,omitempty"`
 	DefaultFormat string   `yaml:"default_format,omitempty"`
 	ExcludeRepos  []string `yaml:"exclude_repos,omitempty"`
 
@@ -93,18 +92,10 @@ func (c *Config) Save() error {
 	return nil
 }
 
-// GetGitHubToken returns the GitHub token from config or environment
+// GetGitHubToken returns the GitHub token from the GITHUB_TOKEN environment variable.
+// Following 12-factor app best practices, tokens are only read from the environment.
 func (c *Config) GetGitHubToken() string {
-	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
-		return token
-	}
-	return c.GitHubToken
-}
-
-// SetToken sets the GitHub token and saves
-func (c *Config) SetToken(token string) error {
-	c.GitHubToken = token
-	return c.Save()
+	return os.Getenv("GITHUB_TOKEN")
 }
 
 // SetDefaultFormat sets the default output format and saves

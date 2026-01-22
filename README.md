@@ -116,9 +116,10 @@ priority cache clear    # Clear all caches
 
 ```bash
 priority config show                    # Show current config
-priority config set token <TOKEN>       # Set GitHub token
 priority config set format json         # Set default output format
 ```
+
+**Note:** GitHub tokens must be set via the `GITHUB_TOKEN` environment variable (not stored in config files) following [12-factor app](https://12factor.net/config) security best practices.
 
 ## Priority Scoring
 

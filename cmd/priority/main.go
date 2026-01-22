@@ -60,7 +60,6 @@ var configSetCmd = &cobra.Command{
 	Use:   "set <key> <value>",
 	Short: "Set a configuration value",
 	Long: `Set a configuration value. Available keys:
-  token       - GitHub personal access token
   format      - Default output format (table, json, markdown)`,
 	Args: cobra.ExactArgs(2),
 	RunE: runConfigSet,
@@ -146,7 +145,7 @@ func runList(cmd *cobra.Command, args []string) error {
 	// Create GitHub client
 	token := cfg.GetGitHubToken()
 	if token == "" {
-		return fmt.Errorf("GitHub token not configured. Set GITHUB_TOKEN env var or run: priority config set token <TOKEN>")
+		return fmt.Errorf("GitHub token not configured. Set the GITHUB_TOKEN environment variable")
 	}
 
 	ghClient, err := github.NewClient(token)
@@ -321,10 +320,7 @@ func runConfigSet(cmd *cobra.Command, args []string) error {
 
 	switch key {
 	case "token":
-		if err := cfg.SetToken(value); err != nil {
-			return err
-		}
-		fmt.Println("GitHub token saved.")
+		return fmt.Errorf("tokens cannot be stored in config files for security reasons. Set the GITHUB_TOKEN environment variable instead")
 	case "format":
 		if value != "table" && value != "json" && value != "markdown" {
 			return fmt.Errorf("invalid format: %s (must be table, json, or markdown)", value)
@@ -350,12 +346,10 @@ func runConfigShow(cmd *cobra.Command, args []string) error {
 	fmt.Printf("  Config file: %s\n", config.ConfigPath())
 	fmt.Printf("  Default format: %s\n", cfg.DefaultFormat)
 
-	if cfg.GitHubToken != "" {
-		fmt.Println("  GitHub token: (set)")
-	} else if os.Getenv("GITHUB_TOKEN") != "" {
+	if os.Getenv("GITHUB_TOKEN") != "" {
 		fmt.Println("  GitHub token: (set via GITHUB_TOKEN env)")
 	} else {
-		fmt.Println("  GitHub token: (not set)")
+		fmt.Println("  GitHub token: (not set - set GITHUB_TOKEN env var)")
 	}
 
 	if len(cfg.ExcludeRepos) > 0 {
@@ -376,7 +370,7 @@ func runMarkRead(cmd *cobra.Command, args []string) error {
 
 	token := cfg.GetGitHubToken()
 	if token == "" {
-		return fmt.Errorf("GitHub token not configured")
+		return fmt.Errorf("GitHub token not configured. Set the GITHUB_TOKEN environment variable")
 	}
 
 	ghClient, err := github.NewClient(token)
@@ -400,7 +394,7 @@ func runSummary(cmd *cobra.Command, args []string) error {
 
 	token := cfg.GetGitHubToken()
 	if token == "" {
-		return fmt.Errorf("GitHub token not configured")
+		return fmt.Errorf("GitHub token not configured. Set the GITHUB_TOKEN environment variable")
 	}
 
 	ghClient, err := github.NewClient(token)
