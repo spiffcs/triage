@@ -1,6 +1,6 @@
 # triage
 
-A CLI tool that organizes GitHub notifications to help you triage work. It aggregates data from multiple sources—unread notifications, PRs awaiting your review, and your own open PRs. It enriches them with details, and ranks them using configurable heuristics.
+A CLI tool that organizes GitHub notifications to help you triage work. It aggregates data from multiple sources—unread notifications, PRs awaiting your review, and your own open PRs. It enriches them with details, and ranks them using configurable heuristics. All titles are clickable and take the user to the issue or pr.
 
 ![Demo](.github/demo.png)
 
@@ -30,6 +30,7 @@ GITHUB_TOKEN=$(gh auth token) triage
 ### List Notifications
 
 ```bash
+# Make sure GITHUB_TOKEN is set or frontloaded as seen above
 # List prioritized notifications (default: last 1 week)
 triage
 
@@ -77,13 +78,12 @@ triage -f table      # Default
 triage -f json       # JSON for scripting
 
 # Limit results
-triage -l 20         # Top 20 only
-
+triage -l 20         # limit the list
 ```
 
 ### Cache Management
 
-The tool uses a two-tier caching strategy:
+The tool uses a two-tier caching strategy to try and reduce API usage
 - **Item details** (issue/PR metadata): cached for 24 hours
 - **PR lists** (review-requested and authored PRs): cached for 5 minutes
 
