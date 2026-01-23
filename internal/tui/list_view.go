@@ -54,7 +54,7 @@ func renderListView(m ListModel) string {
 	// Render visible items
 	for i := start; i < end; i++ {
 		selected := i == m.cursor
-		b.WriteString(renderRow(m.items[i], selected, m.hotTopicDisplayThreshold, m.prSizeXS, m.prSizeS, m.prSizeM, m.prSizeL))
+		b.WriteString(renderRow(m.items[i], selected, m.hotTopicThreshold, m.prSizeXS, m.prSizeS, m.prSizeM, m.prSizeL))
 		b.WriteString("\n")
 	}
 
@@ -120,7 +120,7 @@ func renderSeparator() string {
 }
 
 // renderRow renders a single item row
-func renderRow(item triage.PrioritizedItem, selected bool, hotTopicDisplayThreshold, prSizeXS, prSizeS, prSizeM, prSizeL int) string {
+func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, prSizeXS, prSizeS, prSizeM, prSizeL int) string {
 	n := item.Notification
 
 	// Cursor indicator
@@ -150,7 +150,7 @@ func renderRow(item triage.PrioritizedItem, selected bool, hotTopicDisplayThresh
 		titlePrefix = "⚡ "
 		titlePrefixWidth = 3 // emoji (2) + space (1)
 	}
-	if n.Details != nil && hotTopicDisplayThreshold > 0 && n.Details.CommentCount > hotTopicDisplayThreshold {
+	if n.Details != nil && hotTopicThreshold > 0 && n.Details.CommentCount > hotTopicThreshold {
 		titlePrefix = "🔥 "
 		titlePrefixWidth = 3 // emoji (2) + space (1)
 	}

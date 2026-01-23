@@ -141,7 +141,7 @@ Notifications are scored based on multiple factors to determine priority.
 |----------|-------|-----------|
 | Open state | +10 | Issue/PR is still open |
 | Closed state | -30 | Issue/PR was closed/merged |
-| Hot topic | +15 | More than 10 comments |
+| Hot topic | +15 | More than 6 comments |
 | Low-hanging fruit | +20 | Small PR or has "good first issue" label |
 | Age bonus | +2/day | Older unread items (capped at +30) |
 | Needs update | +20 | Your PR has "changes requested" |
@@ -158,16 +158,20 @@ Notifications are scored based on multiple factors to determine priority.
 Items are marked as "Quick Win" if they match any of these criteria:
 
 - Labels containing: `good first issue`, `help wanted`, `easy`, `beginner`, `trivial`, `documentation`, `docs`, `typo` (configurable via `quick_win_labels`)
-- Pull requests with ≤3 files changed AND ≤50 lines changed
+- Pull requests with ≤5 files changed AND ≤100 lines changed
 
 ## Configuration File
 
-Config is stored at `~/.config/triage/config.yaml`:
+Config is stored at `~/.config/triage/config.yaml`. Unspecified values use sensible defaults, so you only need to configure what you want to override:
 
 ```yaml
+# Minimal config - only specify what you want to change
 default_format: table
-exclude_repos:
-  - some-org/noisy-repo
+
+# Exclude noisy repos (optional)
+# exclude_repos:
+#   - kubernetes/kubernetes
+#   - some-org/noisy-repo
 ```
 
 ### Customizing Score Weights

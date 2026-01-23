@@ -248,7 +248,7 @@ func TestDeterminePriority(t *testing.T) {
 			notification: &github.Notification{
 				Reason: github.ReasonSubscribed,
 			},
-			score: 55, // meets threshold
+			score: 60, // meets threshold
 			want:  PriorityImportant,
 		},
 		{
@@ -256,7 +256,7 @@ func TestDeterminePriority(t *testing.T) {
 			notification: &github.Notification{
 				Reason: github.ReasonSubscribed,
 			},
-			score: 54, // below threshold
+			score: 59, // below threshold
 			want:  PriorityFYI,
 		},
 	}

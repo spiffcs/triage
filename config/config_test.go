@@ -36,14 +36,12 @@ func TestDefaultScoreWeights(t *testing.T) {
 		{"StalePRThresholdDays", weights.StalePRThresholdDays, 7},
 		{"StalePRBonusPerDay", weights.StalePRBonusPerDay, 2},
 		{"StalePRMaxBonus", weights.StalePRMaxBonus, 20},
-		{"DraftPRPenalty", weights.DraftPRPenalty, -15},
+		{"DraftPRPenalty", weights.DraftPRPenalty, -25},
 		// General scoring
 		{"MaxAgeBonus", weights.MaxAgeBonus, 30},
 		// Low-hanging fruit detection
-		{"SmallPRMaxFiles", weights.SmallPRMaxFiles, 3},
-		{"SmallPRMaxLines", weights.SmallPRMaxLines, 50},
-		// Display threshold
-		{"HotTopicDisplayThreshold", weights.HotTopicDisplayThreshold, 10},
+		{"SmallPRMaxFiles", weights.SmallPRMaxFiles, 5},
+		{"SmallPRMaxLines", weights.SmallPRMaxLines, 100},
 	}
 
 	for _, tt := range tests {
@@ -140,14 +138,11 @@ func TestGetScoreWeights(t *testing.T) {
 		if weights.MergeablePRBonus != 15 {
 			t.Errorf("GetScoreWeights().MergeablePRBonus = %d, want 15", weights.MergeablePRBonus)
 		}
-		if weights.DraftPRPenalty != -15 {
-			t.Errorf("GetScoreWeights().DraftPRPenalty = %d, want -15", weights.DraftPRPenalty)
+		if weights.DraftPRPenalty != -25 {
+			t.Errorf("GetScoreWeights().DraftPRPenalty = %d, want -25", weights.DraftPRPenalty)
 		}
 		if weights.MaxAgeBonus != 30 {
 			t.Errorf("GetScoreWeights().MaxAgeBonus = %d, want 30", weights.MaxAgeBonus)
-		}
-		if weights.HotTopicDisplayThreshold != 10 {
-			t.Errorf("GetScoreWeights().HotTopicDisplayThreshold = %d, want 10", weights.HotTopicDisplayThreshold)
 		}
 	})
 }
@@ -160,13 +155,13 @@ func TestGetQuickWinLabels(t *testing.T) {
 		// Should contain some expected defaults
 		found := false
 		for _, label := range labels {
-			if label == "good first issue" {
+			if label == "good-first-issue" {
 				found = true
 				break
 			}
 		}
 		if !found {
-			t.Error("GetQuickWinLabels() should contain 'good first issue' by default")
+			t.Error("GetQuickWinLabels() should contain 'good-first-issue' by default")
 		}
 	})
 
@@ -231,11 +226,10 @@ func TestIsRepoExcluded(t *testing.T) {
 func TestDefaultQuickWinLabels(t *testing.T) {
 	labels := DefaultQuickWinLabels()
 
-	// Labels no longer include hyphenated duplicates since matching
-	// normalizes hyphens and spaces to be equivalent
+	// Labels use hyphenated format; matching normalizes hyphens and spaces
 	expectedLabels := []string{
-		"good first issue",
-		"help wanted",
+		"good-first-issue",
+		"help-wanted",
 		"easy",
 		"beginner",
 		"trivial",

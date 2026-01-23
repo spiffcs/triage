@@ -32,7 +32,7 @@ func NewFormatterWithWeights(format Format, weights config.ScoreWeights) Formatt
 		return &JSONFormatter{}
 	default:
 		return &TableFormatter{
-			HotTopicDisplayThreshold: weights.HotTopicDisplayThreshold,
+			HotTopicThreshold: weights.HotTopicThreshold,
 			PRSizeXS:                 weights.PRSizeXS,
 			PRSizeS:                  weights.PRSizeS,
 			PRSizeM:                  weights.PRSizeM,

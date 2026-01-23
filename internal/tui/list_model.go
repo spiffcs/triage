@@ -21,7 +21,7 @@ type ListModel struct {
 	statusMsg                string
 	statusTime               time.Time
 	quitting                 bool
-	hotTopicDisplayThreshold int
+	hotTopicThreshold int
 	prSizeXS                 int
 	prSizeS                  int
 	prSizeM                  int
@@ -36,7 +36,7 @@ func NewListModel(items []triage.PrioritizedItem, store *resolved.Store, weights
 		resolved:                 store,
 		windowWidth:              80,
 		windowHeight:             24,
-		hotTopicDisplayThreshold: weights.HotTopicDisplayThreshold,
+		hotTopicThreshold: weights.HotTopicThreshold,
 		prSizeXS:                 weights.PRSizeXS,
 		prSizeS:                  weights.PRSizeS,
 		prSizeM:                  weights.PRSizeM,

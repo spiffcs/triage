@@ -61,9 +61,6 @@ type ModifierOverrides struct {
 	SmallPRMaxFiles *int `yaml:"small_pr_max_files,omitempty"`
 	SmallPRMaxLines *int `yaml:"small_pr_max_lines,omitempty"`
 
-	// Display threshold for fire emoji (separate from scoring threshold)
-	HotTopicDisplayThreshold *int `yaml:"hot_topic_display_threshold,omitempty"`
-
 	// PR size thresholds for T-shirt sizing
 	PRSizeXS *int `yaml:"pr_size_xs,omitempty"`
 	PRSizeS  *int `yaml:"pr_size_s,omitempty"`
@@ -115,9 +112,6 @@ type ScoreWeights struct {
 	SmallPRMaxFiles int
 	SmallPRMaxLines int
 
-	// Display threshold for fire emoji
-	HotTopicDisplayThreshold int
-
 	// PR size thresholds for T-shirt sizing
 	PRSizeXS int // <= this = XS
 	PRSizeS  int // <= this = S
@@ -144,7 +138,7 @@ func DefaultScoreWeights() ScoreWeights {
 		LowHangingBonus:       20,
 		OpenStateBonus:        10,
 		ClosedStatePenalty:    -30,
-		FYIPromotionThreshold: 55,
+		FYIPromotionThreshold: 60,
 
 		// Authored PR modifiers
 		ApprovedPRBonus:       25,
@@ -155,17 +149,14 @@ func DefaultScoreWeights() ScoreWeights {
 		StalePRThresholdDays:  7,
 		StalePRBonusPerDay:    2,
 		StalePRMaxBonus:       20,
-		DraftPRPenalty:        -15,
+		DraftPRPenalty:        -25,
 
 		// General scoring
 		MaxAgeBonus: 30,
 
 		// Low-hanging fruit detection
-		SmallPRMaxFiles: 3,
-		SmallPRMaxLines: 50,
-
-		// Display threshold for fire emoji
-		HotTopicDisplayThreshold: 10,
+		SmallPRMaxFiles: 5,
+		SmallPRMaxLines: 100,
 
 		// PR size thresholds for T-shirt sizing
 		PRSizeXS: 10,
@@ -280,11 +271,6 @@ func (c *Config) GetScoreWeights() ScoreWeights {
 		}
 		if m.SmallPRMaxLines != nil {
 			weights.SmallPRMaxLines = *m.SmallPRMaxLines
-		}
-
-		// Display threshold
-		if m.HotTopicDisplayThreshold != nil {
-			weights.HotTopicDisplayThreshold = *m.HotTopicDisplayThreshold
 		}
 
 		// PR size thresholds
@@ -470,9 +456,6 @@ func DefaultConfig() *Config {
 				// Low-hanging fruit detection
 				SmallPRMaxFiles: &weights.SmallPRMaxFiles,
 				SmallPRMaxLines: &weights.SmallPRMaxLines,
-
-				// Display threshold
-				HotTopicDisplayThreshold: &weights.HotTopicDisplayThreshold,
 
 				// PR size thresholds for T-shirt sizing
 				PRSizeXS: &weights.PRSizeXS,

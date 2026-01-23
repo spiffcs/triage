@@ -22,7 +22,7 @@ var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
 // TableFormatter formats output as a terminal table
 type TableFormatter struct {
-	HotTopicDisplayThreshold int
+	HotTopicThreshold int
 	PRSizeXS                 int
 	PRSizeS                  int
 	PRSizeM                  int
@@ -206,7 +206,7 @@ func (f *TableFormatter) Format(items []triage.PrioritizedItem, w io.Writer) err
 		}
 
 		// Add hot topic indicator
-		if n.Details != nil && f.HotTopicDisplayThreshold > 0 && n.Details.CommentCount > f.HotTopicDisplayThreshold {
+		if n.Details != nil && f.HotTopicThreshold > 0 && n.Details.CommentCount > f.HotTopicThreshold {
 			title = "🔥 " + title
 		}
 
