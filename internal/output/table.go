@@ -266,9 +266,6 @@ func (f *TableFormatter) Format(items []triage.PrioritizedItem, w io.Writer) err
 		}
 	}
 
-	// Print enhanced footer summary
-	printFooterSummary(items, w)
-
 	return nil
 }
 
@@ -359,65 +356,6 @@ func formatPRSize(additions, deletions int) (colored string, plain string) {
 	plain = fmt.Sprintf("%s+%d/-%d", sizePlain, additions, deletions)
 	colored = fmt.Sprintf("%s+%d/-%d", sizeColored, additions, deletions)
 	return colored, plain
-}
-
-// printFooterSummary prints an enhanced summary footer
-func printFooterSummary(items []triage.PrioritizedItem, w io.Writer) {
-	var urgentCount, quickWinCount, reviewCount, hotCount int
-
-	for _, item := range items {
-		n := item.Notification
-
-		if item.Priority == triage.PriorityUrgent {
-			urgentCount++
-		}
-		if item.Priority == triage.PriorityQuickWin {
-			quickWinCount++
-		}
-		if n.Reason == "review_requested" {
-			reviewCount++
-		}
-		if n.Details != nil && n.Details.CommentCount > 10 {
-			hotCount++
-		}
-	}
-
-	// Only print if there's something actionable
-	if urgentCount == 0 && quickWinCount == 0 && reviewCount == 0 && hotCount == 0 {
-		return
-	}
-
-	if _, err := fmt.Fprintln(w); err != nil {
-		log.Trace("write error", "location", "footer-newline", "error", err)
-	}
-	if _, err := fmt.Fprintln(w, strings.Repeat("━", 60)); err != nil {
-		log.Trace("write error", "location", "footer-separator", "error", err)
-	}
-
-	if urgentCount > 0 {
-		if _, err := fmt.Fprintf(w, "  %s %s urgent items need attention\n",
-			color.RedString("!"),
-			color.RedString("%d", urgentCount)); err != nil {
-			log.Trace("write error", "location", "footer-urgent", "error", err)
-		}
-	}
-	if reviewCount > 0 {
-		if _, err := fmt.Fprintf(w, "  %s %d PRs awaiting your review\n",
-			color.CyanString("*"),
-			reviewCount); err != nil {
-			log.Trace("write error", "location", "footer-review", "error", err)
-		}
-	}
-	if quickWinCount > 0 {
-		if _, err := fmt.Fprintf(w, "  ⚡ %d quick wins available\n", quickWinCount); err != nil {
-			log.Trace("write error", "location", "footer-quickwin", "error", err)
-		}
-	}
-	if hotCount > 0 {
-		if _, err := fmt.Fprintf(w, "  🔥 %d hot discussions\n", hotCount); err != nil {
-			log.Trace("write error", "location", "footer-hot", "error", err)
-		}
-	}
 }
 
 func colorPriority(p triage.PriorityLevel) string {
