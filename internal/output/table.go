@@ -393,8 +393,8 @@ func formatAge(d time.Duration) string {
 	if days < 7 {
 		return fmt.Sprintf("%dd", days)
 	}
-	weeks := days / 7
-	if weeks < 4 {
+	if days < 30 {
+		weeks := days / 7
 		return fmt.Sprintf("%dw", weeks)
 	}
 	months := days / 30
