@@ -7,13 +7,13 @@ A CLI tool that organizes GitHub notifications to help you triage work. It aggre
 ## Installation
 
 ```bash
-go install github.com/hal/triage/cmd/triage@latest
+go install github.com/spiffcs/triage/cmd/triage@latest
 ```
 
 Or build from source:
 
 ```bash
-git clone https://github.com/hal/triage.git
+git clone https://github.com/spiffcs/triage.git
 cd triage
 go build -o triage ./cmd/triage
 ```
@@ -212,4 +212,4 @@ Cached data is stored at `~/.cache/triage/details/`.
 
 ## License
 
-MIT
+Apache-2.0
