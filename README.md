@@ -1,8 +1,24 @@
 # triage
 
-A tool that organizes GitHub notifications, issues, and PRs to help you triage work. It aggregates data from multiple sources including unread notifications, PRs awaiting your review, your own open PRs, and issues assigned to the user running the program. It enriches these items with details and ranks them using configurable heuristics. All titles and repositories are clickable and take the user to the issue, pr, or repository home page.
+An interactive TUI tool that organizes GitHub notifications, issues, and PRs to help you triage work. It aggregates data from multiple sources including unread notifications, PRs awaiting your review, your own open PRs, and issues assigned to the user running the program. It enriches these items with details and ranks them using configurable heuristics.
 
 ![Demo](.github/demo.png)
+
+## Interactive TUI
+
+The default interface is an interactive terminal UI with keyboard navigation:
+
+| Key | Action |
+|-----|--------|
+| `j` / `↓` | Move cursor down |
+| `k` / `↑` | Move cursor up |
+| `g` / `Home` | Jump to top |
+| `G` / `End` | Jump to bottom |
+| `Enter` | Open item in browser |
+| `d` | Mark item as done (removes from list) |
+| `q` / `Esc` | Quit |
+
+The TUI displays color-coded priorities, PR review status, and size indicators (XS/S/M/L/XL based on lines changed). Items marked as done are persisted and will not reappear unless they have new activity.
 
 ## Installation
 
@@ -75,7 +91,7 @@ triage --include-merged
 triage --include-closed
 
 # Output formats
-triage -f table      # Default
+triage               # Interactive TUI (default)
 triage -f json       # JSON for scripting
 
 # Limit results
