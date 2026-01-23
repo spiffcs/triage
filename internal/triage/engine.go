@@ -123,3 +123,18 @@ func FilterByType(items []PrioritizedItem, subjectType github.SubjectType) []Pri
 	}
 	return filtered
 }
+
+// FilterByRepo filters items by repository name (owner/repo)
+func FilterByRepo(items []PrioritizedItem, repo string) []PrioritizedItem {
+	if repo == "" {
+		return items
+	}
+
+	filtered := make([]PrioritizedItem, 0)
+	for _, item := range items {
+		if item.Notification.Repository.FullName == repo {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
+}

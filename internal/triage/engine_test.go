@@ -8,11 +8,19 @@ import (
 
 // Helper to create a test notification
 func makeNotification(id string, reason github.NotificationReason, subjectType github.SubjectType, details *github.ItemDetails) github.Notification {
+	return makeNotificationWithRepo(id, reason, subjectType, details, "")
+}
+
+// Helper to create a test notification with repo
+func makeNotificationWithRepo(id string, reason github.NotificationReason, subjectType github.SubjectType, details *github.ItemDetails, repo string) github.Notification {
 	return github.Notification{
 		ID:     id,
 		Reason: reason,
 		Subject: github.Subject{
 			Type: subjectType,
+		},
+		Repository: github.Repository{
+			FullName: repo,
 		},
 		Details: details,
 	}
@@ -168,6 +176,65 @@ func TestFilterOutClosed(t *testing.T) {
 		if item.Notification.ID != wantIDs[i] {
 			t.Errorf("FilterOutClosed()[%d].ID = %s, want %s", i, item.Notification.ID, wantIDs[i])
 		}
+	}
+}
+
+// Helper to create a prioritized item with repo
+func makePrioritizedItemWithRepo(id string, reason github.NotificationReason, subjectType github.SubjectType, priority PriorityLevel, details *github.ItemDetails, repo string) PrioritizedItem {
+	return PrioritizedItem{
+		Notification: makeNotificationWithRepo(id, reason, subjectType, details, repo),
+		Priority:     priority,
+	}
+}
+
+func TestFilterByRepo(t *testing.T) {
+	items := []PrioritizedItem{
+		makePrioritizedItemWithRepo("1", github.ReasonReviewRequested, github.SubjectPullRequest, PriorityUrgent, nil, "anchore/syft"),
+		makePrioritizedItemWithRepo("2", github.ReasonSubscribed, github.SubjectIssue, PriorityFYI, nil, "anchore/grype"),
+		makePrioritizedItemWithRepo("3", github.ReasonMention, github.SubjectPullRequest, PriorityUrgent, nil, "anchore/syft"),
+		makePrioritizedItemWithRepo("4", github.ReasonAuthor, github.SubjectIssue, PriorityImportant, nil, "golang/go"),
+	}
+
+	tests := []struct {
+		name    string
+		repo    string
+		wantIDs []string
+	}{
+		{
+			name:    "filter by specific repo",
+			repo:    "anchore/syft",
+			wantIDs: []string{"1", "3"},
+		},
+		{
+			name:    "filter by different repo",
+			repo:    "anchore/grype",
+			wantIDs: []string{"2"},
+		},
+		{
+			name:    "empty repo returns all",
+			repo:    "",
+			wantIDs: []string{"1", "2", "3", "4"},
+		},
+		{
+			name:    "non-matching repo returns empty",
+			repo:    "nonexistent/repo",
+			wantIDs: []string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := FilterByRepo(items, tt.repo)
+			if len(got) != len(tt.wantIDs) {
+				t.Errorf("FilterByRepo() returned %d items, want %d", len(got), len(tt.wantIDs))
+				return
+			}
+			for i, item := range got {
+				if item.Notification.ID != tt.wantIDs[i] {
+					t.Errorf("FilterByRepo()[%d].ID = %s, want %s", i, item.Notification.ID, tt.wantIDs[i])
+				}
+			}
+		})
 	}
 }
 

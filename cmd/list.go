@@ -360,6 +360,10 @@ func runList(_ *cobra.Command, _ []string, opts *Options) error {
 		items = triage.FilterByReason(items, []github.NotificationReason{github.NotificationReason(opts.Reason)})
 	}
 
+	if opts.Repo != "" {
+		items = triage.FilterByRepo(items, opts.Repo)
+	}
+
 	if opts.Type != "" {
 		var subjectType github.SubjectType
 		switch opts.Type {
