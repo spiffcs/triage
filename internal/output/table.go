@@ -380,6 +380,8 @@ func colorPriority(p triage.PriorityLevel) string {
 		return color.YellowString("Important")
 	case triage.PriorityQuickWin:
 		return color.GreenString("Quick Win")
+	case triage.PriorityNotable:
+		return color.CyanString("Notable")
 	default:
 		return color.WhiteString("FYI")
 	}

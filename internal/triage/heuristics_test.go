@@ -244,20 +244,36 @@ func TestDeterminePriority(t *testing.T) {
 			want:  PriorityFYI,
 		},
 		{
-			name: "high score FYI promoted to important",
+			name: "high score promoted to important (notable threshold)",
 			notification: &github.Notification{
 				Reason: github.ReasonSubscribed,
 			},
-			score: 60, // meets threshold
+			score: 60, // meets notable promotion threshold
 			want:  PriorityImportant,
+		},
+		{
+			name: "medium score promoted to notable (fyi threshold)",
+			notification: &github.Notification{
+				Reason: github.ReasonSubscribed,
+			},
+			score: 35, // meets fyi promotion threshold
+			want:  PriorityNotable,
 		},
 		{
 			name: "below threshold FYI stays FYI",
 			notification: &github.Notification{
 				Reason: github.ReasonSubscribed,
 			},
-			score: 59, // below threshold
+			score: 34, // below fyi promotion threshold
 			want:  PriorityFYI,
+		},
+		{
+			name: "very high score promoted to urgent (important threshold)",
+			notification: &github.Notification{
+				Reason: github.ReasonSubscribed,
+			},
+			score: 100, // meets important promotion threshold
+			want:  PriorityUrgent,
 		},
 	}
 

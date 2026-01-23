@@ -38,7 +38,7 @@ func addListFlags(cmd *cobra.Command, opts *Options) {
 	cmd.Flags().StringVarP(&opts.Format, "format", "f", "", "Output format (table, json)")
 	cmd.Flags().IntVarP(&opts.Limit, "limit", "l", 0, "Limit number of results")
 	cmd.Flags().StringVarP(&opts.Since, "since", "s", "1w", "Show notifications since (e.g., 1w, 30d, 6mo)")
-	cmd.Flags().StringVarP(&opts.Priority, "priority", "p", "", "Filter by priority (urgent, important, quick-win, fyi)")
+	cmd.Flags().StringVarP(&opts.Priority, "priority", "p", "", "Filter by priority (urgent, important, quick-win, notable, fyi)")
 	cmd.Flags().StringVarP(&opts.Reason, "reason", "r", "", "Filter by reason (mention, review_requested, author, etc.)")
 	cmd.Flags().StringVar(&opts.Repo, "repo", "", "Filter to specific repo (owner/repo)")
 	cmd.Flags().CountVarP(&opts.Verbosity, "verbose", "v", "Increase verbosity (-v info, -vv debug, -vvv trace)")

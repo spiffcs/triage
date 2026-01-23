@@ -42,7 +42,8 @@ func (e *Engine) Prioritize(notifications []github.Notification) []PrioritizedIt
 		PriorityUrgent:    0,
 		PriorityImportant: 1,
 		PriorityQuickWin:  2,
-		PriorityFYI:       3,
+		PriorityNotable:   3,
+		PriorityFYI:       4,
 	}
 	sort.Slice(items, func(i, j int) bool {
 		pi, pj := priorityOrder[items[i].Priority], priorityOrder[items[j].Priority]

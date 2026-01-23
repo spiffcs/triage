@@ -200,6 +200,8 @@ func renderPriority(p triage.PriorityLevel) (string, int) {
 		return listImportantStyle.Render("Important"), 9
 	case triage.PriorityQuickWin:
 		return listQuickWinStyle.Render("Quick Win"), 9
+	case triage.PriorityNotable:
+		return listNotableStyle.Render("Notable"), 7
 	default:
 		return listFYIStyle.Render("FYI"), 3
 	}
@@ -436,6 +438,9 @@ var (
 
 	listQuickWinStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#22C55E"))
+
+	listNotableStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#60A5FA"))
 
 	listFYIStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#9CA3AF"))

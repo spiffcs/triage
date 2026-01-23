@@ -182,6 +182,11 @@ func (h *Heuristics) DeterminePriority(n *github.Notification, score int) Priori
 		}
 	}
 
+	// Score-based promotion to Urgent (Important → Urgent)
+	if score >= h.Weights.ImportantPromotionThreshold {
+		return PriorityUrgent
+	}
+
 	// Check for quick wins (low-hanging fruit)
 	if n.Details != nil && h.isLowHangingFruit(n.Details) {
 		return PriorityQuickWin
@@ -192,9 +197,14 @@ func (h *Heuristics) DeterminePriority(n *github.Notification, score int) Priori
 		return PriorityImportant
 	}
 
-	// Promote high-scoring FYI items to Important
-	if score >= h.Weights.FYIPromotionThreshold {
+	// Score-based promotion to Important (Notable → Important)
+	if score >= h.Weights.NotablePromotionThreshold {
 		return PriorityImportant
+	}
+
+	// Score-based promotion to Notable (FYI → Notable)
+	if score >= h.Weights.FYIPromotionThreshold {
+		return PriorityNotable
 	}
 
 	// Everything else is FYI

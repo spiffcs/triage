@@ -72,6 +72,7 @@ triage --since 1y      # Last year
 triage -p urgent
 triage -p important
 triage -p quick-win
+triage -p notable
 triage -p fyi
 
 # Filter by notification reason
@@ -141,24 +142,105 @@ Notifications are scored based on multiple factors to determine priority.
 |----------|-------|-----------|
 | Open state | +10 | Issue/PR is still open |
 | Closed state | -30 | Issue/PR was closed/merged |
-| Hot topic | +15 | More than 6 comments |
-| Low-hanging fruit | +20 | Small PR or has "good first issue" label |
+| Hot topic | +15 | More than 6 comments (threshold configurable) |
+| Low-hanging fruit | +20 | Small PR or has quick-win label |
 | Age bonus | +2/day | Older unread items (capped at +30) |
-| Needs update | +20 | Your PR has "changes requested" |
 
-### Priority
+### Score-Based Priority Promotion
 
-- **Urgent**: Review requests and direct mentions
-- **Important**: Your authored PRs needing attention, assignments
-- **Quick Win**: Small PRs, items labeled "good first issue", "help wanted", etc.
-- **FYI**: Subscribed notifications, general activity
+Items can be promoted to higher priority levels based on their total score:
 
-### Quick Win Detection
+| Promotion | Threshold | Description |
+|-----------|-----------|-------------|
+| FYI → Notable | ≥35 | Items with moderate engagement |
+| Notable → Important | ≥60 | Items with significant activity |
+| Important → Urgent | ≥100 | High-signal items requiring immediate attention |
 
-Items are marked as "Quick Win" if they match any of these criteria:
+### PR Scoring (Your Authored PRs)
 
-- Labels containing: `good first issue`, `help wanted`, `easy`, `beginner`, `trivial`, `documentation`, `docs`, `typo` (configurable via `quick_win_labels`)
-- Pull requests with ≤5 files changed AND ≤100 lines changed
+When you're the author of a PR, additional modifiers apply to help surface PRs that need your attention:
+
+| Modifier | Score | Condition |
+|----------|-------|-----------|
+| Approved | +25 | PR has been approved |
+| Mergeable | +15 | PR can be merged (no conflicts) |
+| Changes requested | +20 | Reviewer requested changes |
+| Review comments | +3/comment | Per review comment (capped at +15) |
+| Stale PR | +2/day | PR idle >7 days (capped at +20) |
+| Draft | -25 | PR is still in draft state |
+
+These modifiers help prioritize:
+- **Approved + Mergeable PRs**: Ready to merge, take action now
+- **Changes Requested**: Address feedback to unblock the PR
+- **Stale PRs**: PRs that have gone quiet and may need a nudge
+- **Draft PRs**: Lower priority since they're not ready for review
+
+### PR Size Thresholds
+
+PRs are labeled with T-shirt sizes based on lines changed (additions + deletions):
+
+| Size | Lines Changed |
+|------|---------------|
+| XS | ≤10 |
+| S | ≤50 |
+| M | ≤200 |
+| L | ≤500 |
+| XL | >500 |
+
+Small PRs (≤5 files AND ≤100 lines) are automatically marked as "Quick Win".
+
+### Priority Levels
+
+Priority is determined by a combination of notification reason, item state, and score. The priority level affects how items are displayed and sorted in the TUI.
+
+| Priority | Color | Description |
+|----------|-------|-------------|
+| **Urgent** | Red | Requires immediate attention |
+| **Important** | Yellow | Should address soon |
+| **Quick Win** | Green | Easy wins, good for quick progress |
+| **Notable** | Blue | Worth attention, promoted by score |
+| **FYI** | Gray | Informational, review when time permits |
+
+### How Priority is Determined
+
+Priority assignment follows this logic (evaluated in order):
+
+1. **Urgent** is assigned when:
+   - Notification reason is `review_requested` or `mention`
+   - Your authored PR is approved AND mergeable (ready to merge)
+   - Your authored PR has changes requested (needs your attention)
+   - Item's score ≥100 (important_promotion_threshold)
+
+2. **Quick Win** is assigned when:
+   - Item has a quick-win label (e.g., `good first issue`, `help wanted`)
+   - PR is small (≤5 files AND ≤100 lines changed)
+
+3. **Important** is assigned when:
+   - Notification reason is `author`, `assign`, or `team_mention`
+   - Item's score ≥60 (notable_promotion_threshold)
+
+4. **Notable** is assigned when:
+   - Item's score ≥35 (fyi_promotion_threshold)
+
+5. **FYI** is assigned for everything else (subscribed, comments, CI activity, etc.)
+
+### Score-Based Promotion
+
+Items are promoted through the priority hierarchy based on their total score. This allows high-activity or aging items to bubble up in priority:
+
+```
+Score:  0    10   20   30   35   50   60   80   100  120
+        |----FYI----|---Notable---|---Important---|--Urgent-->
+        ^subscribed ^comment      ^               ^
+                    fyi_threshold notable_thresh  important_thresh
+```
+
+For example, a `subscribed` notification (base score: 10) could be promoted:
+- To **Notable** if it's a hot topic (+15) on an open issue (+10) — total 35
+- To **Important** if it's also been unread for 15 days (+30) — total 65
+- To **Urgent** if it accumulates even more signals to reach 100+
+
+This ensures that even low-priority notifications get attention if they accumulate enough signals.
 
 ## Configuration File
 
@@ -195,7 +277,9 @@ scoring:
   max_age_bonus: 30
   hot_topic_bonus: 15
   hot_topic_threshold: 6
-  fyi_promotion_threshold: 65
+  fyi_promotion_threshold: 35       # FYI → Notable
+  notable_promotion_threshold: 60   # Notable → Important
+  important_promotion_threshold: 100 # Important → Urgent
   open_state_bonus: 10
   closed_state_penalty: -50  # Penalize closed items more
   low_hanging_bonus: 20
@@ -204,10 +288,18 @@ pr:
   approved_bonus: 25
   mergeable_bonus: 15
   changes_requested_bonus: 20
+  review_comment_bonus: 3
+  review_comment_max_bonus: 15
   stale_threshold_days: 7
+  stale_bonus_per_day: 2
+  stale_max_bonus: 20
   draft_penalty: -25
-  small_max_files: 5
-  small_max_lines: 100
+  small_max_files: 5       # Files threshold for "small PR" detection
+  small_max_lines: 100     # Lines threshold for "small PR" detection
+  size_xs: 10              # PR size thresholds (lines changed)
+  size_s: 50
+  size_m: 200
+  size_l: 500
 ```
 
 Only specify the weights you want to change:
@@ -218,6 +310,7 @@ base_scores:
 
 scoring:
   closed_state_penalty: -100  # Heavily penalize closed items
+  important_promotion_threshold: 90  # Lower bar for Urgent promotion
 ```
 
 ### Customizing Quick Win Labels

@@ -35,14 +35,16 @@ type BaseScoreOverrides struct {
 
 // ScoringOverrides - general scoring modifiers
 type ScoringOverrides struct {
-	OldUnreadBonus        *int `yaml:"old_unread_bonus,omitempty"`
-	MaxAgeBonus           *int `yaml:"max_age_bonus,omitempty"`
-	HotTopicBonus         *int `yaml:"hot_topic_bonus,omitempty"`
-	HotTopicThreshold     *int `yaml:"hot_topic_threshold,omitempty"`
-	FYIPromotionThreshold *int `yaml:"fyi_promotion_threshold,omitempty"`
-	OpenStateBonus        *int `yaml:"open_state_bonus,omitempty"`
-	ClosedStatePenalty    *int `yaml:"closed_state_penalty,omitempty"`
-	LowHangingBonus       *int `yaml:"low_hanging_bonus,omitempty"`
+	OldUnreadBonus              *int `yaml:"old_unread_bonus,omitempty"`
+	MaxAgeBonus                 *int `yaml:"max_age_bonus,omitempty"`
+	HotTopicBonus               *int `yaml:"hot_topic_bonus,omitempty"`
+	HotTopicThreshold           *int `yaml:"hot_topic_threshold,omitempty"`
+	FYIPromotionThreshold       *int `yaml:"fyi_promotion_threshold,omitempty"`
+	NotablePromotionThreshold   *int `yaml:"notable_promotion_threshold,omitempty"`
+	ImportantPromotionThreshold *int `yaml:"important_promotion_threshold,omitempty"`
+	OpenStateBonus              *int `yaml:"open_state_bonus,omitempty"`
+	ClosedStatePenalty          *int `yaml:"closed_state_penalty,omitempty"`
+	LowHangingBonus             *int `yaml:"low_hanging_bonus,omitempty"`
 }
 
 // PROverrides - PR-specific settings
@@ -76,13 +78,15 @@ type ScoreWeights struct {
 	StateChange     int
 	CIActivity      int
 
-	OldUnreadBonus        int
-	HotTopicBonus         int
-	HotTopicThreshold     int
-	LowHangingBonus       int
-	OpenStateBonus        int
-	ClosedStatePenalty    int
-	FYIPromotionThreshold int
+	OldUnreadBonus              int
+	HotTopicBonus               int
+	HotTopicThreshold           int
+	LowHangingBonus             int
+	OpenStateBonus              int
+	ClosedStatePenalty          int
+	FYIPromotionThreshold       int
+	NotablePromotionThreshold   int
+	ImportantPromotionThreshold int
 
 	// Authored PR modifiers
 	ApprovedPRBonus       int
@@ -122,13 +126,15 @@ func DefaultScoreWeights() ScoreWeights {
 		Subscribed:      10,
 		CIActivity:      5,
 
-		OldUnreadBonus:        2,
-		HotTopicBonus:         15,
-		HotTopicThreshold:     6,
-		LowHangingBonus:       20,
-		OpenStateBonus:        10,
-		ClosedStatePenalty:    -30,
-		FYIPromotionThreshold: 60,
+		OldUnreadBonus:              2,
+		HotTopicBonus:               15,
+		HotTopicThreshold:           7,
+		LowHangingBonus:             20,
+		OpenStateBonus:              10,
+		ClosedStatePenalty:          -30,
+		FYIPromotionThreshold:       35,  // FYI → Notable
+		NotablePromotionThreshold:   60,  // Notable → Important
+		ImportantPromotionThreshold: 100, // Important → Urgent
 
 		// Authored PR modifiers
 		ApprovedPRBonus:       25,
@@ -209,6 +215,12 @@ func (c *Config) GetScoreWeights() ScoreWeights {
 		}
 		if s.FYIPromotionThreshold != nil {
 			weights.FYIPromotionThreshold = *s.FYIPromotionThreshold
+		}
+		if s.NotablePromotionThreshold != nil {
+			weights.NotablePromotionThreshold = *s.NotablePromotionThreshold
+		}
+		if s.ImportantPromotionThreshold != nil {
+			weights.ImportantPromotionThreshold = *s.ImportantPromotionThreshold
 		}
 		if s.OpenStateBonus != nil {
 			weights.OpenStateBonus = *s.OpenStateBonus
@@ -413,14 +425,16 @@ func DefaultConfig() *Config {
 			CIActivity:      &weights.CIActivity,
 		},
 		Scoring: &ScoringOverrides{
-			OldUnreadBonus:        &weights.OldUnreadBonus,
-			MaxAgeBonus:           &weights.MaxAgeBonus,
-			HotTopicBonus:         &weights.HotTopicBonus,
-			HotTopicThreshold:     &weights.HotTopicThreshold,
-			FYIPromotionThreshold: &weights.FYIPromotionThreshold,
-			OpenStateBonus:        &weights.OpenStateBonus,
-			ClosedStatePenalty:    &weights.ClosedStatePenalty,
-			LowHangingBonus:       &weights.LowHangingBonus,
+			OldUnreadBonus:              &weights.OldUnreadBonus,
+			MaxAgeBonus:                 &weights.MaxAgeBonus,
+			HotTopicBonus:               &weights.HotTopicBonus,
+			HotTopicThreshold:           &weights.HotTopicThreshold,
+			FYIPromotionThreshold:       &weights.FYIPromotionThreshold,
+			NotablePromotionThreshold:   &weights.NotablePromotionThreshold,
+			ImportantPromotionThreshold: &weights.ImportantPromotionThreshold,
+			OpenStateBonus:              &weights.OpenStateBonus,
+			ClosedStatePenalty:          &weights.ClosedStatePenalty,
+			LowHangingBonus:             &weights.LowHangingBonus,
 		},
 		PR: &PROverrides{
 			ApprovedBonus:         &weights.ApprovedPRBonus,

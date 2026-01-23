@@ -11,6 +11,7 @@ const (
 	PriorityUrgent    PriorityLevel = "urgent"
 	PriorityImportant PriorityLevel = "important"
 	PriorityQuickWin  PriorityLevel = "quick-win"
+	PriorityNotable   PriorityLevel = "notable"
 	PriorityFYI       PriorityLevel = "fyi"
 )
 
@@ -23,6 +24,8 @@ func (p PriorityLevel) Display() string {
 		return "Important"
 	case PriorityQuickWin:
 		return "Quick Win"
+	case PriorityNotable:
+		return "Notable"
 	case PriorityFYI:
 		return "FYI"
 	default:
