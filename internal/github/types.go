@@ -60,11 +60,11 @@ type Subject struct {
 
 // ItemDetails contains enriched information about an issue or PR
 type ItemDetails struct {
-	Number    int       `json:"number"`
-	State     string    `json:"state"` // open, closed, merged
-	HTMLURL   string    `json:"htmlUrl"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	Number    int        `json:"number"`
+	State     string     `json:"state"` // open, closed, merged
+	HTMLURL   string     `json:"htmlUrl"`
+	CreatedAt time.Time  `json:"createdAt"`
+	UpdatedAt time.Time  `json:"updatedAt"`
 	ClosedAt  *time.Time `json:"closedAt,omitempty"`
 
 	// User info

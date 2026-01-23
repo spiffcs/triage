@@ -7,10 +7,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/hal/triage/config"
-	"github.com/hal/triage/internal/github"
-	"github.com/hal/triage/internal/output"
-	"github.com/hal/triage/internal/triage"
+	"github.com/spiffcs/triage/config"
+	"github.com/spiffcs/triage/internal/github"
+	"github.com/spiffcs/triage/internal/log"
+	"github.com/spiffcs/triage/internal/output"
+	"github.com/spiffcs/triage/internal/triage"
 )
 
 var (
@@ -22,7 +23,7 @@ var (
 	reasonFlag    string
 	repoFlag      string
 	typeFlag      string
-	verboseFlag   bool
+	verbosityFlag int
 	workersFlag   int
 	includeMerged bool
 	includeClosed bool
@@ -104,7 +105,7 @@ func init() {
 		cmd.Flags().StringVarP(&priorityFlag, "priority", "p", "", "Filter by priority (urgent, important, quick-win, fyi)")
 		cmd.Flags().StringVarP(&reasonFlag, "reason", "r", "", "Filter by reason (mention, review_requested, author, etc.)")
 		cmd.Flags().StringVar(&repoFlag, "repo", "", "Filter to specific repo (owner/repo)")
-		cmd.Flags().BoolVarP(&verboseFlag, "verbose", "v", false, "Show detailed output")
+		cmd.Flags().CountVarP(&verbosityFlag, "verbose", "v", "Increase verbosity (-v info, -vv debug, -vvv trace)")
 		cmd.Flags().IntVarP(&workersFlag, "workers", "w", 20, "Number of concurrent workers for fetching details")
 		cmd.Flags().BoolVar(&includeMerged, "include-merged", false, "Include notifications for merged PRs")
 		cmd.Flags().BoolVar(&includeClosed, "include-closed", false, "Include notifications for closed issues/PRs")
@@ -127,6 +128,9 @@ func init() {
 }
 
 func runList(cmd *cobra.Command, args []string) error {
+	// Initialize logging
+	log.Initialize(verbosityFlag, os.Stderr)
+
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
@@ -155,7 +159,7 @@ func runList(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid duration: %w", err)
 	}
 
-	fmt.Fprintf(os.Stderr, "Fetching notifications from the past %s...\n", sinceFlag)
+	log.Info("fetching notifications", "since", sinceFlag)
 
 	// Fetch notifications
 	notifications, err := ghClient.ListUnreadNotifications(since)
@@ -165,34 +169,34 @@ func runList(cmd *cobra.Command, args []string) error {
 
 	// Enrich with details
 	if len(notifications) > 0 {
-		fmt.Fprintf(os.Stderr, "Found %d notifications. Fetching details...\n", len(notifications))
+		log.Info("found notifications", "count", len(notifications))
 
 		// Progress callback
 		lastPercent := -1
 		onProgress := func(completed, total int) {
 			percent := (completed * 100) / total
 			if percent != lastPercent && percent%5 == 0 {
-				fmt.Fprintf(os.Stderr, "\rFetching details: %d/%d (%d%%)...", completed, total, percent)
+				log.Progress("Fetching details: %d/%d (%d%%)...", completed, total, percent)
 				lastPercent = percent
 			}
 		}
 
 		if err := ghClient.EnrichNotificationsConcurrent(notifications, workersFlag, onProgress); err != nil {
-			fmt.Fprintf(os.Stderr, "\nWarning: some notifications could not be enriched: %v\n", err)
+			log.Warn("some notifications could not be enriched", "error", err)
 		}
-		fmt.Fprintf(os.Stderr, "\rFetching details: %d/%d (100%%)... done\n", len(notifications), len(notifications))
+		log.ProgressDone()
 	}
 
 	// Create cache for PR lists
 	prCache, cacheErr := github.NewCache()
 	if cacheErr != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to initialize cache: %v\n", cacheErr)
+		log.Warn("failed to initialize cache", "error", cacheErr)
 	}
 
 	// Fetch PRs where user is a requested reviewer
 	reviewPRs, reviewFromCache, err := ghClient.ListReviewRequestedPRsCached(currentUser, prCache)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to fetch review-requested PRs: %v\n", err)
+		log.Warn("failed to fetch review-requested PRs", "error", err)
 	} else if len(reviewPRs) > 0 {
 		// Enrich review-requested PRs with additions/deletions (search API doesn't return them)
 		for i := range reviewPRs {
@@ -203,18 +207,14 @@ func runList(cmd *cobra.Command, args []string) error {
 		var added int
 		notifications, added = mergeReviewRequests(notifications, reviewPRs)
 		if added > 0 {
-			if reviewFromCache {
-				fmt.Fprintf(os.Stderr, "PRs awaiting your review: %d (cached)\n", added)
-			} else {
-				fmt.Fprintf(os.Stderr, "PRs awaiting your review: %d\n", added)
-			}
+			log.Info("PRs awaiting your review", "count", added, "cached", reviewFromCache)
 		}
 	}
 
 	// Fetch user's own open PRs
 	authoredPRs, authoredFromCache, err := ghClient.ListAuthoredPRsCached(currentUser, prCache)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to fetch authored PRs: %v\n", err)
+		log.Warn("failed to fetch authored PRs", "error", err)
 	} else if len(authoredPRs) > 0 {
 		// Enrich authored PRs with additions/deletions (search API doesn't return them)
 		for i := range authoredPRs {
@@ -225,11 +225,7 @@ func runList(cmd *cobra.Command, args []string) error {
 		var added int
 		notifications, added = mergeAuthoredPRs(notifications, authoredPRs)
 		if added > 0 {
-			if authoredFromCache {
-				fmt.Fprintf(os.Stderr, "Your open PRs: %d (cached)\n", added)
-			} else {
-				fmt.Fprintf(os.Stderr, "Your open PRs: %d\n", added)
-			}
+			log.Info("your open PRs", "count", added, "cached", authoredFromCache)
 		}
 	}
 
@@ -288,11 +284,6 @@ func runList(cmd *cobra.Command, args []string) error {
 
 	// Output
 	formatter := output.NewFormatter(format)
-
-	if verboseFlag && format == output.FormatTable {
-		tableFormatter := formatter.(*output.TableFormatter)
-		return tableFormatter.FormatVerbose(items, os.Stdout)
-	}
 
 	return formatter.Format(items, os.Stdout)
 }

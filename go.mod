@@ -1,4 +1,4 @@
-module github.com/hal/triage
+module github.com/spiffcs/triage
 
 go 1.25.1
 

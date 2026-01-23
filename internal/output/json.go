@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"io"
 
-	"github.com/hal/triage/internal/triage"
+	"github.com/spiffcs/triage/internal/triage"
 )
 
 // JSONFormatter formats output as JSON
@@ -20,4 +20,3 @@ func (f *JSONFormatter) Format(items []triage.PrioritizedItem, w io.Writer) erro
 	}
 	return encoder.Encode(items)
 }
-

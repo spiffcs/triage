@@ -1,7 +1,7 @@
 package triage
 
 import (
-	"github.com/hal/triage/internal/github"
+	"github.com/spiffcs/triage/internal/github"
 )
 
 // PriorityLevel represents the action priority (displayed in table)

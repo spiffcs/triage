@@ -1,0 +1,19 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+
+linters-settings:
+  errcheck:
+    check-type-assertions: true
+
+issues:
+  exclude-use-default: true

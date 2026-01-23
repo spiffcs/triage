@@ -3,8 +3,8 @@ package triage
 import (
 	"sort"
 
-	"github.com/hal/triage/config"
-	"github.com/hal/triage/internal/github"
+	"github.com/spiffcs/triage/config"
+	"github.com/spiffcs/triage/internal/github"
 )
 
 // Engine orchestrates the prioritization process
@@ -123,4 +123,3 @@ func FilterByType(items []PrioritizedItem, subjectType github.SubjectType) []Pri
 	}
 	return filtered
 }
-

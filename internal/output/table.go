@@ -10,9 +10,10 @@ import (
 	"unicode/utf8"
 
 	"github.com/fatih/color"
-	"github.com/hal/triage/internal/github"
-	"github.com/hal/triage/internal/triage"
 	"github.com/mattn/go-runewidth"
+	"github.com/spiffcs/triage/internal/github"
+	"github.com/spiffcs/triage/internal/log"
+	"github.com/spiffcs/triage/internal/triage"
 	"golang.org/x/term"
 )
 
@@ -149,7 +150,9 @@ func padRight(s string, visibleWidth, targetWidth int) string {
 // Format outputs prioritized items as a table
 func (f *TableFormatter) Format(items []triage.PrioritizedItem, w io.Writer) error {
 	if len(items) == 0 {
-		fmt.Fprintln(w, "No notifications found.")
+		if _, err := fmt.Fprintln(w, "No notifications found."); err != nil {
+			log.Trace("write error", "error", err)
+		}
 		return nil
 	}
 
@@ -164,14 +167,18 @@ func (f *TableFormatter) Format(items []triage.PrioritizedItem, w io.Writer) err
 	)
 
 	// Header
-	fmt.Fprintf(w, "%-*s  %-*s  %-*s  %-*s  %-*s  %s\n",
+	if _, err := fmt.Fprintf(w, "%-*s  %-*s  %-*s  %-*s  %-*s  %s\n",
 		colPriority, "Priority",
 		colType, "Type",
 		colRepo, "Repository",
 		colTitle, "Title",
 		colStatus, "Status",
-		"Age")
-	fmt.Fprintln(w, strings.Repeat("-", colPriority+colType+colRepo+colTitle+colStatus+colAge+12))
+		"Age"); err != nil {
+		log.Trace("write error", "location", "header", "error", err)
+	}
+	if _, err := fmt.Fprintln(w, strings.Repeat("-", colPriority+colType+colRepo+colTitle+colStatus+colAge+12)); err != nil {
+		log.Trace("write error", "location", "separator", "error", err)
+	}
 
 	for _, item := range items {
 		n := item.Notification
@@ -247,14 +254,16 @@ func (f *TableFormatter) Format(items []triage.PrioritizedItem, w io.Writer) err
 		// Calculate age
 		age := formatAge(time.Since(n.UpdatedAt))
 
-		fmt.Fprintf(w, "%s  %-*s  %s  %s  %s  %s\n",
+		if _, err := fmt.Fprintf(w, "%s  %-*s  %s  %s  %s  %s\n",
 			priorityStr,
 			colType, typeStr,
 			padRight(repo, displayWidth(repo), colRepo),
 			linkedTitle,
 			statusText,
 			age,
-		)
+		); err != nil {
+			log.Trace("write error", "location", "row", "error", err)
+		}
 	}
 
 	// Print enhanced footer summary
@@ -265,7 +274,7 @@ func (f *TableFormatter) Format(items []triage.PrioritizedItem, w io.Writer) err
 
 // statusResult holds both the display string and its visible width
 type statusResult struct {
-	text        string
+	text         string
 	visibleWidth int
 }
 
@@ -378,54 +387,37 @@ func printFooterSummary(items []triage.PrioritizedItem, w io.Writer) {
 		return
 	}
 
-	fmt.Fprintln(w)
-	fmt.Fprintln(w, strings.Repeat("━", 60))
+	if _, err := fmt.Fprintln(w); err != nil {
+		log.Trace("write error", "location", "footer-newline", "error", err)
+	}
+	if _, err := fmt.Fprintln(w, strings.Repeat("━", 60)); err != nil {
+		log.Trace("write error", "location", "footer-separator", "error", err)
+	}
 
 	if urgentCount > 0 {
-		fmt.Fprintf(w, "  %s %s urgent items need attention\n",
+		if _, err := fmt.Fprintf(w, "  %s %s urgent items need attention\n",
 			color.RedString("!"),
-			color.RedString("%d", urgentCount))
+			color.RedString("%d", urgentCount)); err != nil {
+			log.Trace("write error", "location", "footer-urgent", "error", err)
+		}
 	}
 	if reviewCount > 0 {
-		fmt.Fprintf(w, "  %s %d PRs awaiting your review\n",
+		if _, err := fmt.Fprintf(w, "  %s %d PRs awaiting your review\n",
 			color.CyanString("*"),
-			reviewCount)
+			reviewCount); err != nil {
+			log.Trace("write error", "location", "footer-review", "error", err)
+		}
 	}
 	if quickWinCount > 0 {
-		fmt.Fprintf(w, "  ⚡ %d quick wins available\n", quickWinCount)
+		if _, err := fmt.Fprintf(w, "  ⚡ %d quick wins available\n", quickWinCount); err != nil {
+			log.Trace("write error", "location", "footer-quickwin", "error", err)
+		}
 	}
 	if hotCount > 0 {
-		fmt.Fprintf(w, "  🔥 %d hot discussions\n", hotCount)
-	}
-}
-
-// FormatVerbose outputs items with detailed information
-func (f *TableFormatter) FormatVerbose(items []triage.PrioritizedItem, w io.Writer) error {
-	for i, item := range items {
-		n := item.Notification
-
-		fmt.Fprintf(w, "%s #%d: %s\n", colorPriority(item.Priority), i+1, n.Subject.Title)
-		fmt.Fprintf(w, "  Repository: %s\n", n.Repository.FullName)
-		fmt.Fprintf(w, "  Type: %s | Reason: %s | Age: %s\n",
-			n.Subject.Type, n.Reason, formatAge(time.Since(n.UpdatedAt)))
-		fmt.Fprintf(w, "  Action: %s\n", item.ActionNeeded)
-
-		if n.Details != nil {
-			d := n.Details
-			fmt.Fprintf(w, "  State: %s | Comments: %d\n", d.State, d.CommentCount)
-			if d.IsPR {
-				fmt.Fprintf(w, "  PR: +%d/-%d (%d files) | Review: %s\n",
-					d.Additions, d.Deletions, d.ChangedFiles, d.ReviewState)
-			}
-			if len(d.Labels) > 0 {
-				fmt.Fprintf(w, "  Labels: %s\n", strings.Join(d.Labels, ", "))
-			}
+		if _, err := fmt.Fprintf(w, "  🔥 %d hot discussions\n", hotCount); err != nil {
+			log.Trace("write error", "location", "footer-hot", "error", err)
 		}
-
-		fmt.Fprintln(w)
 	}
-
-	return nil
 }
 
 func colorPriority(p triage.PriorityLevel) string {

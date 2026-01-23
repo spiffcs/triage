@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/google/go-github/v57/github"
+	"github.com/spiffcs/triage/internal/log"
 	"golang.org/x/oauth2"
 )
 
@@ -293,7 +294,9 @@ func (c *Client) ListReviewRequestedPRsCached(username string, cache *Cache) ([]
 
 	// Cache the result
 	if cache != nil {
-		_ = cache.SetPRList(username, "review-requested", prs)
+		if err := cache.SetPRList(username, "review-requested", prs); err != nil {
+			log.Debug("failed to cache review-requested PRs", "error", err)
+		}
 	}
 
 	return prs, false, nil
@@ -316,7 +319,9 @@ func (c *Client) ListAuthoredPRsCached(username string, cache *Cache) ([]Notific
 
 	// Cache the result
 	if cache != nil {
-		_ = cache.SetPRList(username, "authored", prs)
+		if err := cache.SetPRList(username, "authored", prs); err != nil {
+			log.Debug("failed to cache authored PRs", "error", err)
+		}
 	}
 
 	return prs, false, nil

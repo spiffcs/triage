@@ -2,12 +2,12 @@ package github
 
 import (
 	"fmt"
-	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
 
 	"github.com/google/go-github/v57/github"
+	"github.com/spiffcs/triage/internal/log"
 )
 
 // EnrichmentProgress tracks enrichment progress
@@ -57,7 +57,7 @@ func (c *Client) EnrichNotificationsWithProgress(notifications []Notification, o
 	total := len(notifications)
 	for i := range notifications {
 		if err := c.EnrichNotification(&notifications[i]); err != nil {
-			fmt.Printf("\rWarning: failed to enrich notification %s: %v\n", notifications[i].ID, err)
+			log.Warn("failed to enrich notification", "id", notifications[i].ID, "error", err)
 		}
 		if onProgress != nil {
 			onProgress(i+1, total)
@@ -75,7 +75,7 @@ func (c *Client) EnrichNotificationsConcurrent(notifications []Notification, wor
 	// Initialize cache
 	cache, cacheErr := NewCache()
 	if cacheErr != nil {
-		fmt.Fprintf(os.Stderr, "Warning: cache unavailable: %v\n", cacheErr)
+		log.Warn("cache unavailable", "error", cacheErr)
 	}
 
 	total := len(notifications)
@@ -101,7 +101,7 @@ func (c *Client) EnrichNotificationsConcurrent(notifications []Notification, wor
 	}
 
 	if cacheHits > 0 {
-		fmt.Fprintf(os.Stderr, "\rCache hit: %d/%d notifications\n", cacheHits, total)
+		log.Info("cache hit", "count", cacheHits, "total", total)
 	}
 
 	if len(uncachedIndices) == 0 {
@@ -126,7 +126,9 @@ func (c *Client) EnrichNotificationsConcurrent(notifications []Notification, wor
 					atomic.AddInt64(&errors, 1)
 				} else if cache != nil && notifications[i].Details != nil {
 					// Cache successful enrichment
-					cache.Set(&notifications[i], notifications[i].Details)
+					if err := cache.Set(&notifications[i], notifications[i].Details); err != nil {
+						log.Debug("failed to cache notification", "id", notifications[i].ID, "error", err)
+					}
 				}
 				done := atomic.AddInt64(&completed, 1)
 				if onProgress != nil {
@@ -139,7 +141,7 @@ func (c *Client) EnrichNotificationsConcurrent(notifications []Notification, wor
 	wg.Wait()
 
 	if errors > 0 {
-		fmt.Fprintf(os.Stderr, "\n%d notifications failed to enrich (may be deleted or inaccessible)\n", errors)
+		log.Warn("some notifications failed to enrich", "count", errors, "note", "may be deleted or inaccessible")
 	}
 
 	return nil

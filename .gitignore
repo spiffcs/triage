@@ -19,6 +19,7 @@ go.work.sum
 
 # Dependency directories
 vendor/
+.tool/
 
 # IDE and editor
 .idea/

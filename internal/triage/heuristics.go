@@ -4,8 +4,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hal/triage/config"
-	"github.com/hal/triage/internal/github"
+	"github.com/spiffcs/triage/config"
+	"github.com/spiffcs/triage/internal/github"
 )
 
 // Heuristics implements rule-based priority scoring
@@ -73,9 +73,10 @@ func (h *Heuristics) detailModifiers(n *github.Notification) int {
 	modifier := 0
 
 	// State modifiers
-	if d.State == "open" {
+	switch d.State {
+	case "open":
 		modifier += h.Weights.OpenStateBonus
-	} else if d.State == "closed" || d.State == "merged" {
+	case "closed", "merged":
 		modifier += h.Weights.ClosedStatePenalty
 	}
 

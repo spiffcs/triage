@@ -3,7 +3,7 @@ package output
 import (
 	"io"
 
-	"github.com/hal/triage/internal/triage"
+	"github.com/spiffcs/triage/internal/triage"
 )
 
 // Format represents the output format
