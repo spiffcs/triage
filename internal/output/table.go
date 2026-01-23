@@ -23,10 +23,10 @@ var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 // TableFormatter formats output as a terminal table
 type TableFormatter struct {
 	HotTopicThreshold int
-	PRSizeXS                 int
-	PRSizeS                  int
-	PRSizeM                  int
-	PRSizeL                  int
+	PRSizeXS          int
+	PRSizeS           int
+	PRSizeM           int
+	PRSizeL           int
 }
 
 // hyperlink creates a clickable terminal hyperlink using OSC 8

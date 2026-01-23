@@ -127,12 +127,12 @@ func (c *Cache) Clear() error {
 
 // CacheStats contains detailed cache statistics
 type CacheStats struct {
-	DetailTotal     int
-	DetailValid     int
-	PRListTotal     int
-	PRListValid     int
-	NotifListTotal  int
-	NotifListValid  int
+	DetailTotal    int
+	DetailValid    int
+	PRListTotal    int
+	PRListValid    int
+	NotifListTotal int
+	NotifListValid int
 }
 
 // Stats returns cache statistics

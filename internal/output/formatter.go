@@ -33,10 +33,10 @@ func NewFormatterWithWeights(format Format, weights config.ScoreWeights) Formatt
 	default:
 		return &TableFormatter{
 			HotTopicThreshold: weights.HotTopicThreshold,
-			PRSizeXS:                 weights.PRSizeXS,
-			PRSizeS:                  weights.PRSizeS,
-			PRSizeM:                  weights.PRSizeM,
-			PRSizeL:                  weights.PRSizeL,
+			PRSizeXS:          weights.PRSizeXS,
+			PRSizeS:           weights.PRSizeS,
+			PRSizeM:           weights.PRSizeM,
+			PRSizeL:           weights.PRSizeL,
 		}
 	}
 }

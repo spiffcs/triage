@@ -18,7 +18,6 @@ type Model struct {
 	username     string
 	windowWidth  int
 	windowHeight int
-	err          error
 }
 
 // doneMsg signals that all events have been processed.

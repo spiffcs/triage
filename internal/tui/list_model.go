@@ -13,34 +13,34 @@ import (
 
 // ListModel is the Bubble Tea model for the interactive notification list
 type ListModel struct {
-	items                    []triage.PrioritizedItem
-	cursor                   int
-	resolved                 *resolved.Store
-	windowWidth              int
-	windowHeight             int
-	statusMsg                string
-	statusTime               time.Time
-	quitting                 bool
+	items             []triage.PrioritizedItem
+	cursor            int
+	resolved          *resolved.Store
+	windowWidth       int
+	windowHeight      int
+	statusMsg         string
+	statusTime        time.Time
+	quitting          bool
 	hotTopicThreshold int
-	prSizeXS                 int
-	prSizeS                  int
-	prSizeM                  int
-	prSizeL                  int
+	prSizeXS          int
+	prSizeS           int
+	prSizeM           int
+	prSizeL           int
 }
 
 // NewListModel creates a new list model
 func NewListModel(items []triage.PrioritizedItem, store *resolved.Store, weights config.ScoreWeights) ListModel {
 	return ListModel{
-		items:                    items,
-		cursor:                   0,
-		resolved:                 store,
-		windowWidth:              80,
-		windowHeight:             24,
+		items:             items,
+		cursor:            0,
+		resolved:          store,
+		windowWidth:       80,
+		windowHeight:      24,
 		hotTopicThreshold: weights.HotTopicThreshold,
-		prSizeXS:                 weights.PRSizeXS,
-		prSizeS:                  weights.PRSizeS,
-		prSizeM:                  weights.PRSizeM,
-		prSizeL:                  weights.PRSizeL,
+		prSizeXS:          weights.PRSizeXS,
+		prSizeS:           weights.PRSizeS,
+		prSizeM:           weights.PRSizeM,
+		prSizeL:           weights.PRSizeL,
 	}
 }
 

@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-
 	"github.com/spiffcs/triage/config"
 )
 
@@ -40,7 +39,6 @@ func NewCmdConfigSet() *cobra.Command {
 		RunE: runConfigSet,
 	}
 }
-
 
 func runConfig(cmd *cobra.Command, args []string) error {
 	// Output a complete config with all defaults as YAML
@@ -81,4 +79,3 @@ func runConfigSet(cmd *cobra.Command, args []string) error {
 
 	return nil
 }
-

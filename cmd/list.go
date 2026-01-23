@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
-
 	"github.com/spiffcs/triage/config"
 	"github.com/spiffcs/triage/internal/github"
 	"github.com/spiffcs/triage/internal/log"
@@ -158,19 +157,19 @@ func runList(_ *cobra.Command, _ []string, opts *Options) error {
 
 	// Parallel fetch all data sources
 	type fetchResult struct {
-		notifications   []github.Notification
-		reviewPRs       []github.Notification
-		authoredPRs     []github.Notification
-		assignedIssues  []github.Notification
-		notifErr        error
-		reviewErr       error
-		authoredErr     error
-		assignedErr     error
-		notifCached     bool
-		notifNewCount   int
-		reviewCached    bool
-		authoredCached  bool
-		assignedCached  bool
+		notifications  []github.Notification
+		reviewPRs      []github.Notification
+		authoredPRs    []github.Notification
+		assignedIssues []github.Notification
+		notifErr       error
+		reviewErr      error
+		authoredErr    error
+		assignedErr    error
+		notifCached    bool
+		notifNewCount  int
+		reviewCached   bool
+		authoredCached bool
+		assignedCached bool
 	}
 
 	sendTaskEvent(events, tui.TaskFetch, tui.StatusRunning, tui.WithMessage(fmt.Sprintf("for the past %s", opts.Since)))
