@@ -728,3 +728,68 @@ func (c *Config) ToYAML() (string, error) {
 	}
 	return string(data), nil
 }
+
+// ConfigPathInfo contains information about config file paths
+type ConfigPathInfo struct {
+	GlobalPath   string
+	GlobalExists bool
+	LocalPath    string
+	LocalExists  bool
+}
+
+// GetConfigPaths returns path info for both global and local configs
+func GetConfigPaths() ConfigPathInfo {
+	globalPath := ConfigPath()
+	localPath := LocalConfigPath()
+
+	// Get absolute path for local config
+	absLocalPath, err := filepath.Abs(localPath)
+	if err != nil {
+		absLocalPath = localPath
+	}
+
+	_, globalErr := os.Stat(globalPath)
+	_, localErr := os.Stat(localPath)
+
+	return ConfigPathInfo{
+		GlobalPath:   globalPath,
+		GlobalExists: globalErr == nil,
+		LocalPath:    absLocalPath,
+		LocalExists:  localErr == nil,
+	}
+}
+
+// MinimalConfig returns a minimal config template with comments
+func MinimalConfig() string {
+	return `# Triage configuration file
+# See: triage config defaults  (for all available options)
+
+# Output format: table or json
+default_format: table
+
+# Exclude noisy repositories (optional)
+# exclude_repos:
+#   - owner/noisy-repo
+
+# Override scoring weights (optional)
+# base_scores:
+#   review_requested: 100
+#   mention: 90
+
+# See README.md for full configuration options
+`
+}
+
+// SaveTo writes content to a specific path, creating directories as needed
+func SaveTo(path string, content string) error {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return fmt.Errorf("failed to create directory %s: %w", dir, err)
+	}
+
+	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+		return fmt.Errorf("failed to write file %s: %w", path, err)
+	}
+
+	return nil
+}

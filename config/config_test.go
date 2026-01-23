@@ -6,6 +6,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestDefaultScoreWeights(t *testing.T) {
@@ -348,6 +350,153 @@ quick_win_labels:
 
 		if cfg.DefaultFormat != "table" {
 			t.Errorf("Load().DefaultFormat = %q, want 'table'", cfg.DefaultFormat)
+		}
+	})
+}
+
+func TestGetConfigPaths(t *testing.T) {
+	paths := GetConfigPaths()
+
+	t.Run("returns valid global path", func(t *testing.T) {
+		if paths.GlobalPath == "" {
+			t.Error("GetConfigPaths().GlobalPath should not be empty")
+		}
+		if !strings.HasSuffix(paths.GlobalPath, "config.yaml") {
+			t.Errorf("GetConfigPaths().GlobalPath = %q, should end with 'config.yaml'", paths.GlobalPath)
+		}
+	})
+
+	t.Run("returns absolute local path", func(t *testing.T) {
+		if paths.LocalPath == "" {
+			t.Error("GetConfigPaths().LocalPath should not be empty")
+		}
+		if !filepath.IsAbs(paths.LocalPath) {
+			t.Errorf("GetConfigPaths().LocalPath = %q, should be absolute", paths.LocalPath)
+		}
+		if !strings.HasSuffix(paths.LocalPath, ".triage.yaml") {
+			t.Errorf("GetConfigPaths().LocalPath = %q, should end with '.triage.yaml'", paths.LocalPath)
+		}
+	})
+
+	t.Run("detects file existence correctly", func(t *testing.T) {
+		// Create a temp directory and change to it
+		tmpDir := t.TempDir()
+		original, _ := os.Getwd()
+		defer os.Chdir(original)
+		os.Chdir(tmpDir)
+
+		// Initially no local config should exist
+		pathsBefore := GetConfigPaths()
+		if pathsBefore.LocalExists {
+			t.Error("GetConfigPaths().LocalExists should be false when file doesn't exist")
+		}
+
+		// Create local config
+		if err := os.WriteFile(".triage.yaml", []byte("default_format: table"), 0600); err != nil {
+			t.Fatal(err)
+		}
+
+		// Now it should exist
+		pathsAfter := GetConfigPaths()
+		if !pathsAfter.LocalExists {
+			t.Error("GetConfigPaths().LocalExists should be true when file exists")
+		}
+	})
+}
+
+func TestMinimalConfig(t *testing.T) {
+	content := MinimalConfig()
+
+	t.Run("contains expected sections", func(t *testing.T) {
+		expectedStrings := []string{
+			"# Triage configuration file",
+			"default_format: table",
+			"# exclude_repos:",
+			"# base_scores:",
+			"triage config defaults",
+		}
+
+		for _, expected := range expectedStrings {
+			if !strings.Contains(content, expected) {
+				t.Errorf("MinimalConfig() should contain %q", expected)
+			}
+		}
+	})
+
+	t.Run("is valid YAML", func(t *testing.T) {
+		var cfg Config
+		// The minimal config with comments should still be parseable
+		// (YAML comments are ignored)
+		if err := os.WriteFile(filepath.Join(t.TempDir(), "test.yaml"), []byte(content), 0600); err != nil {
+			t.Fatal(err)
+		}
+
+		// Parse it to verify it's valid YAML
+		data := []byte(content)
+		if err := yaml.Unmarshal(data, &cfg); err != nil {
+			t.Errorf("MinimalConfig() is not valid YAML: %v", err)
+		}
+	})
+}
+
+func TestSaveTo(t *testing.T) {
+	t.Run("creates file in existing directory", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		path := filepath.Join(tmpDir, "test-config.yaml")
+		content := "default_format: json"
+
+		if err := SaveTo(path, content); err != nil {
+			t.Fatalf("SaveTo() error = %v", err)
+		}
+
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("Failed to read written file: %v", err)
+		}
+
+		if string(data) != content {
+			t.Errorf("SaveTo() wrote %q, want %q", string(data), content)
+		}
+	})
+
+	t.Run("creates nested directories", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		path := filepath.Join(tmpDir, "nested", "dirs", "config.yaml")
+		content := "default_format: table"
+
+		if err := SaveTo(path, content); err != nil {
+			t.Fatalf("SaveTo() error = %v", err)
+		}
+
+		// Verify file exists and has correct content
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("Failed to read written file: %v", err)
+		}
+
+		if string(data) != content {
+			t.Errorf("SaveTo() wrote %q, want %q", string(data), content)
+		}
+	})
+
+	t.Run("sets appropriate permissions", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		path := filepath.Join(tmpDir, "secure-config.yaml")
+		content := "secret: value"
+
+		if err := SaveTo(path, content); err != nil {
+			t.Fatalf("SaveTo() error = %v", err)
+		}
+
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatalf("Failed to stat written file: %v", err)
+		}
+
+		// File should be readable/writable only by owner (0600)
+		perm := info.Mode().Perm()
+		if perm != 0600 {
+			t.Errorf("SaveTo() set permissions %o, want 0600", perm)
 		}
 	})
 }

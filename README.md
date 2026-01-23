@@ -111,10 +111,19 @@ triage cache clear    # Clear all caches
 
 ### Configuration
 
+Manage configuration files and view current settings.
+
 ```bash
-triage config show                    # Show current config
-triage config set format json         # Set default output format
+triage config             # Show current merged configuration
+triage config init        # Create a minimal config file (prompts for location)
+triage config init --global  # Create global config (~/.config/triage/config.yaml)
+triage config init --local   # Create local config (./.triage.yaml)
+triage config path        # Show config file locations and which exist
+triage config defaults    # Show all default values (useful for creating full config)
+triage config show        # Show current merged config (same as bare 'triage config')
 ```
+
+Configuration is loaded in order: **defaults → global → local** (local values override global).
 
 ## Priority Scoring
 
@@ -242,7 +251,13 @@ This ensures that even low-priority notifications get attention if they accumula
 
 ## Configuration File
 
-Config is stored at `~/.config/triage/config.yaml`. Unspecified values use sensible defaults, so you only need to configure what you want to override:
+Config files are loaded in order, with later values overriding earlier ones:
+
+1. **Defaults** - Built-in sensible defaults
+2. **Global** - `~/.config/triage/config.yaml` (XDG config directory)
+3. **Local** - `./.triage.yaml` (current directory, useful for per-project settings)
+
+You only need to specify values you want to override:
 
 ```yaml
 # Minimal config - only specify what you want to change
