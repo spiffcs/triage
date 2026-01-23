@@ -155,7 +155,7 @@ func (h *Heuristics) isLowHangingFruit(d *github.ItemDetails) bool {
 }
 
 // DeterminePriority determines the priority for a notification (displayed in table)
-func (h *Heuristics) DeterminePriority(n *github.Notification) PriorityLevel {
+func (h *Heuristics) DeterminePriority(n *github.Notification, score int) PriorityLevel {
 	reason := n.Reason
 
 	// Urgent: review requests and direct mentions
@@ -182,6 +182,11 @@ func (h *Heuristics) DeterminePriority(n *github.Notification) PriorityLevel {
 
 	// Important: author notifications, assignments
 	if reason == github.ReasonAuthor || reason == github.ReasonAssign || reason == github.ReasonTeamMention {
+		return PriorityImportant
+	}
+
+	// Promote high-scoring FYI items to Important
+	if score >= h.Weights.FYIPromotionThreshold {
 		return PriorityImportant
 	}
 

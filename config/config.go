@@ -35,11 +35,12 @@ type BaseScoreOverrides struct {
 
 // ModifierOverrides allows customizing score modifiers
 type ModifierOverrides struct {
-	OldUnreadBonus     *int `yaml:"old_unread_bonus,omitempty"`
-	HotTopicBonus      *int `yaml:"hot_topic_bonus,omitempty"`
-	LowHangingBonus    *int `yaml:"low_hanging_bonus,omitempty"`
-	OpenStateBonus     *int `yaml:"open_state_bonus,omitempty"`
-	ClosedStatePenalty *int `yaml:"closed_state_penalty,omitempty"`
+	OldUnreadBonus        *int `yaml:"old_unread_bonus,omitempty"`
+	HotTopicBonus         *int `yaml:"hot_topic_bonus,omitempty"`
+	LowHangingBonus       *int `yaml:"low_hanging_bonus,omitempty"`
+	OpenStateBonus        *int `yaml:"open_state_bonus,omitempty"`
+	ClosedStatePenalty    *int `yaml:"closed_state_penalty,omitempty"`
+	FYIPromotionThreshold *int `yaml:"fyi_promotion_threshold,omitempty"`
 }
 
 // WeightOverrides allows customizing priority weights
@@ -60,11 +61,12 @@ type ScoreWeights struct {
 	StateChange     int
 	CIActivity      int
 
-	OldUnreadBonus     int
-	HotTopicBonus      int
-	LowHangingBonus    int
-	OpenStateBonus     int
-	ClosedStatePenalty int
+	OldUnreadBonus        int
+	HotTopicBonus         int
+	LowHangingBonus       int
+	OpenStateBonus        int
+	ClosedStatePenalty    int
+	FYIPromotionThreshold int
 }
 
 // DefaultScoreWeights returns the default scoring weights
@@ -80,11 +82,12 @@ func DefaultScoreWeights() ScoreWeights {
 		Subscribed:      10,
 		CIActivity:      5,
 
-		OldUnreadBonus:     2,
-		HotTopicBonus:      15,
-		LowHangingBonus:    20,
-		OpenStateBonus:     10,
-		ClosedStatePenalty: -30,
+		OldUnreadBonus:        2,
+		HotTopicBonus:         15,
+		LowHangingBonus:       20,
+		OpenStateBonus:        10,
+		ClosedStatePenalty:    -30,
+		FYIPromotionThreshold: 50,
 	}
 }
 
@@ -145,6 +148,9 @@ func (c *Config) GetScoreWeights() ScoreWeights {
 		}
 		if m.ClosedStatePenalty != nil {
 			weights.ClosedStatePenalty = *m.ClosedStatePenalty
+		}
+		if m.FYIPromotionThreshold != nil {
+			weights.FYIPromotionThreshold = *m.FYIPromotionThreshold
 		}
 	}
 

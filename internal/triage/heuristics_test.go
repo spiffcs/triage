@@ -127,6 +127,7 @@ func TestDeterminePriority(t *testing.T) {
 	tests := []struct {
 		name         string
 		notification *github.Notification
+		score        int
 		want         PriorityLevel
 	}{
 		{
@@ -134,14 +135,16 @@ func TestDeterminePriority(t *testing.T) {
 			notification: &github.Notification{
 				Reason: github.ReasonReviewRequested,
 			},
-			want: PriorityUrgent,
+			score: 0,
+			want:  PriorityUrgent,
 		},
 		{
 			name: "mention is urgent",
 			notification: &github.Notification{
 				Reason: github.ReasonMention,
 			},
-			want: PriorityUrgent,
+			score: 0,
+			want:  PriorityUrgent,
 		},
 		{
 			name: "authored PR approved and mergeable is urgent",
@@ -153,7 +156,8 @@ func TestDeterminePriority(t *testing.T) {
 					Mergeable:   true,
 				},
 			},
-			want: PriorityUrgent,
+			score: 0,
+			want:  PriorityUrgent,
 		},
 		{
 			name: "authored PR with changes requested is urgent",
@@ -164,7 +168,8 @@ func TestDeterminePriority(t *testing.T) {
 					ReviewState: "changes_requested",
 				},
 			},
-			want: PriorityUrgent,
+			score: 0,
+			want:  PriorityUrgent,
 		},
 		{
 			name: "low hanging fruit is quick win",
@@ -174,7 +179,8 @@ func TestDeterminePriority(t *testing.T) {
 					Labels: []string{"good first issue"},
 				},
 			},
-			want: PriorityQuickWin,
+			score: 0,
+			want:  PriorityQuickWin,
 		},
 		{
 			name: "author without urgent details is important",
@@ -188,41 +194,62 @@ func TestDeterminePriority(t *testing.T) {
 					Deletions:    100,
 				},
 			},
-			want: PriorityImportant,
+			score: 0,
+			want:  PriorityImportant,
 		},
 		{
 			name: "assign is important",
 			notification: &github.Notification{
 				Reason: github.ReasonAssign,
 			},
-			want: PriorityImportant,
+			score: 0,
+			want:  PriorityImportant,
 		},
 		{
 			name: "team_mention is important",
 			notification: &github.Notification{
 				Reason: github.ReasonTeamMention,
 			},
-			want: PriorityImportant,
+			score: 0,
+			want:  PriorityImportant,
 		},
 		{
 			name: "subscribed is FYI",
 			notification: &github.Notification{
 				Reason: github.ReasonSubscribed,
 			},
-			want: PriorityFYI,
+			score: 0,
+			want:  PriorityFYI,
 		},
 		{
 			name: "comment is FYI",
 			notification: &github.Notification{
 				Reason: github.ReasonComment,
 			},
-			want: PriorityFYI,
+			score: 0,
+			want:  PriorityFYI,
+		},
+		{
+			name: "high score FYI promoted to important",
+			notification: &github.Notification{
+				Reason: github.ReasonSubscribed,
+			},
+			score: 50, // meets threshold
+			want:  PriorityImportant,
+		},
+		{
+			name: "below threshold FYI stays FYI",
+			notification: &github.Notification{
+				Reason: github.ReasonSubscribed,
+			},
+			score: 49, // below threshold
+			want:  PriorityFYI,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := h.DeterminePriority(tt.notification)
+			got := h.DeterminePriority(tt.notification, tt.score)
 			if got != tt.want {
 				t.Errorf("DeterminePriority() = %v, want %v", got, tt.want)
 			}

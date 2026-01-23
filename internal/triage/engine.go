@@ -25,7 +25,7 @@ func (e *Engine) Prioritize(notifications []github.Notification) []PrioritizedIt
 
 	for _, n := range notifications {
 		score := e.heuristics.Score(&n)
-		priority := e.heuristics.DeterminePriority(&n)
+		priority := e.heuristics.DeterminePriority(&n, score)
 		action := e.heuristics.DetermineAction(&n)
 
 		items = append(items, PrioritizedItem{
