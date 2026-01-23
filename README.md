@@ -1,6 +1,6 @@
 # triage
 
-An interactive TUI tool that organizes GitHub notifications, issues, and PRs to help you triage work. It aggregates data from multiple sources including unread notifications, PRs awaiting your review, your own open PRs, and issues assigned to the user running the program. It enriches these items with details and ranks them using configurable heuristics.
+A terminal UI that helps you prioritize GitHub work. It pulls together unread notifications, PRs awaiting your review, PRs you've authored, and issues assigned to you, then scores and ranks them so you can focus on what matters most.
 
 ![Demo](.github/demo.png)
 
@@ -40,20 +40,12 @@ cd triage
 go build -o triage ./cmd/triage
 ```
 
-## Setup
-
-### Github token
-```
-# defaults to --since 1w
-GITHUB_TOKEN=$(gh auth token) triage
-```
-
 ## Usage
 
 ### List Items
 
 ```bash
-# Make sure GITHUB_TOKEN is set or frontloaded as seen above
+# Ensure GITHUB_TOKEN is set (see Quick Start above)
 # List prioritized notifications (default: last 1 week)
 triage
 
@@ -102,7 +94,7 @@ triage               # Interactive TUI (default)
 triage -f json       # JSON for scripting
 
 # Limit results
-triage -l 20         # limit the list
+triage -l 20         # Show only first 20 items
 ```
 
 ### Cache Management
