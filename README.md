@@ -210,10 +210,6 @@ Labels are matched case-insensitively and use substring matching (e.g., `doc` wo
 
 Cached data is stored at `~/.cache/triage/details/`.
 
-## Architecture
-
-See [ARCHITECTURE.md](ARCHITECTURE.md) for details on data flow, caching strategy, and project structure.
-
 ## License
 
 MIT
