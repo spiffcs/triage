@@ -1,0 +1,218 @@
+package triage
+
+import (
+	"testing"
+
+	"github.com/spiffcs/triage/internal/github"
+)
+
+// Helper to create a test notification
+func makeNotification(id string, reason github.NotificationReason, subjectType github.SubjectType, details *github.ItemDetails) github.Notification {
+	return github.Notification{
+		ID:     id,
+		Reason: reason,
+		Subject: github.Subject{
+			Type: subjectType,
+		},
+		Details: details,
+	}
+}
+
+// Helper to create a prioritized item
+func makePrioritizedItem(id string, reason github.NotificationReason, subjectType github.SubjectType, priority PriorityLevel, details *github.ItemDetails) PrioritizedItem {
+	return PrioritizedItem{
+		Notification: makeNotification(id, reason, subjectType, details),
+		Priority:     priority,
+	}
+}
+
+func TestFilterByPriority(t *testing.T) {
+	items := []PrioritizedItem{
+		makePrioritizedItem("1", github.ReasonReviewRequested, github.SubjectPullRequest, PriorityUrgent, nil),
+		makePrioritizedItem("2", github.ReasonSubscribed, github.SubjectIssue, PriorityFYI, nil),
+		makePrioritizedItem("3", github.ReasonMention, github.SubjectIssue, PriorityUrgent, nil),
+		makePrioritizedItem("4", github.ReasonAuthor, github.SubjectPullRequest, PriorityImportant, nil),
+	}
+
+	tests := []struct {
+		name     string
+		priority PriorityLevel
+		wantIDs  []string
+	}{
+		{
+			name:     "filter urgent only",
+			priority: PriorityUrgent,
+			wantIDs:  []string{"1", "3"},
+		},
+		{
+			name:     "filter FYI only",
+			priority: PriorityFYI,
+			wantIDs:  []string{"2"},
+		},
+		{
+			name:     "filter important only",
+			priority: PriorityImportant,
+			wantIDs:  []string{"4"},
+		},
+		{
+			name:     "no matches returns empty",
+			priority: PriorityQuickWin,
+			wantIDs:  []string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := FilterByPriority(items, tt.priority)
+			if len(got) != len(tt.wantIDs) {
+				t.Errorf("FilterByPriority() returned %d items, want %d", len(got), len(tt.wantIDs))
+				return
+			}
+			for i, item := range got {
+				if item.Notification.ID != tt.wantIDs[i] {
+					t.Errorf("FilterByPriority()[%d].ID = %s, want %s", i, item.Notification.ID, tt.wantIDs[i])
+				}
+			}
+		})
+	}
+}
+
+func TestFilterByReason(t *testing.T) {
+	items := []PrioritizedItem{
+		makePrioritizedItem("1", github.ReasonReviewRequested, github.SubjectPullRequest, PriorityUrgent, nil),
+		makePrioritizedItem("2", github.ReasonSubscribed, github.SubjectIssue, PriorityFYI, nil),
+		makePrioritizedItem("3", github.ReasonMention, github.SubjectIssue, PriorityUrgent, nil),
+		makePrioritizedItem("4", github.ReasonAuthor, github.SubjectPullRequest, PriorityImportant, nil),
+	}
+
+	tests := []struct {
+		name    string
+		reasons []github.NotificationReason
+		wantIDs []string
+	}{
+		{
+			name:    "filter by single reason",
+			reasons: []github.NotificationReason{github.ReasonReviewRequested},
+			wantIDs: []string{"1"},
+		},
+		{
+			name:    "filter by multiple reasons",
+			reasons: []github.NotificationReason{github.ReasonReviewRequested, github.ReasonMention},
+			wantIDs: []string{"1", "3"},
+		},
+		{
+			name:    "empty reasons returns all",
+			reasons: []github.NotificationReason{},
+			wantIDs: []string{"1", "2", "3", "4"},
+		},
+		{
+			name:    "nil reasons returns all",
+			reasons: nil,
+			wantIDs: []string{"1", "2", "3", "4"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := FilterByReason(items, tt.reasons)
+			if len(got) != len(tt.wantIDs) {
+				t.Errorf("FilterByReason() returned %d items, want %d", len(got), len(tt.wantIDs))
+				return
+			}
+			for i, item := range got {
+				if item.Notification.ID != tt.wantIDs[i] {
+					t.Errorf("FilterByReason()[%d].ID = %s, want %s", i, item.Notification.ID, tt.wantIDs[i])
+				}
+			}
+		})
+	}
+}
+
+func TestFilterOutMerged(t *testing.T) {
+	items := []PrioritizedItem{
+		makePrioritizedItem("1", github.ReasonAuthor, github.SubjectPullRequest, PriorityImportant, &github.ItemDetails{Merged: true}),
+		makePrioritizedItem("2", github.ReasonAuthor, github.SubjectPullRequest, PriorityImportant, &github.ItemDetails{Merged: false}),
+		makePrioritizedItem("3", github.ReasonSubscribed, github.SubjectIssue, PriorityFYI, nil), // nil Details
+	}
+
+	got := FilterOutMerged(items)
+
+	wantIDs := []string{"2", "3"}
+	if len(got) != len(wantIDs) {
+		t.Errorf("FilterOutMerged() returned %d items, want %d", len(got), len(wantIDs))
+		return
+	}
+	for i, item := range got {
+		if item.Notification.ID != wantIDs[i] {
+			t.Errorf("FilterOutMerged()[%d].ID = %s, want %s", i, item.Notification.ID, wantIDs[i])
+		}
+	}
+}
+
+func TestFilterOutClosed(t *testing.T) {
+	items := []PrioritizedItem{
+		makePrioritizedItem("1", github.ReasonAuthor, github.SubjectPullRequest, PriorityImportant, &github.ItemDetails{State: "closed"}),
+		makePrioritizedItem("2", github.ReasonAuthor, github.SubjectPullRequest, PriorityImportant, &github.ItemDetails{State: "merged"}),
+		makePrioritizedItem("3", github.ReasonAuthor, github.SubjectPullRequest, PriorityImportant, &github.ItemDetails{State: "open"}),
+		makePrioritizedItem("4", github.ReasonSubscribed, github.SubjectIssue, PriorityFYI, nil), // nil Details - should be kept
+	}
+
+	got := FilterOutClosed(items)
+
+	wantIDs := []string{"3", "4"}
+	if len(got) != len(wantIDs) {
+		t.Errorf("FilterOutClosed() returned %d items, want %d", len(got), len(wantIDs))
+		return
+	}
+	for i, item := range got {
+		if item.Notification.ID != wantIDs[i] {
+			t.Errorf("FilterOutClosed()[%d].ID = %s, want %s", i, item.Notification.ID, wantIDs[i])
+		}
+	}
+}
+
+func TestFilterByType(t *testing.T) {
+	items := []PrioritizedItem{
+		makePrioritizedItem("1", github.ReasonReviewRequested, github.SubjectPullRequest, PriorityUrgent, nil),
+		makePrioritizedItem("2", github.ReasonSubscribed, github.SubjectIssue, PriorityFYI, nil),
+		makePrioritizedItem("3", github.ReasonMention, github.SubjectPullRequest, PriorityUrgent, nil),
+		makePrioritizedItem("4", github.ReasonAuthor, github.SubjectIssue, PriorityImportant, nil),
+	}
+
+	tests := []struct {
+		name        string
+		subjectType github.SubjectType
+		wantIDs     []string
+	}{
+		{
+			name:        "filter PRs only",
+			subjectType: github.SubjectPullRequest,
+			wantIDs:     []string{"1", "3"},
+		},
+		{
+			name:        "filter issues only",
+			subjectType: github.SubjectIssue,
+			wantIDs:     []string{"2", "4"},
+		},
+		{
+			name:        "filter releases returns empty",
+			subjectType: github.SubjectRelease,
+			wantIDs:     []string{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := FilterByType(items, tt.subjectType)
+			if len(got) != len(tt.wantIDs) {
+				t.Errorf("FilterByType() returned %d items, want %d", len(got), len(tt.wantIDs))
+				return
+			}
+			for i, item := range got {
+				if item.Notification.ID != tt.wantIDs[i] {
+					t.Errorf("FilterByType()[%d].ID = %s, want %s", i, item.Notification.ID, tt.wantIDs[i])
+				}
+			}
+		})
+	}
+}
