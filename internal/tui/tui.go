@@ -4,6 +4,7 @@ import (
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/spiffcs/triage/config"
 	"github.com/spiffcs/triage/internal/resolved"
 	"github.com/spiffcs/triage/internal/triage"
 	"golang.org/x/term"
@@ -101,8 +102,8 @@ func WithError(err error) TaskEventOption {
 }
 
 // RunListUI starts the interactive list UI for triaging items
-func RunListUI(items []triage.PrioritizedItem, store *resolved.Store) error {
-	model := NewListModel(items, store)
+func RunListUI(items []triage.PrioritizedItem, store *resolved.Store, weights config.ScoreWeights) error {
+	model := NewListModel(items, store, weights)
 	p := tea.NewProgram(model, tea.WithAltScreen())
 	_, err := p.Run()
 	return err

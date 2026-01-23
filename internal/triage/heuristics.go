@@ -37,7 +37,7 @@ func (h *Heuristics) Score(n *github.Notification) int {
 	age := time.Since(n.UpdatedAt)
 	daysOld := int(age.Hours() / 24)
 	if daysOld > 0 {
-		score += min(daysOld*h.Weights.OldUnreadBonus, 30) // Cap at 30
+		score += min(daysOld*h.Weights.OldUnreadBonus, h.Weights.MaxAgeBonus)
 	}
 
 	return max(score, 0)
@@ -104,31 +104,32 @@ func (h *Heuristics) authoredPRModifiers(d *github.ItemDetails) int {
 
 	// PR is approved and ready to merge - urgent action needed!
 	if d.ReviewState == "approved" {
-		modifier += 25
+		modifier += h.Weights.ApprovedPRBonus
 		if d.Mergeable {
-			modifier += 15 // Extra boost if actually mergeable
+			modifier += h.Weights.MergeablePRBonus
 		}
 	}
 
 	// PR has changes requested - needs work
 	if d.ReviewState == "changes_requested" {
-		modifier += 20
+		modifier += h.Weights.ChangesRequestedBonus
 	}
 
 	// PR has review comments - might need response
 	if d.ReviewComments > 0 {
-		modifier += min(d.ReviewComments*3, 15) // +3 per comment, max +15
+		modifier += min(d.ReviewComments*h.Weights.ReviewCommentBonus, h.Weights.ReviewCommentMaxBonus)
 	}
 
-	// Stale PR - no activity in 7+ days, needs a kick
+	// Stale PR - no activity after threshold, needs a kick
 	daysSinceUpdate := int(time.Since(d.UpdatedAt).Hours() / 24)
-	if daysSinceUpdate >= 7 {
-		modifier += min((daysSinceUpdate-6)*2, 20) // +2 per day after 7, max +20
+	if daysSinceUpdate >= h.Weights.StalePRThresholdDays {
+		daysOverThreshold := daysSinceUpdate - h.Weights.StalePRThresholdDays + 1
+		modifier += min(daysOverThreshold*h.Weights.StalePRBonusPerDay, h.Weights.StalePRMaxBonus)
 	}
 
 	// Draft PR - lower priority (not ready for review yet)
 	if d.Draft {
-		modifier -= 15
+		modifier += h.Weights.DraftPRPenalty
 	}
 
 	return modifier
@@ -153,7 +154,7 @@ func (h *Heuristics) isLowHangingFruit(d *github.ItemDetails) bool {
 	}
 
 	// Small PRs are quick to review
-	if d.IsPR && d.ChangedFiles <= 3 && (d.Additions+d.Deletions) <= 50 {
+	if d.IsPR && d.ChangedFiles <= h.Weights.SmallPRMaxFiles && (d.Additions+d.Deletions) <= h.Weights.SmallPRMaxLines {
 		return true
 	}
 
@@ -266,7 +267,7 @@ func (h *Heuristics) determineAuthoredPRAction(d *github.ItemDetails) string {
 
 	// Stale PR - needs attention
 	daysSinceUpdate := int(time.Since(d.UpdatedAt).Hours() / 24)
-	if daysSinceUpdate >= 7 {
+	if daysSinceUpdate >= h.Weights.StalePRThresholdDays {
 		if d.ReviewState == "pending" {
 			return "Request review (stale)"
 		}

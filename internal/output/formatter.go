@@ -3,6 +3,7 @@ package output
 import (
 	"io"
 
+	"github.com/spiffcs/triage/config"
 	"github.com/spiffcs/triage/internal/triage"
 )
 
@@ -21,10 +22,21 @@ type Formatter interface {
 
 // NewFormatter creates a formatter for the specified format
 func NewFormatter(format Format) Formatter {
+	return NewFormatterWithWeights(format, config.DefaultScoreWeights())
+}
+
+// NewFormatterWithWeights creates a formatter with custom score weights
+func NewFormatterWithWeights(format Format, weights config.ScoreWeights) Formatter {
 	switch format {
 	case FormatJSON:
 		return &JSONFormatter{}
 	default:
-		return &TableFormatter{}
+		return &TableFormatter{
+			HotTopicDisplayThreshold: weights.HotTopicDisplayThreshold,
+			PRSizeXS:                 weights.PRSizeXS,
+			PRSizeS:                  weights.PRSizeS,
+			PRSizeM:                  weights.PRSizeM,
+			PRSizeL:                  weights.PRSizeL,
+		}
 	}
 }

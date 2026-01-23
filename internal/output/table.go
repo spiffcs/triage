@@ -21,7 +21,13 @@ import (
 var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
 // TableFormatter formats output as a terminal table
-type TableFormatter struct{}
+type TableFormatter struct {
+	HotTopicDisplayThreshold int
+	PRSizeXS                 int
+	PRSizeS                  int
+	PRSizeM                  int
+	PRSizeL                  int
+}
 
 // hyperlink creates a clickable terminal hyperlink using OSC 8
 // Format: \033]8;;URL\033\\TEXT\033]8;;\033\\
@@ -158,7 +164,7 @@ func (f *TableFormatter) Format(items []triage.PrioritizedItem, w io.Writer) err
 
 	// Column widths
 	const (
-		colPriority = 9
+		colPriority = 10
 		colType     = 5
 		colRepo     = 26
 		colTitle    = 40
@@ -199,8 +205,8 @@ func (f *TableFormatter) Format(items []triage.PrioritizedItem, w io.Writer) err
 			title = "⚡ " + title
 		}
 
-		// Add hot topic indicator (>10 comments)
-		if n.Details != nil && n.Details.CommentCount > 10 {
+		// Add hot topic indicator
+		if n.Details != nil && f.HotTopicDisplayThreshold > 0 && n.Details.CommentCount > f.HotTopicDisplayThreshold {
 			title = "🔥 " + title
 		}
 
@@ -250,7 +256,7 @@ func (f *TableFormatter) Format(items []triage.PrioritizedItem, w io.Writer) err
 		priorityStr := padRight(coloredPriority, displayWidth(coloredPriority), colPriority)
 
 		// Build status column (review state, PR size, or comment count)
-		statusRes := formatStatus(n, item)
+		statusRes := f.formatStatus(n, item)
 		statusText := statusRes.text
 		statusWidth := statusRes.visibleWidth
 		if statusWidth > colStatus {
@@ -285,7 +291,7 @@ type statusResult struct {
 
 // formatStatus builds the status column showing review state, PR size, or activity
 // Returns the formatted string and its visible width (excluding ANSI codes)
-func formatStatus(n github.Notification, _ triage.PrioritizedItem) statusResult {
+func (f *TableFormatter) formatStatus(n github.Notification, _ triage.PrioritizedItem) statusResult {
 	if n.Details == nil {
 		reason := string(n.Reason)
 		return statusResult{reason, len(reason)}
@@ -314,7 +320,7 @@ func formatStatus(n github.Notification, _ triage.PrioritizedItem) statusResult 
 		// PR size (compact format)
 		totalChanges := d.Additions + d.Deletions
 		if totalChanges > 0 {
-			sizeText, sizePlain := formatPRSize(d.Additions, d.Deletions)
+			sizeText, sizePlain := formatPRSize(d.Additions, d.Deletions, f.PRSizeXS, f.PRSizeS, f.PRSizeM, f.PRSizeL)
 			textParts = append(textParts, sizeText)
 			plainParts = append(plainParts, sizePlain)
 		}
@@ -338,22 +344,22 @@ func formatStatus(n github.Notification, _ triage.PrioritizedItem) statusResult 
 
 // formatPRSize returns a compact representation of PR size
 // Returns both the colored string and the plain string for width calculation
-func formatPRSize(additions, deletions int) (colored string, plain string) {
+func formatPRSize(additions, deletions, sizeXS, sizeS, sizeM, sizeL int) (colored string, plain string) {
 	total := additions + deletions
 
 	// T-shirt sizing based on total changes
 	var sizeColored, sizePlain string
 	switch {
-	case total <= 10:
+	case total <= sizeXS:
 		sizePlain = "XS"
 		sizeColored = color.GreenString(sizePlain)
-	case total <= 50:
+	case total <= sizeS:
 		sizePlain = "S"
 		sizeColored = color.GreenString(sizePlain)
-	case total <= 200:
+	case total <= sizeM:
 		sizePlain = "M"
 		sizeColored = color.YellowString(sizePlain)
-	case total <= 500:
+	case total <= sizeL:
 		sizePlain = "L"
 		sizeColored = color.YellowString(sizePlain)
 	default:

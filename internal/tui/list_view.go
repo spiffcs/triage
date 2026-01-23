@@ -54,7 +54,7 @@ func renderListView(m ListModel) string {
 	// Render visible items
 	for i := start; i < end; i++ {
 		selected := i == m.cursor
-		b.WriteString(renderRow(m.items[i], selected))
+		b.WriteString(renderRow(m.items[i], selected, m.hotTopicDisplayThreshold, m.prSizeXS, m.prSizeS, m.prSizeM, m.prSizeL))
 		b.WriteString("\n")
 	}
 
@@ -120,7 +120,7 @@ func renderSeparator() string {
 }
 
 // renderRow renders a single item row
-func renderRow(item triage.PrioritizedItem, selected bool) string {
+func renderRow(item triage.PrioritizedItem, selected bool, hotTopicDisplayThreshold, prSizeXS, prSizeS, prSizeM, prSizeL int) string {
 	n := item.Notification
 
 	// Cursor indicator
@@ -150,7 +150,7 @@ func renderRow(item triage.PrioritizedItem, selected bool) string {
 		titlePrefix = "⚡ "
 		titlePrefixWidth = 3 // emoji (2) + space (1)
 	}
-	if n.Details != nil && n.Details.CommentCount > 10 {
+	if n.Details != nil && hotTopicDisplayThreshold > 0 && n.Details.CommentCount > hotTopicDisplayThreshold {
 		titlePrefix = "🔥 "
 		titlePrefixWidth = 3 // emoji (2) + space (1)
 	}
@@ -165,7 +165,7 @@ func renderRow(item triage.PrioritizedItem, selected bool) string {
 	repo = padRight(repo, repoWidth, colRepo)
 
 	// Status with colors
-	status, statusWidth := renderStatus(n)
+	status, statusWidth := renderStatus(n, prSizeXS, prSizeS, prSizeM, prSizeL)
 	if statusWidth > colStatus {
 		status, statusWidth = truncateToWidth(status, colStatus)
 	}
@@ -207,7 +207,7 @@ func renderPriority(p triage.PriorityLevel) (string, int) {
 
 // renderStatus renders the status column with colors
 // Returns the colored string and its visible width
-func renderStatus(n github.Notification) (string, int) {
+func renderStatus(n github.Notification, sizeXS, sizeS, sizeM, sizeL int) (string, int) {
 	if n.Details == nil {
 		reason := string(n.Reason)
 		return reason, len(reason)
@@ -233,7 +233,7 @@ func renderStatus(n github.Notification) (string, int) {
 
 		totalChanges := d.Additions + d.Deletions
 		if totalChanges > 0 {
-			sizeColored, sizePlain := getPRSizeColored(totalChanges)
+			sizeColored, sizePlain := getPRSizeColored(totalChanges, sizeXS, sizeS, sizeM, sizeL)
 			sizeStr := fmt.Sprintf("%s+%d/-%d", sizeColored, d.Additions, d.Deletions)
 			sizePlainStr := fmt.Sprintf("%s+%d/-%d", sizePlain, d.Additions, d.Deletions)
 			coloredParts = append(coloredParts, sizeStr)
@@ -258,15 +258,15 @@ func renderStatus(n github.Notification) (string, int) {
 }
 
 // getPRSizeColored returns colored and plain t-shirt size
-func getPRSizeColored(total int) (colored string, plain string) {
+func getPRSizeColored(total, sizeXS, sizeS, sizeM, sizeL int) (colored string, plain string) {
 	switch {
-	case total <= 10:
+	case total <= sizeXS:
 		return listSizeSmallStyle.Render("XS"), "XS"
-	case total <= 50:
+	case total <= sizeS:
 		return listSizeSmallStyle.Render("S"), "S"
-	case total <= 200:
+	case total <= sizeM:
 		return listSizeMediumStyle.Render("M"), "M"
-	case total <= 500:
+	case total <= sizeL:
 		return listSizeMediumStyle.Render("L"), "L"
 	default:
 		return listSizeLargeStyle.Render("XL"), "XL"

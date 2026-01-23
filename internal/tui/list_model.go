@@ -6,30 +6,41 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/spiffcs/triage/config"
 	"github.com/spiffcs/triage/internal/resolved"
 	"github.com/spiffcs/triage/internal/triage"
 )
 
 // ListModel is the Bubble Tea model for the interactive notification list
 type ListModel struct {
-	items        []triage.PrioritizedItem
-	cursor       int
-	resolved     *resolved.Store
-	windowWidth  int
-	windowHeight int
-	statusMsg    string
-	statusTime   time.Time
-	quitting     bool
+	items                    []triage.PrioritizedItem
+	cursor                   int
+	resolved                 *resolved.Store
+	windowWidth              int
+	windowHeight             int
+	statusMsg                string
+	statusTime               time.Time
+	quitting                 bool
+	hotTopicDisplayThreshold int
+	prSizeXS                 int
+	prSizeS                  int
+	prSizeM                  int
+	prSizeL                  int
 }
 
 // NewListModel creates a new list model
-func NewListModel(items []triage.PrioritizedItem, store *resolved.Store) ListModel {
+func NewListModel(items []triage.PrioritizedItem, store *resolved.Store, weights config.ScoreWeights) ListModel {
 	return ListModel{
-		items:        items,
-		cursor:       0,
-		resolved:     store,
-		windowWidth:  80,
-		windowHeight: 24,
+		items:                    items,
+		cursor:                   0,
+		resolved:                 store,
+		windowWidth:              80,
+		windowHeight:             24,
+		hotTopicDisplayThreshold: weights.HotTopicDisplayThreshold,
+		prSizeXS:                 weights.PRSizeXS,
+		prSizeS:                  weights.PRSizeS,
+		prSizeM:                  weights.PRSizeM,
+		prSizeL:                  weights.PRSizeL,
 	}
 }
 

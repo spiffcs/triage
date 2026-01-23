@@ -12,11 +12,19 @@ import (
 func NewCmdConfig() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "config",
-		Short: "Manage configuration",
+		Short: "Show or manage configuration",
+		Long: `Show or manage configuration.
+
+When run without arguments, outputs the complete configuration as YAML.
+This can be redirected to create a config file with all defaults:
+
+  triage config > ~/.config/triage/config.yaml
+
+Use 'triage config set' to modify individual settings.`,
+		RunE: runConfig,
 	}
 
 	cmd.AddCommand(NewCmdConfigSet())
-	cmd.AddCommand(NewCmdConfigShow())
 
 	return cmd
 }
@@ -33,13 +41,18 @@ func NewCmdConfigSet() *cobra.Command {
 	}
 }
 
-// NewCmdConfigShow creates the config show subcommand.
-func NewCmdConfigShow() *cobra.Command {
-	return &cobra.Command{
-		Use:   "show",
-		Short: "Show current configuration",
-		RunE:  runConfigShow,
+
+func runConfig(cmd *cobra.Command, args []string) error {
+	// Output a complete config with all defaults as YAML
+	cfg := config.DefaultConfig()
+
+	yamlStr, err := cfg.ToYAML()
+	if err != nil {
+		return err
 	}
+
+	fmt.Print(yamlStr)
+	return nil
 }
 
 func runConfigSet(cmd *cobra.Command, args []string) error {
@@ -69,54 +82,3 @@ func runConfigSet(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func runConfigShow(cmd *cobra.Command, args []string) error {
-	cfg, err := config.Load()
-	if err != nil {
-		return err
-	}
-
-	fmt.Println("Configuration:")
-	if config.ConfigFileExists() {
-		fmt.Printf("  Config file: %s\n", config.ConfigPath())
-	}
-	fmt.Printf("  Default format: %s\n", cfg.DefaultFormat)
-
-	// Show excluded repos
-	fmt.Println("  Excluded repos:")
-	if len(cfg.ExcludeRepos) > 0 {
-		for _, repo := range cfg.ExcludeRepos {
-			fmt.Printf("    - %s\n", repo)
-		}
-	} else {
-		fmt.Println("    (none)")
-	}
-
-	// Show quick win labels
-	fmt.Println("  Quick win labels:")
-	for _, label := range cfg.GetQuickWinLabels() {
-		fmt.Printf("    - %s\n", label)
-	}
-
-	// Show effective weights (merged defaults + overrides)
-	weights := cfg.GetScoreWeights()
-	fmt.Println("  Weights:")
-	fmt.Println("    Base scores:")
-	fmt.Printf("      review_requested: %d\n", weights.ReviewRequested)
-	fmt.Printf("      mention: %d\n", weights.Mention)
-	fmt.Printf("      team_mention: %d\n", weights.TeamMention)
-	fmt.Printf("      author: %d\n", weights.Author)
-	fmt.Printf("      assign: %d\n", weights.Assign)
-	fmt.Printf("      comment: %d\n", weights.Comment)
-	fmt.Printf("      state_change: %d\n", weights.StateChange)
-	fmt.Printf("      subscribed: %d\n", weights.Subscribed)
-	fmt.Printf("      ci_activity: %d\n", weights.CIActivity)
-	fmt.Println("    Modifiers:")
-	fmt.Printf("      old_unread_bonus: %d\n", weights.OldUnreadBonus)
-	fmt.Printf("      hot_topic_bonus: %d\n", weights.HotTopicBonus)
-	fmt.Printf("      low_hanging_bonus: %d\n", weights.LowHangingBonus)
-	fmt.Printf("      open_state_bonus: %d\n", weights.OpenStateBonus)
-	fmt.Printf("      closed_state_penalty: %d\n", weights.ClosedStatePenalty)
-	fmt.Printf("      fyi_promotion_threshold: %d\n", weights.FYIPromotionThreshold)
-
-	return nil
-}
