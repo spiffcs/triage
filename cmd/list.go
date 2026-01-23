@@ -12,6 +12,7 @@ import (
 	"github.com/spiffcs/triage/internal/github"
 	"github.com/spiffcs/triage/internal/log"
 	"github.com/spiffcs/triage/internal/output"
+	"github.com/spiffcs/triage/internal/resolved"
 	"github.com/spiffcs/triage/internal/triage"
 	"github.com/spiffcs/triage/internal/tui"
 )
@@ -99,6 +100,12 @@ func runList(_ *cobra.Command, _ []string, opts *Options) error {
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
+	}
+
+	// Load resolved items store
+	resolvedStore, err := resolved.NewStore()
+	if err != nil {
+		log.Warn("could not load resolved store", "error", err)
 	}
 
 	// Create GitHub client
@@ -401,6 +408,11 @@ func runList(_ *cobra.Command, _ []string, opts *Options) error {
 		items = triage.FilterByType(items, subjectType)
 	}
 
+	// Filter out resolved items (that haven't had new activity)
+	if resolvedStore != nil {
+		items = triage.FilterResolved(items, resolvedStore)
+	}
+
 	// Apply limit
 	if opts.Limit > 0 && len(items) > opts.Limit {
 		items = items[:opts.Limit]
@@ -414,6 +426,11 @@ func runList(_ *cobra.Command, _ []string, opts *Options) error {
 	format := output.Format(opts.Format)
 	if format == "" {
 		format = output.Format(cfg.DefaultFormat)
+	}
+
+	// If running in a TTY with table format, launch interactive UI
+	if tui.ShouldUseTUI() && (format == "" || format == output.FormatTable) {
+		return tui.RunListUI(items, resolvedStore)
 	}
 
 	// Output

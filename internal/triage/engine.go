@@ -2,6 +2,7 @@ package triage
 
 import (
 	"sort"
+	"time"
 
 	"github.com/spiffcs/triage/config"
 	"github.com/spiffcs/triage/internal/github"
@@ -133,6 +134,26 @@ func FilterByRepo(items []PrioritizedItem, repo string) []PrioritizedItem {
 	filtered := make([]PrioritizedItem, 0)
 	for _, item := range items {
 		if item.Notification.Repository.FullName == repo {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
+}
+
+// ResolvedStore is an interface for checking if items should be shown
+type ResolvedStore interface {
+	ShouldShow(notificationID string, currentUpdatedAt time.Time) bool
+}
+
+// FilterResolved filters out items that have been resolved and haven't had new activity
+func FilterResolved(items []PrioritizedItem, store ResolvedStore) []PrioritizedItem {
+	if store == nil {
+		return items
+	}
+
+	filtered := make([]PrioritizedItem, 0, len(items))
+	for _, item := range items {
+		if store.ShouldShow(item.Notification.ID, item.Notification.UpdatedAt) {
 			filtered = append(filtered, item)
 		}
 	}
