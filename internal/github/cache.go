@@ -127,10 +127,12 @@ func (c *Cache) Clear() error {
 
 // CacheStats contains detailed cache statistics
 type CacheStats struct {
-	DetailTotal int
-	DetailValid int
-	PRListTotal int
-	PRListValid int
+	DetailTotal     int
+	DetailValid     int
+	PRListTotal     int
+	PRListValid     int
+	NotifListTotal  int
+	NotifListValid  int
 }
 
 // Stats returns cache statistics
@@ -139,7 +141,9 @@ func (c *Cache) Stats() (total int, validCount int, err error) {
 	if err != nil {
 		return 0, 0, err
 	}
-	return stats.DetailTotal + stats.PRListTotal, stats.DetailValid + stats.PRListValid, nil
+	totalCount := stats.DetailTotal + stats.PRListTotal + stats.NotifListTotal
+	validCount = stats.DetailValid + stats.PRListValid + stats.NotifListValid
+	return totalCount, validCount, nil
 }
 
 // DetailedStats returns detailed cache statistics broken down by type
@@ -159,8 +163,20 @@ func (c *Cache) DetailedStats() (*CacheStats, error) {
 			continue
 		}
 
-		// Check if it's a PR list cache entry (starts with "prlist_")
-		if len(entry.Name()) > 7 && entry.Name()[:7] == "prlist_" {
+		name := entry.Name()
+
+		// Check if it's a notification list cache entry (starts with "notif_list_")
+		if len(name) > 11 && name[:11] == "notif_list_" {
+			stats.NotifListTotal++
+			var notifEntry NotificationListCacheEntry
+			if err := json.Unmarshal(data, &notifEntry); err != nil {
+				continue
+			}
+			if now.Sub(notifEntry.CachedAt) <= NotificationListCacheTTL {
+				stats.NotifListValid++
+			}
+		} else if len(name) > 7 && name[:7] == "prlist_" {
+			// Check if it's a PR list cache entry (starts with "prlist_")
 			stats.PRListTotal++
 			var prEntry PRListCacheEntry
 			if err := json.Unmarshal(data, &prEntry); err != nil {
@@ -192,6 +208,17 @@ type PRListCacheEntry struct {
 
 // PRListCacheTTL is shorter than details cache since PR lists change more frequently
 const PRListCacheTTL = 5 * time.Minute
+
+// NotificationListCacheEntry stores cached notifications with fetch timestamp
+type NotificationListCacheEntry struct {
+	Notifications []Notification `json:"notifications"`
+	LastFetchTime time.Time      `json:"lastFetchTime"` // When we last hit the API
+	CachedAt      time.Time      `json:"cachedAt"`
+	SinceTime     time.Time      `json:"sinceTime"` // The --since value used
+}
+
+// NotificationListCacheTTL is the max age before a full refresh is required
+const NotificationListCacheTTL = 1 * time.Hour
 
 // prListCacheKey generates a cache key for a PR list
 func (c *Cache) prListCacheKey(username string, listType string) string {
@@ -234,6 +261,61 @@ func (c *Cache) SetPRList(username string, listType string, prs []Notification) 
 	}
 
 	key := c.prListCacheKey(username, listType)
+	path := filepath.Join(c.dir, key)
+
+	return os.WriteFile(path, data, 0600)
+}
+
+// notificationListCacheKey generates a cache key for a notification list
+func (c *Cache) notificationListCacheKey(username string) string {
+	return fmt.Sprintf("notif_list_%s.json", username)
+}
+
+// GetNotificationList retrieves cached notification list.
+// Returns: cached notifications, last fetch time, ok
+func (c *Cache) GetNotificationList(username string, sinceTime time.Time) ([]Notification, time.Time, bool) {
+	key := c.notificationListCacheKey(username)
+	path := filepath.Join(c.dir, key)
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, time.Time{}, false
+	}
+
+	var entry NotificationListCacheEntry
+	if err := json.Unmarshal(data, &entry); err != nil {
+		return nil, time.Time{}, false
+	}
+
+	// Check TTL - if cache is too old, require full refresh
+	if time.Since(entry.CachedAt) > NotificationListCacheTTL {
+		return nil, time.Time{}, false
+	}
+
+	// If user's since time is earlier than what we cached, require full refresh
+	// (they want more history than we have)
+	if sinceTime.Before(entry.SinceTime) {
+		return nil, time.Time{}, false
+	}
+
+	return entry.Notifications, entry.LastFetchTime, true
+}
+
+// SetNotificationList caches a notification list
+func (c *Cache) SetNotificationList(username string, notifications []Notification, sinceTime time.Time) error {
+	entry := NotificationListCacheEntry{
+		Notifications: notifications,
+		LastFetchTime: time.Now(),
+		CachedAt:      time.Now(),
+		SinceTime:     sinceTime,
+	}
+
+	data, err := json.Marshal(entry)
+	if err != nil {
+		return err
+	}
+
+	key := c.notificationListCacheKey(username)
 	path := filepath.Join(c.dir, key)
 
 	return os.WriteFile(path, data, 0600)

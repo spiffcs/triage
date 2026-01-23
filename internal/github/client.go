@@ -6,6 +6,7 @@ import (
 	"os"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/google/go-github/v57/github"
 	"github.com/spiffcs/triage/internal/log"
@@ -115,7 +116,7 @@ func (c *Client) prToNotification(issue *github.Issue) Notification {
 		Repository: Repository{
 			Name:     repoName,
 			FullName: fullName,
-			HTMLURL:  issue.GetHTMLURL(),
+			HTMLURL:  fmt.Sprintf("https://github.com/%s", fullName),
 		},
 		Subject: Subject{
 			Title: issue.GetTitle(),
@@ -329,23 +330,139 @@ func (c *Client) ListAuthoredPRsCached(username string, cache *Cache) ([]Notific
 	return prs, false, nil
 }
 
-// EnrichPRsConcurrent enriches PRs (review-requested or authored) using a worker pool
-func (c *Client) EnrichPRsConcurrent(notifications []Notification, workers int, onProgress func(completed, total int)) error {
+// NotificationFetchResult contains the result of a cached notification fetch
+type NotificationFetchResult struct {
+	Notifications []Notification
+	FromCache     bool
+	NewCount      int // Number of new notifications fetched (for incremental updates)
+}
+
+// ListUnreadNotificationsCached fetches notifications with incremental caching.
+// It returns cached notifications merged with any new ones since the last fetch.
+func (c *Client) ListUnreadNotificationsCached(username string, since time.Time, cache *Cache) (*NotificationFetchResult, error) {
+	result := &NotificationFetchResult{}
+
+	// Check cache
+	if cache != nil {
+		cached, lastFetch, ok := cache.GetNotificationList(username, since)
+		if ok {
+			// Fetch only NEW notifications since last fetch
+			newNotifs, err := c.ListUnreadNotifications(lastFetch)
+			if err != nil {
+				// Return cached on error
+				log.Warn("failed to fetch new notifications, using cache", "error", err)
+				result.Notifications = cached
+				result.FromCache = true
+				return result, nil
+			}
+
+			// Merge: new notifications replace old ones by ID
+			merged := mergeNotifications(cached, newNotifs, since)
+			result.Notifications = merged
+			result.FromCache = true
+			result.NewCount = len(newNotifs)
+
+			// Update cache with merged result
+			if err := cache.SetNotificationList(username, merged, since); err != nil {
+				log.Debug("failed to update notification cache", "error", err)
+			}
+
+			return result, nil
+		}
+	}
+
+	// No cache - full fetch
+	notifications, err := c.ListUnreadNotifications(since)
+	if err != nil {
+		return nil, err
+	}
+
+	result.Notifications = notifications
+	result.FromCache = false
+
+	// Cache result
+	if cache != nil {
+		if err := cache.SetNotificationList(username, notifications, since); err != nil {
+			log.Debug("failed to cache notifications", "error", err)
+		}
+	}
+
+	return result, nil
+}
+
+// mergeNotifications merges cached and fresh notifications.
+// Fresh notifications replace cached ones by ID. Only unread notifications
+// within the since timeframe are kept.
+func mergeNotifications(cached, fresh []Notification, since time.Time) []Notification {
+	byID := make(map[string]Notification)
+
+	// Add cached notifications
+	for _, n := range cached {
+		byID[n.ID] = n
+	}
+
+	// New overwrites old
+	for _, n := range fresh {
+		byID[n.ID] = n
+	}
+
+	// Build result, filtering appropriately
+	result := make([]Notification, 0, len(byID))
+	for _, n := range byID {
+		// Only keep unread notifications
+		if !n.Unread {
+			continue
+		}
+		// Only keep notifications within the since timeframe
+		if n.UpdatedAt.Before(since) {
+			continue
+		}
+		result = append(result, n)
+	}
+
+	return result
+}
+
+// EnrichPRsConcurrent enriches PRs (review-requested or authored) using a worker pool with caching.
+// Returns the number of cache hits.
+func (c *Client) EnrichPRsConcurrent(notifications []Notification, workers int, cache *Cache, onProgress func(completed, total int)) (int, error) {
 	if workers <= 0 {
 		workers = 10
 	}
 
 	total := len(notifications)
 	if total == 0 {
-		return nil
+		return 0, nil
 	}
 
 	var completed int64
 	var errors int64
+	var cacheHits int64
 
-	// Create work channel
-	work := make(chan int, total)
-	for i := 0; i < total; i++ {
+	// First pass: check cache
+	uncachedIndices := make([]int, 0, total)
+	for i := range notifications {
+		if cache != nil {
+			if details, ok := cache.Get(&notifications[i]); ok {
+				notifications[i].Details = details
+				atomic.AddInt64(&cacheHits, 1)
+				atomic.AddInt64(&completed, 1)
+				if onProgress != nil {
+					onProgress(int(completed), total)
+				}
+				continue
+			}
+		}
+		uncachedIndices = append(uncachedIndices, i)
+	}
+
+	if len(uncachedIndices) == 0 {
+		return int(cacheHits), nil
+	}
+
+	// Create work channel for uncached items
+	work := make(chan int, len(uncachedIndices))
+	for _, i := range uncachedIndices {
 		work <- i
 	}
 	close(work)
@@ -359,6 +476,11 @@ func (c *Client) EnrichPRsConcurrent(notifications []Notification, workers int, 
 			for i := range work {
 				if err := c.EnrichAuthoredPR(&notifications[i]); err != nil {
 					atomic.AddInt64(&errors, 1)
+				} else if cache != nil && notifications[i].Details != nil {
+					// Cache successful enrichment
+					if err := cache.Set(&notifications[i], notifications[i].Details); err != nil {
+						log.Debug("failed to cache PR", "id", notifications[i].ID, "error", err)
+					}
 				}
 				done := atomic.AddInt64(&completed, 1)
 				if onProgress != nil {
@@ -374,7 +496,7 @@ func (c *Client) EnrichPRsConcurrent(notifications []Notification, workers int, 
 		log.Warn("some PRs failed to enrich", "count", errors)
 	}
 
-	return nil
+	return int(cacheHits), nil
 }
 
 // EnrichAuthoredPR fetches additional PR details like review state, mergeable status

@@ -66,8 +66,9 @@ func (c *Client) EnrichNotificationsWithProgress(notifications []Notification, o
 	return nil
 }
 
-// EnrichNotificationsConcurrent enriches notifications using a worker pool with caching
-func (c *Client) EnrichNotificationsConcurrent(notifications []Notification, workers int, onProgress func(completed, total int)) error {
+// EnrichNotificationsConcurrent enriches notifications using a worker pool with caching.
+// Returns the number of cache hits and any error.
+func (c *Client) EnrichNotificationsConcurrent(notifications []Notification, workers int, onProgress func(completed, total int)) (int, error) {
 	if workers <= 0 {
 		workers = 10 // Default concurrency
 	}
@@ -105,7 +106,7 @@ func (c *Client) EnrichNotificationsConcurrent(notifications []Notification, wor
 	}
 
 	if len(uncachedIndices) == 0 {
-		return nil
+		return int(cacheHits), nil
 	}
 
 	// Create work channel for uncached items
@@ -144,7 +145,7 @@ func (c *Client) EnrichNotificationsConcurrent(notifications []Notification, wor
 		log.Warn("some notifications failed to enrich", "count", errors, "note", "may be deleted or inaccessible")
 	}
 
-	return nil
+	return int(cacheHits), nil
 }
 
 func (c *Client) enrichPullRequest(n *Notification, owner, repo string, number int) error {

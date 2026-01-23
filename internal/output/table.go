@@ -166,12 +166,12 @@ func (f *TableFormatter) Format(items []triage.PrioritizedItem, w io.Writer) err
 		colAge      = 5
 	)
 
-	// Header
+	// Header (↗ indicates column is clickable)
 	if _, err := fmt.Fprintf(w, "%-*s  %-*s  %-*s  %-*s  %-*s  %s\n",
 		colPriority, "Priority",
 		colType, "Type",
-		colRepo, "Repository",
-		colTitle, "Title",
+		colRepo, "Repository ↗",
+		colTitle, "Title ↗",
 		colStatus, "Status",
 		"Age"); err != nil {
 		log.Trace("write error", "location", "header", "error", err)
@@ -223,18 +223,26 @@ func (f *TableFormatter) Format(items []triage.PrioritizedItem, w io.Writer) err
 
 		// Truncate repo if too long
 		repo := n.Repository.FullName
-		repo, _ = truncateToWidth(repo, colRepo)
+		repo, visibleRepoLen := truncateToWidth(repo, colRepo)
 
-		// Get URL for hyperlink
-		url := ""
+		// Create hyperlinked repo and pad it
+		repoURL := n.Repository.HTMLURL
+		if repoURL == "" {
+			repoURL = fmt.Sprintf("https://github.com/%s", n.Repository.FullName)
+		}
+		linkedRepo := hyperlink(repo, repoURL)
+		linkedRepo = padRight(linkedRepo, visibleRepoLen, colRepo)
+
+		// Get URL for title hyperlink
+		titleURL := ""
 		if n.Details != nil && n.Details.HTMLURL != "" {
-			url = n.Details.HTMLURL
+			titleURL = n.Details.HTMLURL
 		} else {
-			url = n.Repository.HTMLURL
+			titleURL = n.Repository.HTMLURL
 		}
 
 		// Create hyperlinked title and pad it
-		linkedTitle := hyperlink(title, url)
+		linkedTitle := hyperlink(title, titleURL)
 		linkedTitle = padRight(linkedTitle, visibleTitleLen, colTitle)
 
 		// Format priority with color and pad
@@ -257,7 +265,7 @@ func (f *TableFormatter) Format(items []triage.PrioritizedItem, w io.Writer) err
 		if _, err := fmt.Fprintf(w, "%s  %-*s  %s  %s  %s  %s\n",
 			priorityStr,
 			colType, typeStr,
-			padRight(repo, displayWidth(repo), colRepo),
+			linkedRepo,
 			linkedTitle,
 			statusText,
 			age,

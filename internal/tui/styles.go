@@ -5,7 +5,7 @@ import "github.com/charmbracelet/lipgloss"
 var (
 	// Status icons
 	iconPending  = lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("○")
-	iconComplete = lipgloss.NewStyle().Foreground(lipgloss.Color("42")).Render("✓")
+	iconComplete = lipgloss.NewStyle().Foreground(lipgloss.Color("46")).Render("✓")
 	iconError    = lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Render("✗")
 	iconSkipped  = lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render("○")
 
@@ -36,7 +36,7 @@ var (
 			MarginTop(1)
 
 	userStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("86")).
+			Foreground(lipgloss.Color("220")).
 			Bold(true)
 )
 
