@@ -179,34 +179,45 @@ default_format: table
 You can override the default scoring weights in your config file. Any values not specified will use the defaults shown above.
 
 ```yaml
-weights:
-  base_scores:
-    review_requested: 120    # Boost review requests
-    mention: 95
-    team_mention: 85
-    author: 70
-    assign: 60
-    comment: 30
-    state_change: 25
-    subscribed: 10
-    ci_activity: 5
-  modifiers:
-    old_unread_bonus: 2      # Per day
-    hot_topic_bonus: 15
-    low_hanging_bonus: 20
-    open_state_bonus: 10
-    closed_state_penalty: -50  # Penalize closed items more
-    fyi_promotion_threshold: 65
+base_scores:
+  review_requested: 120    # Boost review requests
+  mention: 95
+  team_mention: 85
+  author: 70
+  assign: 60
+  comment: 30
+  state_change: 25
+  subscribed: 10
+  ci_activity: 5
+
+scoring:
+  old_unread_bonus: 2      # Per day
+  max_age_bonus: 30
+  hot_topic_bonus: 15
+  hot_topic_threshold: 6
+  fyi_promotion_threshold: 65
+  open_state_bonus: 10
+  closed_state_penalty: -50  # Penalize closed items more
+  low_hanging_bonus: 20
+
+pr:
+  approved_bonus: 25
+  mergeable_bonus: 15
+  changes_requested_bonus: 20
+  stale_threshold_days: 7
+  draft_penalty: -25
+  small_max_files: 5
+  small_max_lines: 100
 ```
 
 Only specify the weights you want to change:
 
 ```yaml
-weights:
-  base_scores:
-    review_requested: 200    # Really prioritize reviews
-  modifiers:
-    closed_state_penalty: -100  # Heavily penalize closed items
+base_scores:
+  review_requested: 200    # Really prioritize reviews
+
+scoring:
+  closed_state_penalty: -100  # Heavily penalize closed items
 ```
 
 ### Customizing Quick Win Labels

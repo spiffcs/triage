@@ -10,14 +10,14 @@ import (
 
 // Config represents the application configuration
 type Config struct {
-	DefaultFormat string   `yaml:"default_format,omitempty"`
-	ExcludeRepos  []string `yaml:"exclude_repos,omitempty"`
-
-	// Priority weights (optional overrides)
-	Weights *WeightOverrides `yaml:"weights,omitempty"`
-
-	// Quick win label patterns (optional override)
+	DefaultFormat  string   `yaml:"default_format,omitempty"`
+	ExcludeRepos   []string `yaml:"exclude_repos,omitempty"`
 	QuickWinLabels []string `yaml:"quick_win_labels,omitempty"`
+
+	// Top-level config sections
+	BaseScores *BaseScoreOverrides `yaml:"base_scores,omitempty"`
+	Scoring    *ScoringOverrides   `yaml:"scoring,omitempty"`
+	PR         *PROverrides        `yaml:"pr,omitempty"`
 }
 
 // BaseScoreOverrides allows customizing base scores for notification reasons
@@ -33,45 +33,35 @@ type BaseScoreOverrides struct {
 	CIActivity      *int `yaml:"ci_activity,omitempty"`
 }
 
-// ModifierOverrides allows customizing score modifiers
-type ModifierOverrides struct {
+// ScoringOverrides - general scoring modifiers
+type ScoringOverrides struct {
 	OldUnreadBonus        *int `yaml:"old_unread_bonus,omitempty"`
+	MaxAgeBonus           *int `yaml:"max_age_bonus,omitempty"`
 	HotTopicBonus         *int `yaml:"hot_topic_bonus,omitempty"`
 	HotTopicThreshold     *int `yaml:"hot_topic_threshold,omitempty"`
-	LowHangingBonus       *int `yaml:"low_hanging_bonus,omitempty"`
+	FYIPromotionThreshold *int `yaml:"fyi_promotion_threshold,omitempty"`
 	OpenStateBonus        *int `yaml:"open_state_bonus,omitempty"`
 	ClosedStatePenalty    *int `yaml:"closed_state_penalty,omitempty"`
-	FYIPromotionThreshold *int `yaml:"fyi_promotion_threshold,omitempty"`
+	LowHangingBonus       *int `yaml:"low_hanging_bonus,omitempty"`
+}
 
-	// Authored PR modifiers
-	ApprovedPRBonus       *int `yaml:"approved_pr_bonus,omitempty"`
-	MergeablePRBonus      *int `yaml:"mergeable_pr_bonus,omitempty"`
+// PROverrides - PR-specific settings
+type PROverrides struct {
+	ApprovedBonus         *int `yaml:"approved_bonus,omitempty"`
+	MergeableBonus        *int `yaml:"mergeable_bonus,omitempty"`
 	ChangesRequestedBonus *int `yaml:"changes_requested_bonus,omitempty"`
 	ReviewCommentBonus    *int `yaml:"review_comment_bonus,omitempty"`
 	ReviewCommentMaxBonus *int `yaml:"review_comment_max_bonus,omitempty"`
-	StalePRThresholdDays  *int `yaml:"stale_pr_threshold_days,omitempty"`
-	StalePRBonusPerDay    *int `yaml:"stale_pr_bonus_per_day,omitempty"`
-	StalePRMaxBonus       *int `yaml:"stale_pr_max_bonus,omitempty"`
-	DraftPRPenalty        *int `yaml:"draft_pr_penalty,omitempty"`
-
-	// General scoring
-	MaxAgeBonus *int `yaml:"max_age_bonus,omitempty"`
-
-	// Low-hanging fruit detection
-	SmallPRMaxFiles *int `yaml:"small_pr_max_files,omitempty"`
-	SmallPRMaxLines *int `yaml:"small_pr_max_lines,omitempty"`
-
-	// PR size thresholds for T-shirt sizing
-	PRSizeXS *int `yaml:"pr_size_xs,omitempty"`
-	PRSizeS  *int `yaml:"pr_size_s,omitempty"`
-	PRSizeM  *int `yaml:"pr_size_m,omitempty"`
-	PRSizeL  *int `yaml:"pr_size_l,omitempty"`
-}
-
-// WeightOverrides allows customizing priority weights
-type WeightOverrides struct {
-	BaseScores *BaseScoreOverrides `yaml:"base_scores,omitempty"`
-	Modifiers  *ModifierOverrides  `yaml:"modifiers,omitempty"`
+	StaleThresholdDays    *int `yaml:"stale_threshold_days,omitempty"`
+	StaleBonusPerDay      *int `yaml:"stale_bonus_per_day,omitempty"`
+	StaleMaxBonus         *int `yaml:"stale_max_bonus,omitempty"`
+	DraftPenalty          *int `yaml:"draft_penalty,omitempty"`
+	SmallMaxFiles         *int `yaml:"small_max_files,omitempty"`
+	SmallMaxLines         *int `yaml:"small_max_lines,omitempty"`
+	SizeXS                *int `yaml:"size_xs,omitempty"`
+	SizeS                 *int `yaml:"size_s,omitempty"`
+	SizeM                 *int `yaml:"size_m,omitempty"`
+	SizeL                 *int `yaml:"size_l,omitempty"`
 }
 
 // ScoreWeights defines the complete set of scoring weights
@@ -170,13 +160,9 @@ func DefaultScoreWeights() ScoreWeights {
 func (c *Config) GetScoreWeights() ScoreWeights {
 	weights := DefaultScoreWeights()
 
-	if c.Weights == nil {
-		return weights
-	}
-
 	// Apply base score overrides
-	if c.Weights.BaseScores != nil {
-		bs := c.Weights.BaseScores
+	if c.BaseScores != nil {
+		bs := c.BaseScores
 		if bs.ReviewRequested != nil {
 			weights.ReviewRequested = *bs.ReviewRequested
 		}
@@ -206,85 +192,82 @@ func (c *Config) GetScoreWeights() ScoreWeights {
 		}
 	}
 
-	// Apply modifier overrides
-	if c.Weights.Modifiers != nil {
-		m := c.Weights.Modifiers
-		if m.OldUnreadBonus != nil {
-			weights.OldUnreadBonus = *m.OldUnreadBonus
+	// Apply scoring overrides
+	if c.Scoring != nil {
+		s := c.Scoring
+		if s.OldUnreadBonus != nil {
+			weights.OldUnreadBonus = *s.OldUnreadBonus
 		}
-		if m.HotTopicBonus != nil {
-			weights.HotTopicBonus = *m.HotTopicBonus
+		if s.MaxAgeBonus != nil {
+			weights.MaxAgeBonus = *s.MaxAgeBonus
 		}
-		if m.HotTopicThreshold != nil {
-			weights.HotTopicThreshold = *m.HotTopicThreshold
+		if s.HotTopicBonus != nil {
+			weights.HotTopicBonus = *s.HotTopicBonus
 		}
-		if m.LowHangingBonus != nil {
-			weights.LowHangingBonus = *m.LowHangingBonus
+		if s.HotTopicThreshold != nil {
+			weights.HotTopicThreshold = *s.HotTopicThreshold
 		}
-		if m.OpenStateBonus != nil {
-			weights.OpenStateBonus = *m.OpenStateBonus
+		if s.FYIPromotionThreshold != nil {
+			weights.FYIPromotionThreshold = *s.FYIPromotionThreshold
 		}
-		if m.ClosedStatePenalty != nil {
-			weights.ClosedStatePenalty = *m.ClosedStatePenalty
+		if s.OpenStateBonus != nil {
+			weights.OpenStateBonus = *s.OpenStateBonus
 		}
-		if m.FYIPromotionThreshold != nil {
-			weights.FYIPromotionThreshold = *m.FYIPromotionThreshold
+		if s.ClosedStatePenalty != nil {
+			weights.ClosedStatePenalty = *s.ClosedStatePenalty
 		}
+		if s.LowHangingBonus != nil {
+			weights.LowHangingBonus = *s.LowHangingBonus
+		}
+	}
 
-		// Authored PR modifiers
-		if m.ApprovedPRBonus != nil {
-			weights.ApprovedPRBonus = *m.ApprovedPRBonus
+	// Apply PR-specific overrides
+	if c.PR != nil {
+		pr := c.PR
+		if pr.ApprovedBonus != nil {
+			weights.ApprovedPRBonus = *pr.ApprovedBonus
 		}
-		if m.MergeablePRBonus != nil {
-			weights.MergeablePRBonus = *m.MergeablePRBonus
+		if pr.MergeableBonus != nil {
+			weights.MergeablePRBonus = *pr.MergeableBonus
 		}
-		if m.ChangesRequestedBonus != nil {
-			weights.ChangesRequestedBonus = *m.ChangesRequestedBonus
+		if pr.ChangesRequestedBonus != nil {
+			weights.ChangesRequestedBonus = *pr.ChangesRequestedBonus
 		}
-		if m.ReviewCommentBonus != nil {
-			weights.ReviewCommentBonus = *m.ReviewCommentBonus
+		if pr.ReviewCommentBonus != nil {
+			weights.ReviewCommentBonus = *pr.ReviewCommentBonus
 		}
-		if m.ReviewCommentMaxBonus != nil {
-			weights.ReviewCommentMaxBonus = *m.ReviewCommentMaxBonus
+		if pr.ReviewCommentMaxBonus != nil {
+			weights.ReviewCommentMaxBonus = *pr.ReviewCommentMaxBonus
 		}
-		if m.StalePRThresholdDays != nil {
-			weights.StalePRThresholdDays = *m.StalePRThresholdDays
+		if pr.StaleThresholdDays != nil {
+			weights.StalePRThresholdDays = *pr.StaleThresholdDays
 		}
-		if m.StalePRBonusPerDay != nil {
-			weights.StalePRBonusPerDay = *m.StalePRBonusPerDay
+		if pr.StaleBonusPerDay != nil {
+			weights.StalePRBonusPerDay = *pr.StaleBonusPerDay
 		}
-		if m.StalePRMaxBonus != nil {
-			weights.StalePRMaxBonus = *m.StalePRMaxBonus
+		if pr.StaleMaxBonus != nil {
+			weights.StalePRMaxBonus = *pr.StaleMaxBonus
 		}
-		if m.DraftPRPenalty != nil {
-			weights.DraftPRPenalty = *m.DraftPRPenalty
+		if pr.DraftPenalty != nil {
+			weights.DraftPRPenalty = *pr.DraftPenalty
 		}
-
-		// General scoring
-		if m.MaxAgeBonus != nil {
-			weights.MaxAgeBonus = *m.MaxAgeBonus
+		if pr.SmallMaxFiles != nil {
+			weights.SmallPRMaxFiles = *pr.SmallMaxFiles
 		}
-
-		// Low-hanging fruit detection
-		if m.SmallPRMaxFiles != nil {
-			weights.SmallPRMaxFiles = *m.SmallPRMaxFiles
+		if pr.SmallMaxLines != nil {
+			weights.SmallPRMaxLines = *pr.SmallMaxLines
 		}
-		if m.SmallPRMaxLines != nil {
-			weights.SmallPRMaxLines = *m.SmallPRMaxLines
+		if pr.SizeXS != nil {
+			weights.PRSizeXS = *pr.SizeXS
 		}
-
-		// PR size thresholds
-		if m.PRSizeXS != nil {
-			weights.PRSizeXS = *m.PRSizeXS
+		if pr.SizeS != nil {
+			weights.PRSizeS = *pr.SizeS
 		}
-		if m.PRSizeS != nil {
-			weights.PRSizeS = *m.PRSizeS
+		if pr.SizeM != nil {
+			weights.PRSizeM = *pr.SizeM
 		}
-		if m.PRSizeM != nil {
-			weights.PRSizeM = *m.PRSizeM
-		}
-		if m.PRSizeL != nil {
-			weights.PRSizeL = *m.PRSizeL
+		if pr.SizeL != nil {
+			weights.PRSizeL = *pr.SizeL
 		}
 	}
 
@@ -418,51 +401,43 @@ func DefaultConfig() *Config {
 		DefaultFormat:  "table",
 		ExcludeRepos:   []string{},
 		QuickWinLabels: labels,
-		Weights: &WeightOverrides{
-			BaseScores: &BaseScoreOverrides{
-				ReviewRequested: &weights.ReviewRequested,
-				Mention:         &weights.Mention,
-				TeamMention:     &weights.TeamMention,
-				Author:          &weights.Author,
-				Assign:          &weights.Assign,
-				Comment:         &weights.Comment,
-				StateChange:     &weights.StateChange,
-				Subscribed:      &weights.Subscribed,
-				CIActivity:      &weights.CIActivity,
-			},
-			Modifiers: &ModifierOverrides{
-				OldUnreadBonus:        &weights.OldUnreadBonus,
-				HotTopicBonus:         &weights.HotTopicBonus,
-				HotTopicThreshold:     &weights.HotTopicThreshold,
-				LowHangingBonus:       &weights.LowHangingBonus,
-				OpenStateBonus:        &weights.OpenStateBonus,
-				ClosedStatePenalty:    &weights.ClosedStatePenalty,
-				FYIPromotionThreshold: &weights.FYIPromotionThreshold,
-
-				// Authored PR modifiers
-				ApprovedPRBonus:       &weights.ApprovedPRBonus,
-				MergeablePRBonus:      &weights.MergeablePRBonus,
-				ChangesRequestedBonus: &weights.ChangesRequestedBonus,
-				ReviewCommentBonus:    &weights.ReviewCommentBonus,
-				ReviewCommentMaxBonus: &weights.ReviewCommentMaxBonus,
-				StalePRThresholdDays:  &weights.StalePRThresholdDays,
-				StalePRBonusPerDay:    &weights.StalePRBonusPerDay,
-				StalePRMaxBonus:       &weights.StalePRMaxBonus,
-				DraftPRPenalty:        &weights.DraftPRPenalty,
-
-				// General scoring
-				MaxAgeBonus: &weights.MaxAgeBonus,
-
-				// Low-hanging fruit detection
-				SmallPRMaxFiles: &weights.SmallPRMaxFiles,
-				SmallPRMaxLines: &weights.SmallPRMaxLines,
-
-				// PR size thresholds for T-shirt sizing
-				PRSizeXS: &weights.PRSizeXS,
-				PRSizeS:  &weights.PRSizeS,
-				PRSizeM:  &weights.PRSizeM,
-				PRSizeL:  &weights.PRSizeL,
-			},
+		BaseScores: &BaseScoreOverrides{
+			ReviewRequested: &weights.ReviewRequested,
+			Mention:         &weights.Mention,
+			TeamMention:     &weights.TeamMention,
+			Author:          &weights.Author,
+			Assign:          &weights.Assign,
+			Comment:         &weights.Comment,
+			StateChange:     &weights.StateChange,
+			Subscribed:      &weights.Subscribed,
+			CIActivity:      &weights.CIActivity,
+		},
+		Scoring: &ScoringOverrides{
+			OldUnreadBonus:        &weights.OldUnreadBonus,
+			MaxAgeBonus:           &weights.MaxAgeBonus,
+			HotTopicBonus:         &weights.HotTopicBonus,
+			HotTopicThreshold:     &weights.HotTopicThreshold,
+			FYIPromotionThreshold: &weights.FYIPromotionThreshold,
+			OpenStateBonus:        &weights.OpenStateBonus,
+			ClosedStatePenalty:    &weights.ClosedStatePenalty,
+			LowHangingBonus:       &weights.LowHangingBonus,
+		},
+		PR: &PROverrides{
+			ApprovedBonus:         &weights.ApprovedPRBonus,
+			MergeableBonus:        &weights.MergeablePRBonus,
+			ChangesRequestedBonus: &weights.ChangesRequestedBonus,
+			ReviewCommentBonus:    &weights.ReviewCommentBonus,
+			ReviewCommentMaxBonus: &weights.ReviewCommentMaxBonus,
+			StaleThresholdDays:    &weights.StalePRThresholdDays,
+			StaleBonusPerDay:      &weights.StalePRBonusPerDay,
+			StaleMaxBonus:         &weights.StalePRMaxBonus,
+			DraftPenalty:          &weights.DraftPRPenalty,
+			SmallMaxFiles:         &weights.SmallPRMaxFiles,
+			SmallMaxLines:         &weights.SmallPRMaxLines,
+			SizeXS:                &weights.PRSizeXS,
+			SizeS:                 &weights.PRSizeS,
+			SizeM:                 &weights.PRSizeM,
+			SizeL:                 &weights.PRSizeL,
 		},
 	}
 }

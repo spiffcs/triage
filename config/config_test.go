@@ -69,10 +69,8 @@ func TestGetScoreWeights(t *testing.T) {
 	t.Run("merges partial base score overrides", func(t *testing.T) {
 		overriddenValue := 150
 		cfg := &Config{
-			Weights: &WeightOverrides{
-				BaseScores: &BaseScoreOverrides{
-					ReviewRequested: &overriddenValue,
-				},
+			BaseScores: &BaseScoreOverrides{
+				ReviewRequested: &overriddenValue,
 			},
 		}
 		weights := cfg.GetScoreWeights()
@@ -87,13 +85,11 @@ func TestGetScoreWeights(t *testing.T) {
 		}
 	})
 
-	t.Run("merges partial modifier overrides", func(t *testing.T) {
+	t.Run("merges partial scoring overrides", func(t *testing.T) {
 		overriddenValue := 50
 		cfg := &Config{
-			Weights: &WeightOverrides{
-				Modifiers: &ModifierOverrides{
-					HotTopicBonus: &overriddenValue,
-				},
+			Scoring: &ScoringOverrides{
+				HotTopicBonus: &overriddenValue,
 			},
 		}
 		weights := cfg.GetScoreWeights()
@@ -108,17 +104,15 @@ func TestGetScoreWeights(t *testing.T) {
 		}
 	})
 
-	t.Run("merges new PR modifier overrides", func(t *testing.T) {
+	t.Run("merges PR overrides", func(t *testing.T) {
 		approvedBonus := 50
 		staleDays := 5
 		smallFiles := 10
 		cfg := &Config{
-			Weights: &WeightOverrides{
-				Modifiers: &ModifierOverrides{
-					ApprovedPRBonus:      &approvedBonus,
-					StalePRThresholdDays: &staleDays,
-					SmallPRMaxFiles:      &smallFiles,
-				},
+			PR: &PROverrides{
+				ApprovedBonus:      &approvedBonus,
+				StaleThresholdDays: &staleDays,
+				SmallMaxFiles:      &smallFiles,
 			},
 		}
 		weights := cfg.GetScoreWeights()
