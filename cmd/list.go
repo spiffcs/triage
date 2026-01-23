@@ -21,7 +21,7 @@ import (
 func NewCmdList(opts *Options) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "List prioritized GitHub notifications",
+		Short: "List prioritized GitHub notifications(same as root triage)",
 		Long: `Fetches your unread GitHub notifications, enriches them with
 issue/PR details, and displays them sorted by priority.`,
 		RunE: func(cmd *cobra.Command, args []string) error {

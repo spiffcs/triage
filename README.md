@@ -329,7 +329,7 @@ scoring:
 ### Customizing Quick Win Labels
 
 By default, items with these label patterns are marked as "Quick Win":
-- `good first issue`, `help wanted`
+- `good-first-issue`, `help-wanted`
 - `easy`, `beginner`, `trivial`
 - `documentation`, `docs`, `typo`
 
@@ -337,8 +337,8 @@ You can override these with your own labels:
 
 ```yaml
 quick_win_labels:
-  - good first issue
-  - help wanted
+  - good-first-issue
+  - help-wanted
   - low-hanging-fruit
   - quick-fix
   - starter

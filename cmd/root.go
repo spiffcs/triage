@@ -16,6 +16,9 @@ triage your work. It uses heuristics to score notifications.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runList(cmd, args, opts)
 		},
+		CompletionOptions: cobra.CompletionOptions{
+			DisableDefaultCmd: true,
+		},
 	}
 
 	// Add list flags to root command so `triage` and `triage list` work identically
