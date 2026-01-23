@@ -3,7 +3,9 @@ package github
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -12,6 +14,90 @@ import (
 	"github.com/spiffcs/triage/internal/log"
 	"golang.org/x/oauth2"
 )
+
+// rateLimitTransport wraps an http.RoundTripper to handle GitHub rate limits
+type rateLimitTransport struct {
+	base       http.RoundTripper
+	maxRetries int
+}
+
+func (t *rateLimitTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	var resp *http.Response
+	var err error
+
+	maxRetries := t.maxRetries
+	if maxRetries <= 0 {
+		maxRetries = 3
+	}
+
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			// Clone the request for retry (body already consumed)
+			req = req.Clone(req.Context())
+		}
+
+		resp, err = t.base.RoundTrip(req)
+		if err != nil {
+			return resp, err
+		}
+
+		// Check rate limit headers and log warning if low
+		if remaining := resp.Header.Get("X-RateLimit-Remaining"); remaining != "" {
+			if rem, parseErr := strconv.Atoi(remaining); parseErr == nil && rem <= 100 && rem > 0 {
+				resetStr := resp.Header.Get("X-RateLimit-Reset")
+				if resetTime, parseErr := strconv.ParseInt(resetStr, 10, 64); parseErr == nil {
+					resetAt := time.Unix(resetTime, 0)
+					log.Debug("rate limit low", "remaining", rem, "resets_at", resetAt.Format(time.RFC3339))
+				}
+			}
+		}
+
+		// Handle rate limit responses (403 with rate limit exceeded or 429)
+		if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests {
+			// Check if this is actually a rate limit error
+			if resp.Header.Get("X-RateLimit-Remaining") == "0" || resp.StatusCode == http.StatusTooManyRequests {
+				resetStr := resp.Header.Get("X-RateLimit-Reset")
+				var waitDuration time.Duration
+
+				if resetTime, parseErr := strconv.ParseInt(resetStr, 10, 64); parseErr == nil {
+					resetAt := time.Unix(resetTime, 0)
+					waitDuration = time.Until(resetAt)
+					// Cap wait time at 60 seconds per retry
+					if waitDuration > 60*time.Second {
+						waitDuration = 60 * time.Second
+					}
+					// Ensure minimum wait
+					if waitDuration < time.Second {
+						waitDuration = time.Duration(1<<attempt) * time.Second // Exponential backoff: 1s, 2s, 4s
+					}
+				} else {
+					// No reset header, use exponential backoff
+					waitDuration = time.Duration(1<<attempt) * time.Second
+				}
+
+				if attempt < maxRetries {
+					log.Warn("rate limited, retrying",
+						"attempt", attempt+1,
+						"max_retries", maxRetries,
+						"wait", waitDuration.Round(time.Second))
+					resp.Body.Close()
+
+					select {
+					case <-time.After(waitDuration):
+						continue
+					case <-req.Context().Done():
+						return nil, req.Context().Err()
+					}
+				}
+			}
+		}
+
+		// Success or non-retryable error
+		break
+	}
+
+	return resp, err
+}
 
 // Client wraps the GitHub API client
 type Client struct {
@@ -33,6 +119,13 @@ func NewClient(token string) (*Client, error) {
 		&oauth2.Token{AccessToken: token},
 	)
 	tc := oauth2.NewClient(ctx, ts)
+
+	// Wrap transport with rate limit handling
+	tc.Transport = &rateLimitTransport{
+		base:       tc.Transport,
+		maxRetries: 3,
+	}
+
 	client := github.NewClient(tc)
 
 	return &Client{
@@ -631,10 +724,40 @@ func (c *Client) EnrichAuthoredPR(n *Notification) error {
 	repo := parts[1]
 	number := n.Details.Number
 
+	// Fetch PR details, review state, and comments concurrently
+	var pr *github.PullRequest
+	var prErr error
+	var reviewState string
+	var comments []*github.PullRequestComment
+	var commentsErr error
+
+	var wg sync.WaitGroup
+	wg.Add(3)
+
 	// Fetch full PR details
-	pr, _, err := c.client.PullRequests.Get(c.ctx, owner, repo, number)
-	if err != nil {
-		return fmt.Errorf("failed to get PR details: %w", err)
+	go func() {
+		defer wg.Done()
+		pr, _, prErr = c.client.PullRequests.Get(c.ctx, owner, repo, number)
+	}()
+
+	// Get review state
+	go func() {
+		defer wg.Done()
+		reviewState = c.getPRReviewState(owner, repo, number)
+	}()
+
+	// Get review comments count
+	go func() {
+		defer wg.Done()
+		comments, _, commentsErr = c.client.PullRequests.ListComments(c.ctx, owner, repo, number, &github.PullRequestListCommentsOptions{
+			ListOptions: github.ListOptions{PerPage: 100},
+		})
+	}()
+
+	wg.Wait()
+
+	if prErr != nil {
+		return fmt.Errorf("failed to get PR details: %w", prErr)
 	}
 
 	// Update details
@@ -648,14 +771,11 @@ func (c *Client) EnrichAuthoredPR(n *Notification) error {
 		n.Details.Mergeable = pr.GetMergeable()
 	}
 
-	// Get review state
-	n.Details.ReviewState = c.getPRReviewState(owner, repo, number)
+	// Set review state (fetched concurrently)
+	n.Details.ReviewState = reviewState
 
-	// Get review comments count
-	comments, _, err := c.client.PullRequests.ListComments(c.ctx, owner, repo, number, &github.PullRequestListCommentsOptions{
-		ListOptions: github.ListOptions{PerPage: 100},
-	})
-	if err == nil {
+	// Set review comments count (fetched concurrently)
+	if commentsErr == nil {
 		n.Details.ReviewComments = len(comments)
 	}
 

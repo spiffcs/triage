@@ -149,9 +149,30 @@ func (c *Client) EnrichNotificationsConcurrent(notifications []Notification, wor
 }
 
 func (c *Client) enrichPullRequest(n *Notification, owner, repo string, number int) error {
-	pr, _, err := c.client.PullRequests.Get(c.ctx, owner, repo, number)
-	if err != nil {
-		return fmt.Errorf("failed to get PR #%d: %w", number, err)
+	// Fetch PR details and review state concurrently
+	var pr *github.PullRequest
+	var prErr error
+	var reviewState string
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	// Fetch PR details
+	go func() {
+		defer wg.Done()
+		pr, _, prErr = c.client.PullRequests.Get(c.ctx, owner, repo, number)
+	}()
+
+	// Fetch review state
+	go func() {
+		defer wg.Done()
+		reviewState = c.getPRReviewState(owner, repo, number)
+	}()
+
+	wg.Wait()
+
+	if prErr != nil {
+		return fmt.Errorf("failed to get PR #%d: %w", number, prErr)
 	}
 
 	details := &ItemDetails{
@@ -190,8 +211,8 @@ func (c *Client) enrichPullRequest(n *Notification, owner, repo string, number i
 		details.Labels = append(details.Labels, label.GetName())
 	}
 
-	// Get review state
-	details.ReviewState = c.getPRReviewState(owner, repo, number)
+	// Set review state (fetched concurrently)
+	details.ReviewState = reviewState
 
 	n.Details = details
 	return nil

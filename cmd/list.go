@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -172,7 +173,22 @@ func runList(_ *cobra.Command, _ []string, opts *Options) error {
 		assignedCached bool
 	}
 
-	sendTaskEvent(events, tui.TaskFetch, tui.StatusRunning, tui.WithMessage(fmt.Sprintf("for the past %s", opts.Since)))
+	// Track progress of parallel fetches
+	var completedFetches int32
+	const totalFetches = 4
+
+	updateFetchProgress := func() {
+		current := atomic.AddInt32(&completedFetches, 1)
+		progress := float64(current) / float64(totalFetches)
+		msg := fmt.Sprintf("for the past %s (%d/%d sources)", opts.Since, current, totalFetches)
+		sendTaskEvent(events, tui.TaskFetch, tui.StatusRunning,
+			tui.WithProgress(progress),
+			tui.WithMessage(msg))
+	}
+
+	sendTaskEvent(events, tui.TaskFetch, tui.StatusRunning,
+		tui.WithProgress(0.0),
+		tui.WithMessage(fmt.Sprintf("for the past %s (0/%d sources)", opts.Since, totalFetches)))
 
 	var wg sync.WaitGroup
 	result := &fetchResult{}
@@ -184,11 +200,13 @@ func runList(_ *cobra.Command, _ []string, opts *Options) error {
 		notifResult, err := ghClient.ListUnreadNotificationsCached(currentUser, since, prCache)
 		if err != nil {
 			result.notifErr = err
+			updateFetchProgress()
 			return
 		}
 		result.notifications = notifResult.Notifications
 		result.notifCached = notifResult.FromCache
 		result.notifNewCount = notifResult.NewCount
+		updateFetchProgress()
 	}()
 
 	// Fetch review-requested PRs
@@ -196,6 +214,7 @@ func runList(_ *cobra.Command, _ []string, opts *Options) error {
 	go func() {
 		defer wg.Done()
 		result.reviewPRs, result.reviewCached, result.reviewErr = ghClient.ListReviewRequestedPRsCached(currentUser, prCache)
+		updateFetchProgress()
 	}()
 
 	// Fetch authored PRs
@@ -203,6 +222,7 @@ func runList(_ *cobra.Command, _ []string, opts *Options) error {
 	go func() {
 		defer wg.Done()
 		result.authoredPRs, result.authoredCached, result.authoredErr = ghClient.ListAuthoredPRsCached(currentUser, prCache)
+		updateFetchProgress()
 	}()
 
 	// Fetch assigned issues
@@ -210,6 +230,7 @@ func runList(_ *cobra.Command, _ []string, opts *Options) error {
 	go func() {
 		defer wg.Done()
 		result.assignedIssues, result.assignedCached, result.assignedErr = ghClient.ListAssignedIssuesCached(currentUser, prCache)
+		updateFetchProgress()
 	}()
 
 	wg.Wait()
@@ -260,75 +281,86 @@ func runList(_ *cobra.Command, _ []string, opts *Options) error {
 
 	// Track total items to enrich
 	totalToEnrich := len(notifications) + len(reviewPRs) + len(authoredPRs)
-	var enrichedCount int
-	var totalCacheHits int
+	var totalCacheHits int64
+	var totalCompleted int64
 
 	if totalToEnrich > 0 {
-		// Progress callback
-		lastPercent := -1
-		onProgress := func(completed, total int) {
-			percent := (completed * 100) / total
-			if percent != lastPercent && percent%5 == 0 {
+		// Progress callback using atomic counter for concurrent updates
+		var lastPercent int64 = -1
+		onProgress := func(_ int, _ int) {
+			completed := atomic.AddInt64(&totalCompleted, 1)
+			percent := (completed * 100) / int64(totalToEnrich)
+			// Only update at 5% intervals to reduce UI updates
+			if percent != atomic.LoadInt64(&lastPercent) && percent%5 == 0 {
+				atomic.StoreInt64(&lastPercent, percent)
+				cacheHits := atomic.LoadInt64(&totalCacheHits)
 				if useTUI {
-					progress := float64(completed) / float64(total)
-					msg := fmt.Sprintf("%d/%d", completed, total)
-					if totalCacheHits > 0 {
-						msg = fmt.Sprintf("%d/%d (%d cached)", completed, total, totalCacheHits)
+					progress := float64(completed) / float64(totalToEnrich)
+					msg := fmt.Sprintf("%d/%d", completed, totalToEnrich)
+					if cacheHits > 0 {
+						msg = fmt.Sprintf("%d/%d (%d cached)", completed, totalToEnrich, cacheHits)
 					}
 					sendTaskEvent(events, tui.TaskEnrich, tui.StatusRunning,
 						tui.WithProgress(progress),
 						tui.WithMessage(msg))
 				} else {
-					log.Progress("Enriching items: %d/%d (%d%%)...", completed, total, percent)
+					log.Progress("Enriching items: %d/%d (%d%%)...", completed, totalToEnrich, percent)
 				}
-				lastPercent = percent
 			}
 		}
 
-		// Enrich notifications (uses caching internally)
+		// Enrich all three sources concurrently
+		var enrichWg sync.WaitGroup
+
+		// Enrich notifications
 		if len(notifications) > 0 {
-			cacheHits, err := ghClient.EnrichNotificationsConcurrent(notifications, opts.Workers, onProgress)
-			if err != nil {
-				log.Warn("some notifications could not be enriched", "error", err)
-			}
-			totalCacheHits += cacheHits
-			enrichedCount += len(notifications)
+			enrichWg.Add(1)
+			go func() {
+				defer enrichWg.Done()
+				cacheHits, err := ghClient.EnrichNotificationsConcurrent(notifications, opts.Workers, onProgress)
+				if err != nil {
+					log.Warn("some notifications could not be enriched", "error", err)
+				}
+				atomic.AddInt64(&totalCacheHits, int64(cacheHits))
+			}()
 		}
 
-		// Enrich review-requested PRs concurrently
+		// Enrich review-requested PRs
 		if len(reviewPRs) > 0 {
-			prProgress := func(completed, total int) {
-				onProgress(enrichedCount+completed, totalToEnrich)
-			}
-			cacheHits, err := ghClient.EnrichPRsConcurrent(reviewPRs, opts.Workers, prCache, prProgress)
-			if err != nil {
-				log.Warn("some review PRs could not be enriched", "error", err)
-			}
-			totalCacheHits += cacheHits
-			enrichedCount += len(reviewPRs)
+			enrichWg.Add(1)
+			go func() {
+				defer enrichWg.Done()
+				cacheHits, err := ghClient.EnrichPRsConcurrent(reviewPRs, opts.Workers, prCache, onProgress)
+				if err != nil {
+					log.Warn("some review PRs could not be enriched", "error", err)
+				}
+				atomic.AddInt64(&totalCacheHits, int64(cacheHits))
+			}()
 		}
 
-		// Enrich authored PRs concurrently
+		// Enrich authored PRs
 		if len(authoredPRs) > 0 {
-			prProgress := func(completed, total int) {
-				onProgress(enrichedCount+completed, totalToEnrich)
-			}
-			cacheHits, err := ghClient.EnrichPRsConcurrent(authoredPRs, opts.Workers, prCache, prProgress)
-			if err != nil {
-				log.Warn("some authored PRs could not be enriched", "error", err)
-			}
-			totalCacheHits += cacheHits
-			enrichedCount += len(authoredPRs)
+			enrichWg.Add(1)
+			go func() {
+				defer enrichWg.Done()
+				cacheHits, err := ghClient.EnrichPRsConcurrent(authoredPRs, opts.Workers, prCache, onProgress)
+				if err != nil {
+					log.Warn("some authored PRs could not be enriched", "error", err)
+				}
+				atomic.AddInt64(&totalCacheHits, int64(cacheHits))
+			}()
 		}
+
+		enrichWg.Wait()
 
 		if !useTUI {
 			log.ProgressDone()
 		}
 	}
 
-	enrichCompleteMsg := fmt.Sprintf("%d/%d", enrichedCount, totalToEnrich)
+	enrichCompleteMsg := fmt.Sprintf("%d/%d", totalCompleted, totalToEnrich)
 	if totalCacheHits > 0 {
-		enrichCompleteMsg = fmt.Sprintf("%d/%d (%d cached)", enrichedCount, totalToEnrich, totalCacheHits)
+		enrichCompleteMsg = fmt.Sprintf("%d/%d (%d cached)", totalCompleted, totalToEnrich, totalCacheHits)
 	}
 	sendTaskEvent(events, tui.TaskEnrich, tui.StatusComplete,
 		tui.WithMessage(enrichCompleteMsg))
