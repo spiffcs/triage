@@ -1,6 +1,6 @@
 # triage
 
-A CLI tool that organizes GitHub notifications, issues, and PRs to help you triage work. It aggregates data from multiple sources including unread notifications, PRs awaiting your review, your own open PRs, and issues assigned to the user running the program. It enriches these items with details and ranks them using configurable heuristics. All titles and repositories are clickable and take the user to the issue, pr, or repository home page.
+A tool that organizes GitHub notifications, issues, and PRs to help you triage work. It aggregates data from multiple sources including unread notifications, PRs awaiting your review, your own open PRs, and issues assigned to the user running the program. It enriches these items with details and ranks them using configurable heuristics. All titles and repositories are clickable and take the user to the issue, pr, or repository home page.
 
 ![Demo](.github/demo.png)
 
