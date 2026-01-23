@@ -4,6 +4,12 @@ An interactive TUI tool that organizes GitHub notifications, issues, and PRs to 
 
 ![Demo](.github/demo.png)
 
+## Quick Start
+
+```bash
+GITHUB_TOKEN=$(gh auth token) triage
+```
+
 ## Interactive TUI
 
 The default interface is an interactive terminal UI with keyboard navigation:
