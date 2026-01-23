@@ -13,4 +13,5 @@ type Options struct {
 	Workers       int
 	IncludeMerged bool
 	IncludeClosed bool
+	TUI           *bool // nil = auto-detect, true = force TUI, false = disable TUI
 }

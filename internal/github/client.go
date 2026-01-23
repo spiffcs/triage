@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sync"
+	"sync/atomic"
 
 	"github.com/google/go-github/v57/github"
 	"github.com/spiffcs/triage/internal/log"
@@ -325,6 +327,54 @@ func (c *Client) ListAuthoredPRsCached(username string, cache *Cache) ([]Notific
 	}
 
 	return prs, false, nil
+}
+
+// EnrichPRsConcurrent enriches PRs (review-requested or authored) using a worker pool
+func (c *Client) EnrichPRsConcurrent(notifications []Notification, workers int, onProgress func(completed, total int)) error {
+	if workers <= 0 {
+		workers = 10
+	}
+
+	total := len(notifications)
+	if total == 0 {
+		return nil
+	}
+
+	var completed int64
+	var errors int64
+
+	// Create work channel
+	work := make(chan int, total)
+	for i := 0; i < total; i++ {
+		work <- i
+	}
+	close(work)
+
+	// Create worker pool
+	var wg sync.WaitGroup
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range work {
+				if err := c.EnrichAuthoredPR(&notifications[i]); err != nil {
+					atomic.AddInt64(&errors, 1)
+				}
+				done := atomic.AddInt64(&completed, 1)
+				if onProgress != nil {
+					onProgress(int(done), total)
+				}
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	if errors > 0 {
+		log.Warn("some PRs failed to enrich", "count", errors)
+	}
+
+	return nil
 }
 
 // EnrichAuthoredPR fetches additional PR details like review state, mergeable status

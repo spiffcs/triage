@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -12,6 +13,7 @@ import (
 	"github.com/spiffcs/triage/internal/log"
 	"github.com/spiffcs/triage/internal/output"
 	"github.com/spiffcs/triage/internal/triage"
+	"github.com/spiffcs/triage/internal/tui"
 )
 
 // NewCmdList creates the list command.
@@ -43,10 +45,55 @@ func addListFlags(cmd *cobra.Command, opts *Options) {
 	cmd.Flags().BoolVar(&opts.IncludeMerged, "include-merged", false, "Include notifications for merged PRs")
 	cmd.Flags().BoolVar(&opts.IncludeClosed, "include-closed", false, "Include notifications for closed issues/PRs")
 	cmd.Flags().StringVarP(&opts.Type, "type", "t", "", "Filter by type (pr, issue)")
+
+	// TUI flag with tri-state: nil = auto, true = force, false = disable
+	cmd.Flags().Var(&tuiFlag{opts: opts}, "tui", "Enable/disable TUI progress (default: auto-detect)")
 }
 
-func runList(cmd *cobra.Command, args []string, opts *Options) error {
-	// Initialize logging
+// tuiFlag implements pflag.Value for the tri-state TUI flag.
+type tuiFlag struct {
+	opts *Options
+}
+
+func (f *tuiFlag) String() string {
+	if f.opts.TUI == nil {
+		return "auto"
+	}
+	if *f.opts.TUI {
+		return "true"
+	}
+	return "false"
+}
+
+func (f *tuiFlag) Set(s string) error {
+	switch s {
+	case "true", "1", "yes":
+		v := true
+		f.opts.TUI = &v
+	case "false", "0", "no":
+		v := false
+		f.opts.TUI = &v
+	case "auto":
+		f.opts.TUI = nil
+	default:
+		return fmt.Errorf("invalid value %q: use true, false, or auto", s)
+	}
+	return nil
+}
+
+func (f *tuiFlag) Type() string {
+	return "bool"
+}
+
+func (f *tuiFlag) IsBoolFlag() bool {
+	return true
+}
+
+func runList(_ *cobra.Command, _ []string, opts *Options) error {
+	// Determine if TUI should be used
+	useTUI := shouldUseTUI(opts)
+
+	// Initialize logging (suppress progress output if TUI is active)
 	log.Initialize(opts.Verbosity, os.Stderr)
 
 	cfg, err := config.Load()
@@ -65,45 +112,36 @@ func runList(cmd *cobra.Command, args []string, opts *Options) error {
 		return err
 	}
 
+	// Set up TUI event channel if using TUI
+	var events chan tui.Event
+	var tuiDone chan error
+	if useTUI {
+		events = make(chan tui.Event, 100)
+		tuiDone = make(chan error, 1)
+		// Start TUI immediately so it can show auth progress
+		go func() {
+			tuiDone <- tui.Run(events)
+		}()
+	}
+
 	// Get current user for heuristics
+	sendTaskEvent(events, tui.TaskAuth, tui.StatusRunning)
 	currentUser, err := ghClient.GetAuthenticatedUser()
 	if err != nil {
+		sendTaskEvent(events, tui.TaskAuth, tui.StatusError, tui.WithError(err))
+		closeTUI(events, tuiDone)
 		return fmt.Errorf("failed to get authenticated user: %w", err)
 	}
+	sendTaskEvent(events, tui.TaskAuth, tui.StatusComplete, tui.WithMessage(currentUser))
 
 	// Parse since duration
 	since, err := parseDuration(opts.Since)
 	if err != nil {
+		closeTUI(events, tuiDone)
 		return fmt.Errorf("invalid duration: %w", err)
 	}
 
 	log.Info("fetching notifications", "since", opts.Since)
-
-	// Fetch notifications
-	notifications, err := ghClient.ListUnreadNotifications(since)
-	if err != nil {
-		return fmt.Errorf("failed to fetch notifications: %w", err)
-	}
-
-	// Enrich with details
-	if len(notifications) > 0 {
-		log.Info("found notifications", "count", len(notifications))
-
-		// Progress callback
-		lastPercent := -1
-		onProgress := func(completed, total int) {
-			percent := (completed * 100) / total
-			if percent != lastPercent && percent%5 == 0 {
-				log.Progress("Fetching details: %d/%d (%d%%)...", completed, total, percent)
-				lastPercent = percent
-			}
-		}
-
-		if err := ghClient.EnrichNotificationsConcurrent(notifications, opts.Workers, onProgress); err != nil {
-			log.Warn("some notifications could not be enriched", "error", err)
-		}
-		log.ProgressDone()
-	}
 
 	// Create cache for PR lists
 	prCache, cacheErr := github.NewCache()
@@ -111,43 +149,154 @@ func runList(cmd *cobra.Command, args []string, opts *Options) error {
 		log.Warn("failed to initialize cache", "error", cacheErr)
 	}
 
-	// Fetch PRs where user is a requested reviewer
-	reviewPRs, reviewFromCache, err := ghClient.ListReviewRequestedPRsCached(currentUser, prCache)
-	if err != nil {
-		log.Warn("failed to fetch review-requested PRs", "error", err)
-	} else if len(reviewPRs) > 0 {
-		// Enrich review-requested PRs with additions/deletions (search API doesn't return them)
-		for i := range reviewPRs {
-			if err := ghClient.EnrichAuthoredPR(&reviewPRs[i]); err != nil {
-				continue
+	// Parallel fetch all data sources
+	type fetchResult struct {
+		notifications  []github.Notification
+		reviewPRs      []github.Notification
+		authoredPRs    []github.Notification
+		notifErr       error
+		reviewErr      error
+		authoredErr    error
+		reviewCached   bool
+		authoredCached bool
+	}
+
+	sendTaskEvent(events, tui.TaskFetch, tui.StatusRunning)
+
+	var wg sync.WaitGroup
+	result := &fetchResult{}
+
+	// Fetch notifications
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		result.notifications, result.notifErr = ghClient.ListUnreadNotifications(since)
+	}()
+
+	// Fetch review-requested PRs
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		result.reviewPRs, result.reviewCached, result.reviewErr = ghClient.ListReviewRequestedPRsCached(currentUser, prCache)
+	}()
+
+	// Fetch authored PRs
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		result.authoredPRs, result.authoredCached, result.authoredErr = ghClient.ListAuthoredPRsCached(currentUser, prCache)
+	}()
+
+	wg.Wait()
+
+	// Handle fetch errors
+	if result.notifErr != nil {
+		sendTaskEvent(events, tui.TaskFetch, tui.StatusError, tui.WithError(result.notifErr))
+		closeTUI(events, tuiDone)
+		return fmt.Errorf("failed to fetch notifications: %w", result.notifErr)
+	}
+	if result.reviewErr != nil {
+		log.Warn("failed to fetch review-requested PRs", "error", result.reviewErr)
+	}
+	if result.authoredErr != nil {
+		log.Warn("failed to fetch authored PRs", "error", result.authoredErr)
+	}
+
+	notifications := result.notifications
+	reviewPRs := result.reviewPRs
+	authoredPRs := result.authoredPRs
+
+	totalFetched := len(notifications) + len(reviewPRs) + len(authoredPRs)
+	sendTaskEvent(events, tui.TaskFetch, tui.StatusComplete, tui.WithCount(totalFetched))
+
+	log.Info("fetched data",
+		"notifications", len(notifications),
+		"reviewPRs", len(reviewPRs),
+		"authoredPRs", len(authoredPRs),
+		"reviewCached", result.reviewCached,
+		"authoredCached", result.authoredCached)
+
+	// Enrich all items concurrently
+	sendTaskEvent(events, tui.TaskEnrich, tui.StatusRunning)
+
+	// Track total items to enrich
+	totalToEnrich := len(notifications) + len(reviewPRs) + len(authoredPRs)
+	var enrichedCount int
+
+	if totalToEnrich > 0 {
+		// Progress callback
+		lastPercent := -1
+		onProgress := func(completed, total int) {
+			percent := (completed * 100) / total
+			if percent != lastPercent && percent%5 == 0 {
+				if useTUI {
+					progress := float64(completed) / float64(total)
+					sendTaskEvent(events, tui.TaskEnrich, tui.StatusRunning,
+						tui.WithProgress(progress),
+						tui.WithMessage(fmt.Sprintf("%d/%d", completed, total)))
+				} else {
+					log.Progress("Enriching items: %d/%d (%d%%)...", completed, total, percent)
+				}
+				lastPercent = percent
 			}
 		}
-		var added int
-		notifications, added = mergeReviewRequests(notifications, reviewPRs)
-		if added > 0 {
-			log.Info("PRs awaiting your review", "count", added, "cached", reviewFromCache)
+
+		// Enrich notifications (uses caching internally)
+		if len(notifications) > 0 {
+			if err := ghClient.EnrichNotificationsConcurrent(notifications, opts.Workers, onProgress); err != nil {
+				log.Warn("some notifications could not be enriched", "error", err)
+			}
+			enrichedCount += len(notifications)
+		}
+
+		// Enrich review-requested PRs concurrently
+		if len(reviewPRs) > 0 {
+			prProgress := func(completed, total int) {
+				onProgress(enrichedCount+completed, totalToEnrich)
+			}
+			if err := ghClient.EnrichPRsConcurrent(reviewPRs, opts.Workers, prProgress); err != nil {
+				log.Warn("some review PRs could not be enriched", "error", err)
+			}
+			enrichedCount += len(reviewPRs)
+		}
+
+		// Enrich authored PRs concurrently
+		if len(authoredPRs) > 0 {
+			prProgress := func(completed, total int) {
+				onProgress(enrichedCount+completed, totalToEnrich)
+			}
+			if err := ghClient.EnrichPRsConcurrent(authoredPRs, opts.Workers, prProgress); err != nil {
+				log.Warn("some authored PRs could not be enriched", "error", err)
+			}
+			enrichedCount += len(authoredPRs)
+		}
+
+		if !useTUI {
+			log.ProgressDone()
 		}
 	}
 
-	// Fetch user's own open PRs
-	authoredPRs, authoredFromCache, err := ghClient.ListAuthoredPRsCached(currentUser, prCache)
-	if err != nil {
-		log.Warn("failed to fetch authored PRs", "error", err)
-	} else if len(authoredPRs) > 0 {
-		// Enrich authored PRs with additions/deletions (search API doesn't return them)
-		for i := range authoredPRs {
-			if err := ghClient.EnrichAuthoredPR(&authoredPRs[i]); err != nil {
-				continue
-			}
+	sendTaskEvent(events, tui.TaskEnrich, tui.StatusComplete,
+		tui.WithMessage(fmt.Sprintf("%d/%d", enrichedCount, totalToEnrich)))
+
+	// Merge review-requested and authored PRs into notifications
+	if len(reviewPRs) > 0 {
+		var added int
+		notifications, added = mergeReviewRequests(notifications, reviewPRs)
+		if added > 0 {
+			log.Info("PRs awaiting your review", "count", added)
 		}
+	}
+	if len(authoredPRs) > 0 {
 		var added int
 		notifications, added = mergeAuthoredPRs(notifications, authoredPRs)
 		if added > 0 {
-			log.Info("your open PRs", "count", added, "cached", authoredFromCache)
+			log.Info("your open PRs", "count", added)
 		}
 	}
 
 	if len(notifications) == 0 {
+		closeTUI(events, tuiDone)
 		fmt.Println("No unread notifications, pending reviews, or open PRs found.")
 		return nil
 	}
@@ -155,6 +304,9 @@ func runList(cmd *cobra.Command, args []string, opts *Options) error {
 	// Get score weights and quick win labels (with any user overrides)
 	weights := cfg.GetScoreWeights()
 	quickWinLabels := cfg.GetQuickWinLabels()
+
+	// Process results: score and filter
+	sendTaskEvent(events, tui.TaskProcess, tui.StatusRunning)
 
 	// Prioritize
 	engine := triage.NewEngine(currentUser, weights, quickWinLabels)
@@ -184,6 +336,7 @@ func runList(cmd *cobra.Command, args []string, opts *Options) error {
 		case "issue", "Issue":
 			subjectType = github.SubjectIssue
 		default:
+			closeTUI(events, tuiDone)
 			return fmt.Errorf("invalid type: %s (must be 'pr' or 'issue')", opts.Type)
 		}
 		items = triage.FilterByType(items, subjectType)
@@ -193,6 +346,10 @@ func runList(cmd *cobra.Command, args []string, opts *Options) error {
 	if opts.Limit > 0 && len(items) > opts.Limit {
 		items = items[:opts.Limit]
 	}
+	sendTaskEvent(events, tui.TaskProcess, tui.StatusComplete, tui.WithCount(len(items)))
+
+	// Close TUI and wait for it to finish before showing output
+	closeTUI(events, tuiDone)
 
 	// Determine format
 	format := output.Format(opts.Format)
@@ -204,6 +361,33 @@ func runList(cmd *cobra.Command, args []string, opts *Options) error {
 	formatter := output.NewFormatter(format)
 
 	return formatter.Format(items, os.Stdout)
+}
+
+// shouldUseTUI determines whether to use the TUI based on options and environment.
+func shouldUseTUI(opts *Options) bool {
+	if opts.TUI != nil {
+		return *opts.TUI
+	}
+	return tui.ShouldUseTUI()
+}
+
+// sendTaskEvent sends a task event to the TUI channel if it exists.
+func sendTaskEvent(events chan tui.Event, task tui.TaskID, status tui.TaskStatus, opts ...tui.TaskEventOption) {
+	if events == nil {
+		return
+	}
+	tui.SendTaskEvent(events, task, status, opts...)
+}
+
+// closeTUI closes the event channel and waits for the TUI to finish.
+func closeTUI(events chan tui.Event, tuiDone chan error) {
+	if events == nil {
+		return
+	}
+	close(events)
+	if tuiDone != nil {
+		<-tuiDone
+	}
 }
 
 func parseDuration(s string) (time.Time, error) {
