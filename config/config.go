@@ -288,16 +288,21 @@ func (c *Config) GetScoreWeights() ScoreWeights {
 
 // DefaultConfigDir returns the default config directory
 func DefaultConfigDir() string {
-	home, err := os.UserHomeDir()
+	configDir, err := os.UserConfigDir()
 	if err != nil {
 		return ".triage"
 	}
-	return filepath.Join(home, ".config", "triage")
+	return filepath.Join(configDir, "triage")
 }
 
 // ConfigPath returns the path to the config file
 func ConfigPath() string {
 	return filepath.Join(DefaultConfigDir(), "config.yaml")
+}
+
+// LocalConfigPath returns the path to the local config file in the current directory
+func LocalConfigPath() string {
+	return ".triage.yaml"
 }
 
 // ConfigFileExists returns true if the config file exists on disk
@@ -306,33 +311,292 @@ func ConfigFileExists() bool {
 	return err == nil
 }
 
-// Load loads the configuration from disk
+// Load loads the configuration from disk.
+// It first loads the global config from XDG config directory, then merges
+// any local .triage.yaml config on top (local values take precedence).
 func Load() (*Config, error) {
-	configPath := ConfigPath()
-
-	// Check if file exists
-	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		return &Config{
-			DefaultFormat: "table",
-		}, nil
+	// Start with defaults
+	cfg := &Config{
+		DefaultFormat: "table",
 	}
 
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read config file: %w", err)
+	// Load global config if it exists
+	globalPath := ConfigPath()
+	if _, err := os.Stat(globalPath); err == nil {
+		data, err := os.ReadFile(globalPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read global config file: %w", err)
+		}
+
+		if err := yaml.Unmarshal(data, cfg); err != nil {
+			return nil, fmt.Errorf("failed to parse global config file: %w", err)
+		}
 	}
 
-	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("failed to parse config file: %w", err)
+	// Load local config if it exists and merge on top
+	localPath := LocalConfigPath()
+	if _, err := os.Stat(localPath); err == nil {
+		data, err := os.ReadFile(localPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read local config file: %w", err)
+		}
+
+		var localCfg Config
+		if err := yaml.Unmarshal(data, &localCfg); err != nil {
+			return nil, fmt.Errorf("failed to parse local config file: %w", err)
+		}
+
+		cfg = mergeConfig(cfg, &localCfg)
 	}
 
-	// Set defaults
+	// Set defaults if still empty
 	if cfg.DefaultFormat == "" {
 		cfg.DefaultFormat = "table"
 	}
 
-	return &cfg, nil
+	return cfg, nil
+}
+
+// mergeConfig merges local config on top of global config.
+// Local values take precedence; unset local values preserve global values.
+func mergeConfig(global, local *Config) *Config {
+	result := &Config{}
+
+	// Merge simple fields (local wins if set)
+	if local.DefaultFormat != "" {
+		result.DefaultFormat = local.DefaultFormat
+	} else {
+		result.DefaultFormat = global.DefaultFormat
+	}
+
+	// Merge arrays (local replaces if non-empty)
+	if len(local.ExcludeRepos) > 0 {
+		result.ExcludeRepos = local.ExcludeRepos
+	} else {
+		result.ExcludeRepos = global.ExcludeRepos
+	}
+
+	if len(local.QuickWinLabels) > 0 {
+		result.QuickWinLabels = local.QuickWinLabels
+	} else {
+		result.QuickWinLabels = global.QuickWinLabels
+	}
+
+	// Merge BaseScores
+	result.BaseScores = mergeBaseScores(global.BaseScores, local.BaseScores)
+
+	// Merge Scoring
+	result.Scoring = mergeScoringOverrides(global.Scoring, local.Scoring)
+
+	// Merge PR
+	result.PR = mergePROverrides(global.PR, local.PR)
+
+	return result
+}
+
+func mergeBaseScores(global, local *BaseScoreOverrides) *BaseScoreOverrides {
+	if global == nil && local == nil {
+		return nil
+	}
+	result := &BaseScoreOverrides{}
+
+	if global != nil {
+		result.ReviewRequested = global.ReviewRequested
+		result.Mention = global.Mention
+		result.TeamMention = global.TeamMention
+		result.Author = global.Author
+		result.Assign = global.Assign
+		result.Comment = global.Comment
+		result.StateChange = global.StateChange
+		result.Subscribed = global.Subscribed
+		result.CIActivity = global.CIActivity
+	}
+
+	if local != nil {
+		if local.ReviewRequested != nil {
+			result.ReviewRequested = local.ReviewRequested
+		}
+		if local.Mention != nil {
+			result.Mention = local.Mention
+		}
+		if local.TeamMention != nil {
+			result.TeamMention = local.TeamMention
+		}
+		if local.Author != nil {
+			result.Author = local.Author
+		}
+		if local.Assign != nil {
+			result.Assign = local.Assign
+		}
+		if local.Comment != nil {
+			result.Comment = local.Comment
+		}
+		if local.StateChange != nil {
+			result.StateChange = local.StateChange
+		}
+		if local.Subscribed != nil {
+			result.Subscribed = local.Subscribed
+		}
+		if local.CIActivity != nil {
+			result.CIActivity = local.CIActivity
+		}
+	}
+
+	// Return nil if all fields are nil
+	if result.ReviewRequested == nil && result.Mention == nil && result.TeamMention == nil &&
+		result.Author == nil && result.Assign == nil && result.Comment == nil &&
+		result.StateChange == nil && result.Subscribed == nil && result.CIActivity == nil {
+		return nil
+	}
+
+	return result
+}
+
+func mergeScoringOverrides(global, local *ScoringOverrides) *ScoringOverrides {
+	if global == nil && local == nil {
+		return nil
+	}
+	result := &ScoringOverrides{}
+
+	if global != nil {
+		result.OldUnreadBonus = global.OldUnreadBonus
+		result.MaxAgeBonus = global.MaxAgeBonus
+		result.HotTopicBonus = global.HotTopicBonus
+		result.HotTopicThreshold = global.HotTopicThreshold
+		result.FYIPromotionThreshold = global.FYIPromotionThreshold
+		result.NotablePromotionThreshold = global.NotablePromotionThreshold
+		result.ImportantPromotionThreshold = global.ImportantPromotionThreshold
+		result.OpenStateBonus = global.OpenStateBonus
+		result.ClosedStatePenalty = global.ClosedStatePenalty
+		result.LowHangingBonus = global.LowHangingBonus
+	}
+
+	if local != nil {
+		if local.OldUnreadBonus != nil {
+			result.OldUnreadBonus = local.OldUnreadBonus
+		}
+		if local.MaxAgeBonus != nil {
+			result.MaxAgeBonus = local.MaxAgeBonus
+		}
+		if local.HotTopicBonus != nil {
+			result.HotTopicBonus = local.HotTopicBonus
+		}
+		if local.HotTopicThreshold != nil {
+			result.HotTopicThreshold = local.HotTopicThreshold
+		}
+		if local.FYIPromotionThreshold != nil {
+			result.FYIPromotionThreshold = local.FYIPromotionThreshold
+		}
+		if local.NotablePromotionThreshold != nil {
+			result.NotablePromotionThreshold = local.NotablePromotionThreshold
+		}
+		if local.ImportantPromotionThreshold != nil {
+			result.ImportantPromotionThreshold = local.ImportantPromotionThreshold
+		}
+		if local.OpenStateBonus != nil {
+			result.OpenStateBonus = local.OpenStateBonus
+		}
+		if local.ClosedStatePenalty != nil {
+			result.ClosedStatePenalty = local.ClosedStatePenalty
+		}
+		if local.LowHangingBonus != nil {
+			result.LowHangingBonus = local.LowHangingBonus
+		}
+	}
+
+	// Return nil if all fields are nil
+	if result.OldUnreadBonus == nil && result.MaxAgeBonus == nil && result.HotTopicBonus == nil &&
+		result.HotTopicThreshold == nil && result.FYIPromotionThreshold == nil &&
+		result.NotablePromotionThreshold == nil && result.ImportantPromotionThreshold == nil &&
+		result.OpenStateBonus == nil && result.ClosedStatePenalty == nil && result.LowHangingBonus == nil {
+		return nil
+	}
+
+	return result
+}
+
+func mergePROverrides(global, local *PROverrides) *PROverrides {
+	if global == nil && local == nil {
+		return nil
+	}
+	result := &PROverrides{}
+
+	if global != nil {
+		result.ApprovedBonus = global.ApprovedBonus
+		result.MergeableBonus = global.MergeableBonus
+		result.ChangesRequestedBonus = global.ChangesRequestedBonus
+		result.ReviewCommentBonus = global.ReviewCommentBonus
+		result.ReviewCommentMaxBonus = global.ReviewCommentMaxBonus
+		result.StaleThresholdDays = global.StaleThresholdDays
+		result.StaleBonusPerDay = global.StaleBonusPerDay
+		result.StaleMaxBonus = global.StaleMaxBonus
+		result.DraftPenalty = global.DraftPenalty
+		result.SmallMaxFiles = global.SmallMaxFiles
+		result.SmallMaxLines = global.SmallMaxLines
+		result.SizeXS = global.SizeXS
+		result.SizeS = global.SizeS
+		result.SizeM = global.SizeM
+		result.SizeL = global.SizeL
+	}
+
+	if local != nil {
+		if local.ApprovedBonus != nil {
+			result.ApprovedBonus = local.ApprovedBonus
+		}
+		if local.MergeableBonus != nil {
+			result.MergeableBonus = local.MergeableBonus
+		}
+		if local.ChangesRequestedBonus != nil {
+			result.ChangesRequestedBonus = local.ChangesRequestedBonus
+		}
+		if local.ReviewCommentBonus != nil {
+			result.ReviewCommentBonus = local.ReviewCommentBonus
+		}
+		if local.ReviewCommentMaxBonus != nil {
+			result.ReviewCommentMaxBonus = local.ReviewCommentMaxBonus
+		}
+		if local.StaleThresholdDays != nil {
+			result.StaleThresholdDays = local.StaleThresholdDays
+		}
+		if local.StaleBonusPerDay != nil {
+			result.StaleBonusPerDay = local.StaleBonusPerDay
+		}
+		if local.StaleMaxBonus != nil {
+			result.StaleMaxBonus = local.StaleMaxBonus
+		}
+		if local.DraftPenalty != nil {
+			result.DraftPenalty = local.DraftPenalty
+		}
+		if local.SmallMaxFiles != nil {
+			result.SmallMaxFiles = local.SmallMaxFiles
+		}
+		if local.SmallMaxLines != nil {
+			result.SmallMaxLines = local.SmallMaxLines
+		}
+		if local.SizeXS != nil {
+			result.SizeXS = local.SizeXS
+		}
+		if local.SizeS != nil {
+			result.SizeS = local.SizeS
+		}
+		if local.SizeM != nil {
+			result.SizeM = local.SizeM
+		}
+		if local.SizeL != nil {
+			result.SizeL = local.SizeL
+		}
+	}
+
+	// Return nil if all fields are nil
+	if result.ApprovedBonus == nil && result.MergeableBonus == nil && result.ChangesRequestedBonus == nil &&
+		result.ReviewCommentBonus == nil && result.ReviewCommentMaxBonus == nil &&
+		result.StaleThresholdDays == nil && result.StaleBonusPerDay == nil && result.StaleMaxBonus == nil &&
+		result.DraftPenalty == nil && result.SmallMaxFiles == nil && result.SmallMaxLines == nil &&
+		result.SizeXS == nil && result.SizeS == nil && result.SizeM == nil && result.SizeL == nil {
+		return nil
+	}
+
+	return result
 }
 
 // Save saves the configuration to disk

@@ -1,6 +1,10 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -241,4 +245,162 @@ func TestDefaultQuickWinLabels(t *testing.T) {
 			t.Errorf("DefaultQuickWinLabels()[%d] = %q, want %q", i, label, expectedLabels[i])
 		}
 	}
+}
+
+func TestDefaultConfigDir_XDG(t *testing.T) {
+	// Only test XDG on Linux where it's the standard
+	if runtime.GOOS != "linux" {
+		t.Skip("XDG_CONFIG_HOME is only used on Linux")
+	}
+
+	t.Run("respects XDG_CONFIG_HOME", func(t *testing.T) {
+		// Save and restore original value
+		original := os.Getenv("XDG_CONFIG_HOME")
+		defer os.Setenv("XDG_CONFIG_HOME", original)
+
+		customDir := "/tmp/custom-xdg-config"
+		os.Setenv("XDG_CONFIG_HOME", customDir)
+
+		got := DefaultConfigDir()
+		want := filepath.Join(customDir, "triage")
+
+		if got != want {
+			t.Errorf("DefaultConfigDir() = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("uses default when XDG_CONFIG_HOME unset", func(t *testing.T) {
+		// Save and restore original value
+		original := os.Getenv("XDG_CONFIG_HOME")
+		defer os.Setenv("XDG_CONFIG_HOME", original)
+
+		os.Unsetenv("XDG_CONFIG_HOME")
+
+		got := DefaultConfigDir()
+		home, _ := os.UserHomeDir()
+		want := filepath.Join(home, ".config", "triage")
+
+		if got != want {
+			t.Errorf("DefaultConfigDir() = %q, want %q", got, want)
+		}
+	})
+}
+
+func TestDefaultConfigDir_CrossPlatform(t *testing.T) {
+	got := DefaultConfigDir()
+
+	// Should always end with "triage"
+	if !strings.HasSuffix(got, "triage") {
+		t.Errorf("DefaultConfigDir() = %q, should end with 'triage'", got)
+	}
+
+	// Should be an absolute path (not the fallback)
+	if got == ".triage" {
+		t.Error("DefaultConfigDir() returned fallback '.triage', expected absolute path")
+	}
+}
+
+func TestLocalConfigPath(t *testing.T) {
+	got := LocalConfigPath()
+	want := ".triage.yaml"
+
+	if got != want {
+		t.Errorf("LocalConfigPath() = %q, want %q", got, want)
+	}
+}
+
+func TestLoad_LocalConfigOverride(t *testing.T) {
+	// Create a temp directory and change to it
+	tmpDir := t.TempDir()
+	original, _ := os.Getwd()
+	defer os.Chdir(original)
+	os.Chdir(tmpDir)
+
+	t.Run("loads local config when present", func(t *testing.T) {
+		// Create local config with custom value
+		localConfig := `default_format: json
+quick_win_labels:
+  - local-label
+`
+		if err := os.WriteFile(".triage.yaml", []byte(localConfig), 0600); err != nil {
+			t.Fatal(err)
+		}
+		defer os.Remove(".triage.yaml")
+
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() error = %v", err)
+		}
+
+		if cfg.DefaultFormat != "json" {
+			t.Errorf("Load().DefaultFormat = %q, want 'json'", cfg.DefaultFormat)
+		}
+		if len(cfg.QuickWinLabels) != 1 || cfg.QuickWinLabels[0] != "local-label" {
+			t.Errorf("Load().QuickWinLabels = %v, want ['local-label']", cfg.QuickWinLabels)
+		}
+	})
+
+	t.Run("returns defaults when no config exists", func(t *testing.T) {
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() error = %v", err)
+		}
+
+		if cfg.DefaultFormat != "table" {
+			t.Errorf("Load().DefaultFormat = %q, want 'table'", cfg.DefaultFormat)
+		}
+	})
+}
+
+func TestMergeConfig(t *testing.T) {
+	t.Run("local values override global", func(t *testing.T) {
+		globalVal := 50
+		localVal := 100
+		global := &Config{
+			DefaultFormat: "table",
+			BaseScores: &BaseScoreOverrides{
+				ReviewRequested: &globalVal,
+				Mention:         &globalVal,
+			},
+		}
+		local := &Config{
+			DefaultFormat: "json",
+			BaseScores: &BaseScoreOverrides{
+				ReviewRequested: &localVal,
+			},
+		}
+
+		result := mergeConfig(global, local)
+
+		if result.DefaultFormat != "json" {
+			t.Errorf("mergeConfig().DefaultFormat = %q, want 'json'", result.DefaultFormat)
+		}
+		if *result.BaseScores.ReviewRequested != 100 {
+			t.Errorf("mergeConfig().BaseScores.ReviewRequested = %d, want 100", *result.BaseScores.ReviewRequested)
+		}
+		// Global value should be preserved when not overridden
+		if *result.BaseScores.Mention != 50 {
+			t.Errorf("mergeConfig().BaseScores.Mention = %d, want 50", *result.BaseScores.Mention)
+		}
+	})
+
+	t.Run("local arrays replace global arrays", func(t *testing.T) {
+		global := &Config{
+			ExcludeRepos:   []string{"global/repo1", "global/repo2"},
+			QuickWinLabels: []string{"global-label"},
+		}
+		local := &Config{
+			ExcludeRepos: []string{"local/repo"},
+		}
+
+		result := mergeConfig(global, local)
+
+		if len(result.ExcludeRepos) != 1 || result.ExcludeRepos[0] != "local/repo" {
+			t.Errorf("mergeConfig().ExcludeRepos = %v, want ['local/repo']", result.ExcludeRepos)
+		}
+		// Unset arrays should preserve global
+		if len(result.QuickWinLabels) != 1 || result.QuickWinLabels[0] != "global-label" {
+			t.Errorf("mergeConfig().QuickWinLabels = %v, want ['global-label']", result.QuickWinLabels)
+		}
+	})
 }

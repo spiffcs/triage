@@ -22,12 +22,12 @@ type CacheEntry struct {
 
 // NewCache creates a new cache instance
 func NewCache() (*Cache, error) {
-	home, err := os.UserHomeDir()
+	cacheDir, err := os.UserCacheDir()
 	if err != nil {
 		return nil, err
 	}
 
-	cacheDir := filepath.Join(home, ".cache", "triage", "details")
+	cacheDir = filepath.Join(cacheDir, "triage", "details")
 	if err := os.MkdirAll(cacheDir, 0700); err != nil {
 		return nil, fmt.Errorf("failed to create cache directory: %w", err)
 	}
