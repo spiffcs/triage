@@ -1,4 +1,4 @@
-package main
+package cmd
 
 import (
 	"fmt"
@@ -14,122 +14,40 @@ import (
 	"github.com/spiffcs/triage/internal/triage"
 )
 
-var (
-	// Global flags
-	formatFlag    string
-	limitFlag     int
-	sinceFlag     string
-	priorityFlag  string
-	reasonFlag    string
-	repoFlag      string
-	typeFlag      string
-	verbosityFlag int
-	workersFlag   int
-	includeMerged bool
-	includeClosed bool
-)
-
-func main() {
-	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-}
-
-var rootCmd = &cobra.Command{
-	Use:   "triage",
-	Short: "GitHub notification triage manager",
-	Long: `A CLI tool that analyzes your GitHub notifications to help you
-triage your work. It uses heuristics to score notifications.`,
-	RunE: runList,
-}
-
-var listCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List prioritized GitHub notifications",
-	Long: `Fetches your unread GitHub notifications, enriches them with
+// NewCmdList creates the list command.
+func NewCmdList(opts *Options) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List prioritized GitHub notifications",
+		Long: `Fetches your unread GitHub notifications, enriches them with
 issue/PR details, and displays them sorted by priority.`,
-	RunE: runList,
-}
-
-var configCmd = &cobra.Command{
-	Use:   "config",
-	Short: "Manage configuration",
-}
-
-var configSetCmd = &cobra.Command{
-	Use:   "set <key> <value>",
-	Short: "Set a configuration value",
-	Long: `Set a configuration value. Available keys:
-  format      - Default output format (table, json)`,
-	Args: cobra.ExactArgs(2),
-	RunE: runConfigSet,
-}
-
-var configShowCmd = &cobra.Command{
-	Use:   "show",
-	Short: "Show current configuration",
-	RunE:  runConfigShow,
-}
-
-var markReadCmd = &cobra.Command{
-	Use:   "mark-read <notification-id>",
-	Short: "Mark a notification as read",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runMarkRead,
-}
-
-var cacheCmd = &cobra.Command{
-	Use:   "cache",
-	Short: "Manage the notification details cache",
-}
-
-var cacheClearCmd = &cobra.Command{
-	Use:   "clear",
-	Short: "Clear the notification details cache",
-	RunE:  runCacheClear,
-}
-
-var cacheStatsCmd = &cobra.Command{
-	Use:   "stats",
-	Short: "Show cache statistics",
-	RunE:  runCacheStats,
-}
-
-func init() {
-	// List command flags (on both root and list commands so `triage` and `triage list` work identically)
-	for _, cmd := range []*cobra.Command{rootCmd, listCmd} {
-		cmd.Flags().StringVarP(&formatFlag, "format", "f", "", "Output format (table, json)")
-		cmd.Flags().IntVarP(&limitFlag, "limit", "l", 0, "Limit number of results")
-		cmd.Flags().StringVarP(&sinceFlag, "since", "s", "1w", "Show notifications since (e.g., 1w, 30d, 6mo)")
-		cmd.Flags().StringVarP(&priorityFlag, "priority", "p", "", "Filter by priority (urgent, important, quick-win, fyi)")
-		cmd.Flags().StringVarP(&reasonFlag, "reason", "r", "", "Filter by reason (mention, review_requested, author, etc.)")
-		cmd.Flags().StringVar(&repoFlag, "repo", "", "Filter to specific repo (owner/repo)")
-		cmd.Flags().CountVarP(&verbosityFlag, "verbose", "v", "Increase verbosity (-v info, -vv debug, -vvv trace)")
-		cmd.Flags().IntVarP(&workersFlag, "workers", "w", 20, "Number of concurrent workers for fetching details")
-		cmd.Flags().BoolVar(&includeMerged, "include-merged", false, "Include notifications for merged PRs")
-		cmd.Flags().BoolVar(&includeClosed, "include-closed", false, "Include notifications for closed issues/PRs")
-		cmd.Flags().StringVarP(&typeFlag, "type", "t", "", "Filter by type (pr, issue)")
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runList(cmd, args, opts)
+		},
 	}
 
-	// Config subcommands
-	configCmd.AddCommand(configSetCmd)
-	configCmd.AddCommand(configShowCmd)
-
-	// Cache subcommands
-	cacheCmd.AddCommand(cacheClearCmd)
-	cacheCmd.AddCommand(cacheStatsCmd)
-
-	// Root command
-	rootCmd.AddCommand(listCmd)
-	rootCmd.AddCommand(configCmd)
-	rootCmd.AddCommand(markReadCmd)
-	rootCmd.AddCommand(cacheCmd)
+	addListFlags(cmd, opts)
+	return cmd
 }
 
-func runList(cmd *cobra.Command, args []string) error {
+// addListFlags adds the list-specific flags to a command.
+func addListFlags(cmd *cobra.Command, opts *Options) {
+	cmd.Flags().StringVarP(&opts.Format, "format", "f", "", "Output format (table, json)")
+	cmd.Flags().IntVarP(&opts.Limit, "limit", "l", 0, "Limit number of results")
+	cmd.Flags().StringVarP(&opts.Since, "since", "s", "1w", "Show notifications since (e.g., 1w, 30d, 6mo)")
+	cmd.Flags().StringVarP(&opts.Priority, "priority", "p", "", "Filter by priority (urgent, important, quick-win, fyi)")
+	cmd.Flags().StringVarP(&opts.Reason, "reason", "r", "", "Filter by reason (mention, review_requested, author, etc.)")
+	cmd.Flags().StringVar(&opts.Repo, "repo", "", "Filter to specific repo (owner/repo)")
+	cmd.Flags().CountVarP(&opts.Verbosity, "verbose", "v", "Increase verbosity (-v info, -vv debug, -vvv trace)")
+	cmd.Flags().IntVarP(&opts.Workers, "workers", "w", 20, "Number of concurrent workers for fetching details")
+	cmd.Flags().BoolVar(&opts.IncludeMerged, "include-merged", false, "Include notifications for merged PRs")
+	cmd.Flags().BoolVar(&opts.IncludeClosed, "include-closed", false, "Include notifications for closed issues/PRs")
+	cmd.Flags().StringVarP(&opts.Type, "type", "t", "", "Filter by type (pr, issue)")
+}
+
+func runList(cmd *cobra.Command, args []string, opts *Options) error {
 	// Initialize logging
-	log.Initialize(verbosityFlag, os.Stderr)
+	log.Initialize(opts.Verbosity, os.Stderr)
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -154,12 +72,12 @@ func runList(cmd *cobra.Command, args []string) error {
 	}
 
 	// Parse since duration
-	since, err := parseDuration(sinceFlag)
+	since, err := parseDuration(opts.Since)
 	if err != nil {
 		return fmt.Errorf("invalid duration: %w", err)
 	}
 
-	log.Info("fetching notifications", "since", sinceFlag)
+	log.Info("fetching notifications", "since", opts.Since)
 
 	// Fetch notifications
 	notifications, err := ghClient.ListUnreadNotifications(since)
@@ -181,7 +99,7 @@ func runList(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		if err := ghClient.EnrichNotificationsConcurrent(notifications, workersFlag, onProgress); err != nil {
+		if err := ghClient.EnrichNotificationsConcurrent(notifications, opts.Workers, onProgress); err != nil {
 			log.Warn("some notifications could not be enriched", "error", err)
 		}
 		log.ProgressDone()
@@ -243,41 +161,41 @@ func runList(cmd *cobra.Command, args []string) error {
 	items := engine.Prioritize(notifications)
 
 	// Apply filters
-	if !includeMerged {
+	if !opts.IncludeMerged {
 		items = triage.FilterOutMerged(items)
 	}
-	if !includeClosed {
+	if !opts.IncludeClosed {
 		items = triage.FilterOutClosed(items)
 	}
 
-	if priorityFlag != "" {
-		items = triage.FilterByPriority(items, triage.PriorityLevel(priorityFlag))
+	if opts.Priority != "" {
+		items = triage.FilterByPriority(items, triage.PriorityLevel(opts.Priority))
 	}
 
-	if reasonFlag != "" {
-		items = triage.FilterByReason(items, []github.NotificationReason{github.NotificationReason(reasonFlag)})
+	if opts.Reason != "" {
+		items = triage.FilterByReason(items, []github.NotificationReason{github.NotificationReason(opts.Reason)})
 	}
 
-	if typeFlag != "" {
+	if opts.Type != "" {
 		var subjectType github.SubjectType
-		switch typeFlag {
+		switch opts.Type {
 		case "pr", "PR", "pullrequest", "PullRequest":
 			subjectType = github.SubjectPullRequest
 		case "issue", "Issue":
 			subjectType = github.SubjectIssue
 		default:
-			return fmt.Errorf("invalid type: %s (must be 'pr' or 'issue')", typeFlag)
+			return fmt.Errorf("invalid type: %s (must be 'pr' or 'issue')", opts.Type)
 		}
 		items = triage.FilterByType(items, subjectType)
 	}
 
 	// Apply limit
-	if limitFlag > 0 && len(items) > limitFlag {
-		items = items[:limitFlag]
+	if opts.Limit > 0 && len(items) > opts.Limit {
+		items = items[:opts.Limit]
 	}
 
 	// Determine format
-	format := output.Format(formatFlag)
+	format := output.Format(opts.Format)
 	if format == "" {
 		format = output.Format(cfg.DefaultFormat)
 	}
@@ -286,83 +204,6 @@ func runList(cmd *cobra.Command, args []string) error {
 	formatter := output.NewFormatter(format)
 
 	return formatter.Format(items, os.Stdout)
-}
-
-func runConfigSet(cmd *cobra.Command, args []string) error {
-	cfg, err := config.Load()
-	if err != nil {
-		return err
-	}
-
-	key := args[0]
-	value := args[1]
-
-	switch key {
-	case "token":
-		return fmt.Errorf("tokens cannot be stored in config files for security reasons. Set the GITHUB_TOKEN environment variable instead")
-	case "format":
-		if value != "table" && value != "json" {
-			return fmt.Errorf("invalid format: %s (must be table or json)", value)
-		}
-		if err := cfg.SetDefaultFormat(value); err != nil {
-			return err
-		}
-		fmt.Printf("Default format set to %s.\n", value)
-	default:
-		return fmt.Errorf("unknown config key: %s", key)
-	}
-
-	return nil
-}
-
-func runConfigShow(cmd *cobra.Command, args []string) error {
-	cfg, err := config.Load()
-	if err != nil {
-		return err
-	}
-
-	fmt.Println("Configuration:")
-	fmt.Printf("  Config file: %s\n", config.ConfigPath())
-	fmt.Printf("  Default format: %s\n", cfg.DefaultFormat)
-
-	if os.Getenv("GITHUB_TOKEN") != "" {
-		fmt.Println("  GitHub token: (set via GITHUB_TOKEN env)")
-	} else {
-		fmt.Println("  GitHub token: (not set - set GITHUB_TOKEN env var)")
-	}
-
-	if len(cfg.ExcludeRepos) > 0 {
-		fmt.Println("  Excluded repos:")
-		for _, repo := range cfg.ExcludeRepos {
-			fmt.Printf("    - %s\n", repo)
-		}
-	}
-
-	return nil
-}
-
-func runMarkRead(cmd *cobra.Command, args []string) error {
-	cfg, err := config.Load()
-	if err != nil {
-		return err
-	}
-
-	token := cfg.GetGitHubToken()
-	if token == "" {
-		return fmt.Errorf("GitHub token not configured. Set the GITHUB_TOKEN environment variable")
-	}
-
-	ghClient, err := github.NewClient(token)
-	if err != nil {
-		return err
-	}
-
-	if err := ghClient.MarkAsRead(args[0]); err != nil {
-		return err
-	}
-
-	fmt.Println("Notification marked as read.")
-	return nil
 }
 
 func parseDuration(s string) (time.Time, error) {
@@ -395,43 +236,6 @@ func parseDuration(s string) (time.Time, error) {
 	}
 
 	return now.Add(-duration), nil
-}
-
-func runCacheClear(cmd *cobra.Command, args []string) error {
-	cache, err := github.NewCache()
-	if err != nil {
-		return fmt.Errorf("failed to access cache: %w", err)
-	}
-
-	if err := cache.Clear(); err != nil {
-		return fmt.Errorf("failed to clear cache: %w", err)
-	}
-
-	fmt.Println("Cache cleared.")
-	return nil
-}
-
-func runCacheStats(cmd *cobra.Command, args []string) error {
-	cache, err := github.NewCache()
-	if err != nil {
-		return fmt.Errorf("failed to access cache: %w", err)
-	}
-
-	stats, err := cache.DetailedStats()
-	if err != nil {
-		return fmt.Errorf("failed to get cache stats: %w", err)
-	}
-
-	fmt.Printf("Cache statistics:\n")
-	fmt.Printf("  Item details (TTL: 24h):\n")
-	fmt.Printf("    Total: %d\n", stats.DetailTotal)
-	fmt.Printf("    Valid: %d\n", stats.DetailValid)
-	fmt.Printf("    Expired: %d\n", stats.DetailTotal-stats.DetailValid)
-	fmt.Printf("  PR lists (TTL: 5m):\n")
-	fmt.Printf("    Total: %d\n", stats.PRListTotal)
-	fmt.Printf("    Valid: %d\n", stats.PRListValid)
-	fmt.Printf("    Expired: %d\n", stats.PRListTotal-stats.PRListValid)
-	return nil
 }
 
 // mergeReviewRequests adds review-requested PRs that aren't already in notifications
