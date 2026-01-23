@@ -37,6 +37,7 @@ type BaseScoreOverrides struct {
 type ModifierOverrides struct {
 	OldUnreadBonus        *int `yaml:"old_unread_bonus,omitempty"`
 	HotTopicBonus         *int `yaml:"hot_topic_bonus,omitempty"`
+	HotTopicThreshold     *int `yaml:"hot_topic_threshold,omitempty"`
 	LowHangingBonus       *int `yaml:"low_hanging_bonus,omitempty"`
 	OpenStateBonus        *int `yaml:"open_state_bonus,omitempty"`
 	ClosedStatePenalty    *int `yaml:"closed_state_penalty,omitempty"`
@@ -63,6 +64,7 @@ type ScoreWeights struct {
 
 	OldUnreadBonus        int
 	HotTopicBonus         int
+	HotTopicThreshold     int
 	LowHangingBonus       int
 	OpenStateBonus        int
 	ClosedStatePenalty    int
@@ -84,6 +86,7 @@ func DefaultScoreWeights() ScoreWeights {
 
 		OldUnreadBonus:        2,
 		HotTopicBonus:         15,
+		HotTopicThreshold:     6,
 		LowHangingBonus:       20,
 		OpenStateBonus:        10,
 		ClosedStatePenalty:    -30,
@@ -139,6 +142,9 @@ func (c *Config) GetScoreWeights() ScoreWeights {
 		}
 		if m.HotTopicBonus != nil {
 			weights.HotTopicBonus = *m.HotTopicBonus
+		}
+		if m.HotTopicThreshold != nil {
+			weights.HotTopicThreshold = *m.HotTopicThreshold
 		}
 		if m.LowHangingBonus != nil {
 			weights.LowHangingBonus = *m.LowHangingBonus

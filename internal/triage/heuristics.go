@@ -81,7 +81,7 @@ func (h *Heuristics) detailModifiers(n *github.Notification) int {
 	}
 
 	// Hot topic - many comments indicate active discussion
-	if d.CommentCount > 10 {
+	if d.CommentCount > h.Weights.HotTopicThreshold {
 		modifier += h.Weights.HotTopicBonus
 	}
 
