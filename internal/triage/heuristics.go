@@ -134,13 +134,19 @@ func (h *Heuristics) authoredPRModifiers(d *github.ItemDetails) int {
 	return modifier
 }
 
+// normalizeLabel converts a label to a normalized form for comparison
+// by lowercasing and treating hyphens and spaces as equivalent
+func normalizeLabel(s string) string {
+	return strings.ToLower(strings.ReplaceAll(s, "-", " "))
+}
+
 // isLowHangingFruit detects items that are likely quick wins
 func (h *Heuristics) isLowHangingFruit(d *github.ItemDetails) bool {
 	// Check for configured quick win labels
 	for _, label := range d.Labels {
-		labelLower := strings.ToLower(label)
+		labelNorm := normalizeLabel(label)
 		for _, target := range h.QuickWinLabels {
-			if strings.Contains(labelLower, strings.ToLower(target)) {
+			if strings.Contains(labelNorm, normalizeLabel(target)) {
 				return true
 			}
 		}

@@ -173,11 +173,11 @@ func TestIsRepoExcluded(t *testing.T) {
 func TestDefaultQuickWinLabels(t *testing.T) {
 	labels := DefaultQuickWinLabels()
 
+	// Labels no longer include hyphenated duplicates since matching
+	// normalizes hyphens and spaces to be equivalent
 	expectedLabels := []string{
 		"good first issue",
-		"good-first-issue",
 		"help wanted",
-		"help-wanted",
 		"easy",
 		"beginner",
 		"trivial",

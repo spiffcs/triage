@@ -87,7 +87,7 @@ func DefaultScoreWeights() ScoreWeights {
 		LowHangingBonus:       20,
 		OpenStateBonus:        10,
 		ClosedStatePenalty:    -30,
-		FYIPromotionThreshold: 50,
+		FYIPromotionThreshold: 55,
 	}
 }
 
@@ -171,6 +171,12 @@ func ConfigPath() string {
 	return filepath.Join(DefaultConfigDir(), "config.yaml")
 }
 
+// ConfigFileExists returns true if the config file exists on disk
+func ConfigFileExists() bool {
+	_, err := os.Stat(ConfigPath())
+	return err == nil
+}
+
 // Load loads the configuration from disk
 func Load() (*Config, error) {
 	configPath := ConfigPath()
@@ -244,13 +250,13 @@ func (c *Config) IsRepoExcluded(repoFullName string) bool {
 	return false
 }
 
-// DefaultQuickWinLabels returns the default labels that indicate quick wins
+// DefaultQuickWinLabels returns the default labels that indicate quick wins.
+// Labels are matched case-insensitively and hyphens/spaces are treated as equivalent,
+// so "good first issue" will match "good-first-issue", "Good First Issue", etc.
 func DefaultQuickWinLabels() []string {
 	return []string{
 		"good first issue",
-		"good-first-issue",
 		"help wanted",
-		"help-wanted",
 		"easy",
 		"beginner",
 		"trivial",

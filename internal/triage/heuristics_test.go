@@ -61,6 +61,20 @@ func TestIsLowHangingFruit(t *testing.T) {
 			want: true,
 		},
 		{
+			name: "matches hyphenated label with space-separated config",
+			details: &github.ItemDetails{
+				Labels: []string{"good-first-issue"},
+			},
+			want: true,
+		},
+		{
+			name: "matches help-wanted with hyphens",
+			details: &github.ItemDetails{
+				Labels: []string{"Help-Wanted"},
+			},
+			want: true,
+		},
+		{
 			name: "matches documentation label",
 			details: &github.ItemDetails{
 				Labels: []string{"Documentation"},
@@ -234,7 +248,7 @@ func TestDeterminePriority(t *testing.T) {
 			notification: &github.Notification{
 				Reason: github.ReasonSubscribed,
 			},
-			score: 50, // meets threshold
+			score: 55, // meets threshold
 			want:  PriorityImportant,
 		},
 		{
@@ -242,7 +256,7 @@ func TestDeterminePriority(t *testing.T) {
 			notification: &github.Notification{
 				Reason: github.ReasonSubscribed,
 			},
-			score: 49, // below threshold
+			score: 54, // below threshold
 			want:  PriorityFYI,
 		},
 	}

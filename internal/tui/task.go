@@ -2,7 +2,8 @@ package tui
 
 import (
 	"fmt"
-	"strings"
+
+	"github.com/charmbracelet/bubbles/progress"
 )
 
 // Task represents a single task in the TUI progress display.
@@ -26,7 +27,7 @@ func NewTask(id TaskID, name string) Task {
 }
 
 // View renders the task as a string.
-func (t Task) View(spinnerFrame string) string {
+func (t Task) View(spinnerFrame string, prog progress.Model) string {
 	icon := StatusIcon(t.Status, spinnerFrame)
 
 	var name string
@@ -40,7 +41,7 @@ func (t Task) View(spinnerFrame string) string {
 
 	// Add progress bar if we have progress
 	if t.Status == StatusRunning && t.Progress > 0 {
-		bar := renderProgressBar(t.Progress, 20)
+		bar := prog.ViewAs(t.Progress)
 		percent := int(t.Progress * 100)
 		line += fmt.Sprintf(" %s %d%%", bar, percent)
 		if t.Message != "" {
@@ -61,14 +62,4 @@ func (t Task) View(spinnerFrame string) string {
 	}
 
 	return line
-}
-
-// renderProgressBar creates a simple progress bar.
-func renderProgressBar(progress float64, width int) string {
-	filled := min(int(progress*float64(width)), width)
-
-	bar := strings.Repeat("━", filled)
-	empty := strings.Repeat("░", width-filled)
-
-	return progressBarStyle.Render(bar) + progressEmptyStyle.Render(empty)
 }

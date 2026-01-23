@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 
+	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -11,6 +12,7 @@ import (
 type Model struct {
 	tasks        []Task
 	spinner      spinner.Model
+	progress     progress.Model
 	events       <-chan Event
 	done         bool
 	username     string
@@ -27,6 +29,12 @@ func NewModel(events <-chan Event) Model {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 
+	p := progress.New(
+		progress.WithScaledGradient("#60a5fa", "#1e3a8a"),
+		progress.WithWidth(25),
+		progress.WithoutPercentage(),
+	)
+
 	// Task order matches actual execution order in cmd/list.go
 	// Using simplified parallel flow for better performance
 	tasks := []Task{
@@ -37,9 +45,10 @@ func NewModel(events <-chan Event) Model {
 	}
 
 	return Model{
-		tasks:   tasks,
-		spinner: s,
-		events:  events,
+		tasks:    tasks,
+		spinner:  s,
+		progress: p,
+		events:   events,
 	}
 }
 
@@ -128,11 +137,11 @@ func (m Model) View() string {
 			} else if task.Status == StatusError {
 				s += fmt.Sprintf("  %s Authenticating %s\n", iconError, errorStyle.Render(task.Error.Error()))
 			} else {
-				s += task.View(m.spinner.View()) + "\n"
+				s += task.View(m.spinner.View(), m.progress) + "\n"
 			}
 			continue
 		}
-		s += task.View(m.spinner.View()) + "\n"
+		s += task.View(m.spinner.View(), m.progress) + "\n"
 	}
 
 	// Only show cancel hint while running

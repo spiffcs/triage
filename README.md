@@ -1,6 +1,6 @@
 # triage
 
-A CLI tool that organizes GitHub notifications to help you triage work. It aggregates data from multiple sources—unread notifications, PRs awaiting your review, and your own open PRs. It enriches them with details, and ranks them using configurable heuristics. All titles are clickable and take the user to the issue or pr.
+A CLI tool that organizes GitHub notifications, issues, and PRs to help you triage work. It aggregates data from multiple sources including unread notifications, PRs awaiting your review, your own open PRs, and issues assigned to the user running the program. It enriches these items with details and ranks them using configurable heuristics. All titles and repositories are clickable and take the user to the issue, pr, or repository home page.
 
 ![Demo](.github/demo.png)
 
@@ -22,12 +22,13 @@ go build -o triage ./cmd/triage
 
 ### Github token
 ```
+# defaults to --since 1w
 GITHUB_TOKEN=$(gh auth token) triage
 ```
 
 ## Usage
 
-### List Notifications
+### List Items
 
 ```bash
 # Make sure GITHUB_TOKEN is set or frontloaded as seen above
@@ -83,8 +84,9 @@ triage -l 20         # limit the list
 
 ### Cache Management
 
-The tool uses a two-tier caching strategy to try and reduce API usage
+The tool uses a three-tier caching strategy to reduce API usage:
 - **Item details** (issue/PR metadata): cached for 24 hours
+- **Notification lists**: cached for 1 hour
 - **PR lists** (review-requested and authored PRs): cached for 5 minutes
 
 ```bash
@@ -174,6 +176,7 @@ weights:
     low_hanging_bonus: 20
     open_state_bonus: 10
     closed_state_penalty: -50  # Penalize closed items more
+    fyi_promotion_threshold: 65
 ```
 
 Only specify the weights you want to change:
@@ -189,7 +192,7 @@ weights:
 ### Customizing Quick Win Labels
 
 By default, items with these label patterns are marked as "Quick Win":
-- `good first issue`, `good-first-issue`, `help wanted`, `help-wanted`
+- `good first issue`, `help wanted`
 - `easy`, `beginner`, `trivial`
 - `documentation`, `docs`, `typo`
 
@@ -204,7 +207,7 @@ quick_win_labels:
   - starter
 ```
 
-Labels are matched case-insensitively and use substring matching (e.g., `doc` would match `documentation`).
+Labels are matched case-insensitively, use substring matching (e.g., `doc` matches `documentation`), and treat hyphens and spaces as equivalent (e.g., `good first issue` matches `good-first-issue`).
 
 ## Cache Location
 

@@ -191,6 +191,92 @@ func splitBySlash(s string) []string {
 	return result
 }
 
+// ListAssignedIssues fetches open issues assigned to the user
+func (c *Client) ListAssignedIssues(username string) ([]Notification, error) {
+	query := fmt.Sprintf("is:issue is:open assignee:%s", username)
+
+	opts := &github.SearchOptions{
+		Sort:  "updated",
+		Order: "desc",
+		ListOptions: github.ListOptions{
+			PerPage: 100,
+		},
+	}
+
+	var notifications []Notification
+
+	for {
+		result, resp, err := c.client.Search.Issues(c.ctx, query, opts)
+		if err != nil {
+			return nil, fmt.Errorf("failed to search for assigned issues: %w", err)
+		}
+
+		for _, issue := range result.Issues {
+			notification := c.assignedIssueToNotification(issue)
+			notifications = append(notifications, notification)
+		}
+
+		if resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
+	}
+
+	return notifications, nil
+}
+
+// assignedIssueToNotification converts an assigned issue to a Notification
+func (c *Client) assignedIssueToNotification(issue *github.Issue) Notification {
+	repoURL := issue.GetRepositoryURL()
+	parts := splitRepoURL(repoURL)
+	fullName := ""
+	repoName := ""
+	if len(parts) >= 2 {
+		fullName = parts[0] + "/" + parts[1]
+		repoName = parts[1]
+	}
+
+	notification := Notification{
+		ID:        fmt.Sprintf("assigned-%d", issue.GetID()),
+		Reason:    ReasonAssign,
+		Unread:    true,
+		UpdatedAt: issue.GetUpdatedAt().Time,
+		Repository: Repository{
+			Name:     repoName,
+			FullName: fullName,
+			HTMLURL:  fmt.Sprintf("https://github.com/%s", fullName),
+		},
+		Subject: Subject{
+			Title: issue.GetTitle(),
+			URL:   issue.GetURL(),
+			Type:  SubjectIssue,
+		},
+		URL: issue.GetURL(),
+		Details: &ItemDetails{
+			Number:       issue.GetNumber(),
+			State:        issue.GetState(),
+			HTMLURL:      issue.GetHTMLURL(),
+			CreatedAt:    issue.GetCreatedAt().Time,
+			UpdatedAt:    issue.GetUpdatedAt().Time,
+			Author:       issue.GetUser().GetLogin(),
+			CommentCount: issue.GetComments(),
+			IsPR:         false,
+		},
+	}
+
+	// Extract labels
+	for _, label := range issue.Labels {
+		notification.Details.Labels = append(notification.Details.Labels, label.GetName())
+	}
+
+	// Extract assignees
+	for _, assignee := range issue.Assignees {
+		notification.Details.Assignees = append(notification.Details.Assignees, assignee.GetLogin())
+	}
+
+	return notification
+}
+
 // ListAuthoredPRs fetches open PRs authored by the user
 func (c *Client) ListAuthoredPRs(username string) ([]Notification, error) {
 	query := fmt.Sprintf("is:pr is:open author:%s", username)
@@ -328,6 +414,31 @@ func (c *Client) ListAuthoredPRsCached(username string, cache *Cache) ([]Notific
 	}
 
 	return prs, false, nil
+}
+
+// ListAssignedIssuesCached fetches assigned issues with caching support
+func (c *Client) ListAssignedIssuesCached(username string, cache *Cache) ([]Notification, bool, error) {
+	// Check cache first
+	if cache != nil {
+		if issues, ok := cache.GetPRList(username, "assigned-issues"); ok {
+			return issues, true, nil
+		}
+	}
+
+	// Fetch from API
+	issues, err := c.ListAssignedIssues(username)
+	if err != nil {
+		return nil, false, err
+	}
+
+	// Cache the result
+	if cache != nil {
+		if err := cache.SetPRList(username, "assigned-issues", issues); err != nil {
+			log.Debug("failed to cache assigned issues", "error", err)
+		}
+	}
+
+	return issues, false, nil
 }
 
 // NotificationFetchResult contains the result of a cached notification fetch

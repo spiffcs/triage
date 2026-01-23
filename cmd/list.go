@@ -151,16 +151,19 @@ func runList(_ *cobra.Command, _ []string, opts *Options) error {
 
 	// Parallel fetch all data sources
 	type fetchResult struct {
-		notifications  []github.Notification
-		reviewPRs      []github.Notification
-		authoredPRs    []github.Notification
-		notifErr       error
-		reviewErr      error
-		authoredErr    error
-		notifCached    bool
-		notifNewCount  int
-		reviewCached   bool
-		authoredCached bool
+		notifications   []github.Notification
+		reviewPRs       []github.Notification
+		authoredPRs     []github.Notification
+		assignedIssues  []github.Notification
+		notifErr        error
+		reviewErr       error
+		authoredErr     error
+		assignedErr     error
+		notifCached     bool
+		notifNewCount   int
+		reviewCached    bool
+		authoredCached  bool
+		assignedCached  bool
 	}
 
 	sendTaskEvent(events, tui.TaskFetch, tui.StatusRunning, tui.WithMessage(fmt.Sprintf("for the past %s", opts.Since)))
@@ -196,6 +199,13 @@ func runList(_ *cobra.Command, _ []string, opts *Options) error {
 		result.authoredPRs, result.authoredCached, result.authoredErr = ghClient.ListAuthoredPRsCached(currentUser, prCache)
 	}()
 
+	// Fetch assigned issues
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		result.assignedIssues, result.assignedCached, result.assignedErr = ghClient.ListAssignedIssuesCached(currentUser, prCache)
+	}()
+
 	wg.Wait()
 
 	// Handle fetch errors
@@ -210,12 +220,16 @@ func runList(_ *cobra.Command, _ []string, opts *Options) error {
 	if result.authoredErr != nil {
 		log.Warn("failed to fetch authored PRs", "error", result.authoredErr)
 	}
+	if result.assignedErr != nil {
+		log.Warn("failed to fetch assigned issues", "error", result.assignedErr)
+	}
 
 	notifications := result.notifications
 	reviewPRs := result.reviewPRs
 	authoredPRs := result.authoredPRs
+	assignedIssues := result.assignedIssues
 
-	totalFetched := len(notifications) + len(reviewPRs) + len(authoredPRs)
+	totalFetched := len(notifications) + len(reviewPRs) + len(authoredPRs) + len(assignedIssues)
 	fetchMsg := fmt.Sprintf("for the past %s (%d items)", opts.Since, totalFetched)
 	if result.notifCached && result.notifNewCount > 0 {
 		fetchMsg = fmt.Sprintf("for the past %s (%d items, %d new)", opts.Since, totalFetched, result.notifNewCount)
@@ -228,10 +242,12 @@ func runList(_ *cobra.Command, _ []string, opts *Options) error {
 		"notifications", len(notifications),
 		"reviewPRs", len(reviewPRs),
 		"authoredPRs", len(authoredPRs),
+		"assignedIssues", len(assignedIssues),
 		"notifCached", result.notifCached,
 		"notifNewCount", result.notifNewCount,
 		"reviewCached", result.reviewCached,
-		"authoredCached", result.authoredCached)
+		"authoredCached", result.authoredCached,
+		"assignedCached", result.assignedCached)
 
 	// Enrich all items concurrently
 	sendTaskEvent(events, tui.TaskEnrich, tui.StatusRunning)
@@ -324,6 +340,13 @@ func runList(_ *cobra.Command, _ []string, opts *Options) error {
 		notifications, added = mergeAuthoredPRs(notifications, authoredPRs)
 		if added > 0 {
 			log.Info("your open PRs", "count", added)
+		}
+	}
+	if len(assignedIssues) > 0 {
+		var added int
+		notifications, added = mergeAssignedIssues(notifications, assignedIssues)
+		if added > 0 {
+			log.Info("issues assigned to you", "count", added)
 		}
 	}
 
@@ -532,6 +555,45 @@ func mergeAuthoredPRs(notifications []github.Notification, authoredPRs []github.
 		}
 
 		notifications = append(notifications, pr)
+		existing[key] = true
+		added++
+	}
+
+	return notifications, added
+}
+
+// mergeAssignedIssues adds user's assigned issues that aren't already in notifications
+// Returns the merged list and the count of newly added items
+func mergeAssignedIssues(notifications []github.Notification, assignedIssues []github.Notification) ([]github.Notification, int) {
+	// Build a set of existing issue identifiers
+	existing := make(map[string]bool)
+	existingURLs := make(map[string]bool)
+
+	for _, n := range notifications {
+		if n.Subject.Type == github.SubjectIssue {
+			if n.Subject.URL != "" {
+				existingURLs[n.Subject.URL] = true
+			}
+			if n.Details != nil {
+				key := fmt.Sprintf("%s#%d", n.Repository.FullName, n.Details.Number)
+				existing[key] = true
+			}
+		}
+	}
+
+	// Add assigned issues that aren't already in the list
+	added := 0
+	for _, issue := range assignedIssues {
+		if issue.Details == nil {
+			continue
+		}
+
+		key := fmt.Sprintf("%s#%d", issue.Repository.FullName, issue.Details.Number)
+		if existing[key] || existingURLs[issue.Subject.URL] {
+			continue
+		}
+
+		notifications = append(notifications, issue)
 		existing[key] = true
 		added++
 	}

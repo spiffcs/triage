@@ -25,12 +25,6 @@ var (
 	spinnerStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("86"))
 
-	progressBarStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("86"))
-
-	progressEmptyStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("240"))
-
 	footerStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("240")).
 			MarginTop(1)
