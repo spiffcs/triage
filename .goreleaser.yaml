@@ -35,13 +35,11 @@ snapshot:
 
 signs:
   - cmd: .tool/cosign
-    signature: "${artifact}.sig"
-    certificate: "${artifact}.pem"
+    signature: "${artifact}.sigstore.json"
     args:
       - "sign-blob"
+      - "--bundle=${signature}"
       - "--yes"
-      - "--output-signature=${signature}"
-      - "--output-certificate=${certificate}"
       - "${artifact}"
     artifacts: checksum
 
@@ -57,9 +55,8 @@ release:
     **Verification:**
     ```bash
     cosign verify-blob \
-        --certificate triage_{{ .Version }}_OS_ARCH.tar.gz.pem \
-        --signature triage_{{ .Version }}_OS_ARCH.tar.gz.sig \
+        --bundle checksums.txt.sigstore.json \
         --certificate-identity-regexp "^https://github.com/spiffcs/triage/.*" \
         --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
-        triage_{{ .Version }}_OS_ARCH.tar.gz
+        checksums.txt
     ```
