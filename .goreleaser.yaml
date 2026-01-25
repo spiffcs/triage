@@ -34,7 +34,7 @@ snapshot:
   version_template: "{{ incpatch .Version }}-next+{{ .ShortCommit }}"
 
 signs:
-  - cmd: cosign
+  - cmd: .tool/cosign
     signature: "${artifact}.sig"
     certificate: "${artifact}.pem"
     args:
