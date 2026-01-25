@@ -29,7 +29,7 @@ The TUI displays color-coded priorities, PR review status, and size indicators (
 ## Installation
 
 ```bash
-go install github.com/spiffcs/triage/cmd/triage@latest
+go install github.com/spiffcs/triage@latest
 ```
 
 Or build from source:
