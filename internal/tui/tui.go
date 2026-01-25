@@ -13,7 +13,7 @@ import (
 // Run starts the TUI and blocks until it completes.
 func Run(events <-chan Event) error {
 	model := NewModel(events)
-	// Don't use alt screen - render inline like syft does
+	// Don't use alt screen - render inline
 	p := tea.NewProgram(model)
 	_, err := p.Run()
 	return err

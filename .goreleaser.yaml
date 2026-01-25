@@ -1,0 +1,65 @@
+version: 2
+
+project_name: triage
+
+builds:
+  - id: triage
+    binary: triage
+    main: ./main.go
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/spiffcs/triage/cmd.version={{ .Version }}
+      - -X github.com/spiffcs/triage/cmd.commit={{ .Commit }}
+      - -X github.com/spiffcs/triage/cmd.date={{ .Date }}
+
+archives:
+  - id: default
+    formats:
+      - tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next+{{ .ShortCommit }}"
+
+signs:
+  - cmd: cosign
+    signature: "${artifact}.sig"
+    certificate: "${artifact}.pem"
+    args:
+      - "sign-blob"
+      - "--yes"
+      - "--output-signature=${signature}"
+      - "--output-certificate=${certificate}"
+      - "${artifact}"
+    artifacts: checksum
+
+release:
+  github:
+    owner: spiffcs
+    name: triage
+  draft: false
+  prerelease: auto
+  make_latest: true
+  footer: |
+    ---
+    **Verification:**
+    ```bash
+    cosign verify-blob \
+        --certificate triage_{{ .Version }}_OS_ARCH.tar.gz.pem \
+        --signature triage_{{ .Version }}_OS_ARCH.tar.gz.sig \
+        --certificate-identity-regexp "^https://github.com/spiffcs/triage/.*" \
+        --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+        triage_{{ .Version }}_OS_ARCH.tar.gz
+    ```
