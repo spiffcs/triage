@@ -80,7 +80,7 @@ func (t *rateLimitTransport) RoundTrip(req *http.Request) (*http.Response, error
 						"attempt", attempt+1,
 						"max_retries", maxRetries,
 						"wait", waitDuration.Round(time.Second))
-					resp.Body.Close()
+					_ = resp.Body.Close()
 
 					select {
 					case <-time.After(waitDuration):

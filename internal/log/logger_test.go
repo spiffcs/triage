@@ -76,10 +76,10 @@ func TestSetOutput(t *testing.T) {
 
 func TestVerbosityLevels(t *testing.T) {
 	tests := []struct {
-		level    int
-		isInfo   bool
-		isDebug  bool
-		isTrace  bool
+		level   int
+		isInfo  bool
+		isDebug bool
+		isTrace bool
 	}{
 		{LevelQuiet, false, false, false},
 		{LevelInfo, true, false, false},
