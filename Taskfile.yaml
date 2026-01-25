@@ -46,6 +46,11 @@ tasks:
     cmds:
       - task: unit
 
+  unit:
+    desc: Run unit tests
+    cmds:
+      - go test ./...
+
   ## Bootstrap tasks #################################
 
   binny:

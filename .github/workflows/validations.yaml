@@ -48,4 +48,4 @@ jobs:
           download-test-fixture-cache: true
 
       - name: Run unit tests
-        run: make unit
+        run: make test
