@@ -29,6 +29,12 @@ The TUI displays color-coded priorities, PR review status, and size indicators (
 ## Installation
 
 ```bash
+curl -sSfL https://tools.aithirne.com/triage | sudo sh -s -- -b /usr/local/bin
+```
+
+Or install with Go:
+
+```bash
 go install github.com/spiffcs/triage@latest
 ```
 
