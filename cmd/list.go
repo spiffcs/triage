@@ -107,7 +107,11 @@ func runList(_ *cobra.Command, _ []string, opts *Options) error {
 		if err != nil {
 			return fmt.Errorf("could not create CPU profile: %w", err)
 		}
-		defer f.Close()
+		defer func() {
+			if err := f.Close(); err != nil {
+				fmt.Fprintf(os.Stderr, "could not close CPU profile file: %v\n", err)
+			}
+		}()
 		if err := pprof.StartCPUProfile(f); err != nil {
 			return fmt.Errorf("could not start CPU profile: %w", err)
 		}
@@ -120,7 +124,11 @@ func runList(_ *cobra.Command, _ []string, opts *Options) error {
 		if err != nil {
 			return fmt.Errorf("could not create trace: %w", err)
 		}
-		defer f.Close()
+		defer func() {
+			if err := f.Close(); err != nil {
+				fmt.Fprintf(os.Stderr, "could not close trace file: %v\n", err)
+			}
+		}()
 		if err := trace.Start(f); err != nil {
 			return fmt.Errorf("could not start trace: %w", err)
 		}
@@ -135,7 +143,11 @@ func runList(_ *cobra.Command, _ []string, opts *Options) error {
 				fmt.Fprintf(os.Stderr, "could not create memory profile: %v\n", err)
 				return
 			}
-			defer f.Close()
+			defer func() {
+				if err := f.Close(); err != nil {
+					fmt.Fprintf(os.Stderr, "could not close memory profile file: %v\n", err)
+				}
+			}()
 			runtime.GC() // Get up-to-date statistics
 			if err := pprof.WriteHeapProfile(f); err != nil {
 				fmt.Fprintf(os.Stderr, "could not write memory profile: %v\n", err)
