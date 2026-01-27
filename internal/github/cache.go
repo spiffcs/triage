@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
+
+	"github.com/spiffcs/triage/internal/log"
 )
 
 // Cache stores notification details to avoid repeated API calls
@@ -13,11 +16,16 @@ type Cache struct {
 	dir string
 }
 
+// cacheVersion should be incremented when the cache format changes
+// or when enrichment data structure changes to invalidate old entries
+const cacheVersion = 2
+
 // CacheEntry represents a cached notification with its details
 type CacheEntry struct {
 	Details   *ItemDetails `json:"details"`
 	CachedAt  time.Time    `json:"cachedAt"`
 	UpdatedAt time.Time    `json:"updatedAt"` // Notification's UpdatedAt for invalidation
+	Version   int          `json:"version"`   // Cache version for invalidation
 }
 
 // NewCache creates a new cache instance
@@ -37,8 +45,10 @@ func NewCache() (*Cache, error) {
 
 // cacheKey generates a cache key for a notification
 func (c *Cache) cacheKey(repoFullName string, subjectType SubjectType, number int) string {
+	// Replace slashes with underscores to avoid path issues while preserving uniqueness
+	safeName := strings.ReplaceAll(repoFullName, "/", "_")
 	return fmt.Sprintf("%s_%s_%d.json",
-		filepath.Base(repoFullName), // Use just repo name to avoid path issues
+		safeName,
 		subjectType,
 		number,
 	)
@@ -65,6 +75,12 @@ func (c *Cache) Get(n *Notification) (*ItemDetails, bool) {
 
 	var entry CacheEntry
 	if err := json.Unmarshal(data, &entry); err != nil {
+		return nil, false
+	}
+
+	// Invalidate if cache version doesn't match (format/schema changed)
+	if entry.Version != cacheVersion {
+		log.Debug("cache version mismatch", "cached", entry.Version, "current", cacheVersion, "key", key)
 		return nil, false
 	}
 
@@ -96,6 +112,7 @@ func (c *Cache) Set(n *Notification, details *ItemDetails) error {
 		Details:   details,
 		CachedAt:  time.Now(),
 		UpdatedAt: n.UpdatedAt,
+		Version:   cacheVersion,
 	}
 
 	data, err := json.Marshal(entry)
@@ -204,6 +221,7 @@ func (c *Cache) DetailedStats() (*CacheStats, error) {
 type PRListCacheEntry struct {
 	PRs      []Notification `json:"prs"`
 	CachedAt time.Time      `json:"cachedAt"`
+	Version  int            `json:"version"`
 }
 
 // PRListCacheTTL is shorter than details cache since PR lists change more frequently
@@ -215,6 +233,7 @@ type NotificationListCacheEntry struct {
 	LastFetchTime time.Time      `json:"lastFetchTime"` // When we last hit the API
 	CachedAt      time.Time      `json:"cachedAt"`
 	SinceTime     time.Time      `json:"sinceTime"` // The --since value used
+	Version       int            `json:"version"`
 }
 
 // NotificationListCacheTTL is the max age before a full refresh is required
@@ -240,6 +259,11 @@ func (c *Cache) GetPRList(username string, listType string) ([]Notification, boo
 		return nil, false
 	}
 
+	// Check version (invalidate old cache format)
+	if entry.Version != cacheVersion {
+		return nil, false
+	}
+
 	// Check TTL
 	if time.Since(entry.CachedAt) > PRListCacheTTL {
 		return nil, false
@@ -253,6 +277,7 @@ func (c *Cache) SetPRList(username string, listType string, prs []Notification) 
 	entry := PRListCacheEntry{
 		PRs:      prs,
 		CachedAt: time.Now(),
+		Version:  cacheVersion,
 	}
 
 	data, err := json.Marshal(entry)
@@ -287,6 +312,11 @@ func (c *Cache) GetNotificationList(username string, sinceTime time.Time) ([]Not
 		return nil, time.Time{}, false
 	}
 
+	// Check version (invalidate old cache format)
+	if entry.Version != cacheVersion {
+		return nil, time.Time{}, false
+	}
+
 	// Check TTL - if cache is too old, require full refresh
 	if time.Since(entry.CachedAt) > NotificationListCacheTTL {
 		return nil, time.Time{}, false
@@ -308,6 +338,7 @@ func (c *Cache) SetNotificationList(username string, notifications []Notificatio
 		LastFetchTime: time.Now(),
 		CachedAt:      time.Now(),
 		SinceTime:     sinceTime,
+		Version:       cacheVersion,
 	}
 
 	data, err := json.Marshal(entry)

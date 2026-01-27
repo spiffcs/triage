@@ -1,8 +1,13 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"os"
+	"runtime"
+	"runtime/pprof"
+	"runtime/trace"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -49,6 +54,11 @@ func addListFlags(cmd *cobra.Command, opts *Options) {
 
 	// TUI flag with tri-state: nil = auto, true = force, false = disable
 	cmd.Flags().Var(&tuiFlag{opts: opts}, "tui", "Enable/disable TUI progress (default: auto-detect)")
+
+	// Profiling flags
+	cmd.Flags().StringVar(&opts.CPUProfile, "cpuprofile", "", "Write CPU profile to file")
+	cmd.Flags().StringVar(&opts.MemProfile, "memprofile", "", "Write memory profile to file")
+	cmd.Flags().StringVar(&opts.Trace, "trace", "", "Write execution trace to file")
 }
 
 // tuiFlag implements pflag.Value for the tri-state TUI flag.
@@ -91,11 +101,69 @@ func (f *tuiFlag) IsBoolFlag() bool {
 }
 
 func runList(_ *cobra.Command, _ []string, opts *Options) error {
+	// Start CPU profiling if requested
+	if opts.CPUProfile != "" {
+		f, err := os.Create(opts.CPUProfile)
+		if err != nil {
+			return fmt.Errorf("could not create CPU profile: %w", err)
+		}
+		defer func() {
+			if err := f.Close(); err != nil {
+				fmt.Fprintf(os.Stderr, "could not close CPU profile file: %v\n", err)
+			}
+		}()
+		if err := pprof.StartCPUProfile(f); err != nil {
+			return fmt.Errorf("could not start CPU profile: %w", err)
+		}
+		defer pprof.StopCPUProfile()
+	}
+
+	// Start execution trace if requested
+	if opts.Trace != "" {
+		f, err := os.Create(opts.Trace)
+		if err != nil {
+			return fmt.Errorf("could not create trace: %w", err)
+		}
+		defer func() {
+			if err := f.Close(); err != nil {
+				fmt.Fprintf(os.Stderr, "could not close trace file: %v\n", err)
+			}
+		}()
+		if err := trace.Start(f); err != nil {
+			return fmt.Errorf("could not start trace: %w", err)
+		}
+		defer trace.Stop()
+	}
+
+	// Write memory profile at end if requested
+	if opts.MemProfile != "" {
+		defer func() {
+			f, err := os.Create(opts.MemProfile)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "could not create memory profile: %v\n", err)
+				return
+			}
+			defer func() {
+				if err := f.Close(); err != nil {
+					fmt.Fprintf(os.Stderr, "could not close memory profile file: %v\n", err)
+				}
+			}()
+			runtime.GC() // Get up-to-date statistics
+			if err := pprof.WriteHeapProfile(f); err != nil {
+				fmt.Fprintf(os.Stderr, "could not write memory profile: %v\n", err)
+			}
+		}()
+	}
+
 	// Determine if TUI should be used
 	useTUI := shouldUseTUI(opts)
 
-	// Initialize logging (suppress progress output if TUI is active)
-	log.Initialize(opts.Verbosity, os.Stderr)
+	// Initialize logging - suppress logs during TUI to avoid interleaving with display
+	if useTUI {
+		log.Initialize(opts.Verbosity, io.Discard)
+	} else {
+		log.Initialize(opts.Verbosity, os.Stderr)
+	}
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -235,20 +303,40 @@ func runList(_ *cobra.Command, _ []string, opts *Options) error {
 
 	wg.Wait()
 
-	// Handle fetch errors
+	// Handle fetch errors - check for rate limiting
+	rateLimited := false
 	if result.notifErr != nil {
-		sendTaskEvent(events, tui.TaskFetch, tui.StatusError, tui.WithError(result.notifErr))
-		closeTUI(events, tuiDone)
-		return fmt.Errorf("failed to fetch notifications: %w", result.notifErr)
+		if errors.Is(result.notifErr, github.ErrRateLimited) {
+			rateLimited = true
+		} else {
+			sendTaskEvent(events, tui.TaskFetch, tui.StatusError, tui.WithError(result.notifErr))
+			closeTUI(events, tuiDone)
+			return fmt.Errorf("failed to fetch notifications: %w", result.notifErr)
+		}
 	}
-	if result.reviewErr != nil {
+	if result.reviewErr != nil && !errors.Is(result.reviewErr, github.ErrRateLimited) {
 		log.Warn("failed to fetch review-requested PRs", "error", result.reviewErr)
+	} else if errors.Is(result.reviewErr, github.ErrRateLimited) {
+		rateLimited = true
 	}
-	if result.authoredErr != nil {
+	if result.authoredErr != nil && !errors.Is(result.authoredErr, github.ErrRateLimited) {
 		log.Warn("failed to fetch authored PRs", "error", result.authoredErr)
+	} else if errors.Is(result.authoredErr, github.ErrRateLimited) {
+		rateLimited = true
 	}
-	if result.assignedErr != nil {
+	if result.assignedErr != nil && !errors.Is(result.assignedErr, github.ErrRateLimited) {
 		log.Warn("failed to fetch assigned issues", "error", result.assignedErr)
+	} else if errors.Is(result.assignedErr, github.ErrRateLimited) {
+		rateLimited = true
+	}
+
+	// Send rate limit event to TUI if rate limited
+	if rateLimited && events != nil {
+		_, _, resetAt, _ := github.GetRateLimitStatus()
+		events <- tui.RateLimitEvent{
+			Limited: true,
+			ResetAt: resetAt,
+		}
 	}
 
 	notifications := result.notifications
@@ -286,24 +374,36 @@ func runList(_ *cobra.Command, _ []string, opts *Options) error {
 
 	if totalToEnrich > 0 {
 		// Progress callback using atomic counter for concurrent updates
-		var lastPercent int64 = -1
-		onProgress := func(_ int, _ int) {
-			completed := atomic.AddInt64(&totalCompleted, 1)
-			percent := (completed * 100) / int64(totalToEnrich)
-			// Only update at 5% intervals to reduce UI updates
-			if percent != atomic.LoadInt64(&lastPercent) && percent%5 == 0 {
-				atomic.StoreInt64(&lastPercent, percent)
-				cacheHits := atomic.LoadInt64(&totalCacheHits)
-				if useTUI {
-					progress := float64(completed) / float64(totalToEnrich)
-					msg := fmt.Sprintf("%d/%d", completed, totalToEnrich)
-					if cacheHits > 0 {
-						msg = fmt.Sprintf("%d/%d (%d cached)", completed, totalToEnrich, cacheHits)
+		// The delta parameter indicates how many items were just processed
+		var lastLogPercent int64 = -1
+		var lastTUIUpdate int64 = 0 // Unix nanoseconds
+		const tuiUpdateInterval = int64(50 * time.Millisecond)
+
+		onProgress := func(delta int, _ int) {
+			completed := atomic.AddInt64(&totalCompleted, int64(delta))
+			cacheHits := atomic.LoadInt64(&totalCacheHits)
+
+			if useTUI {
+				// Throttle TUI updates to every 50ms for smooth progress without overhead
+				now := time.Now().UnixNano()
+				lastUpdate := atomic.LoadInt64(&lastTUIUpdate)
+				if now-lastUpdate >= tuiUpdateInterval || completed == int64(totalToEnrich) {
+					if atomic.CompareAndSwapInt64(&lastTUIUpdate, lastUpdate, now) {
+						progress := float64(completed) / float64(totalToEnrich)
+						msg := fmt.Sprintf("%d/%d", completed, totalToEnrich)
+						if cacheHits > 0 {
+							msg = fmt.Sprintf("%d/%d (%d cached)", completed, totalToEnrich, cacheHits)
+						}
+						sendTaskEvent(events, tui.TaskEnrich, tui.StatusRunning,
+							tui.WithProgress(progress),
+							tui.WithMessage(msg))
 					}
-					sendTaskEvent(events, tui.TaskEnrich, tui.StatusRunning,
-						tui.WithProgress(progress),
-						tui.WithMessage(msg))
-				} else {
+				}
+			} else {
+				// Throttle log output to 5% intervals
+				percent := (completed * 100) / int64(totalToEnrich)
+				if percent != atomic.LoadInt64(&lastLogPercent) && percent%5 == 0 {
+					atomic.StoreInt64(&lastLogPercent, percent)
 					log.Progress("Enriching items: %d/%d (%d%%)...", completed, totalToEnrich, percent)
 				}
 			}
@@ -401,6 +501,17 @@ func runList(_ *cobra.Command, _ []string, opts *Options) error {
 	// Process results: score and filter
 	sendTaskEvent(events, tui.TaskProcess, tui.StatusRunning)
 
+	// Debug: log state of notifications before prioritization
+	var withDetails, withoutDetails int
+	for _, n := range notifications {
+		if n.Details != nil {
+			withDetails++
+		} else {
+			withoutDetails++
+		}
+	}
+	log.Debug("notifications before prioritization", "total", len(notifications), "withDetails", withDetails, "withoutDetails", withoutDetails)
+
 	// Prioritize
 	engine := triage.NewEngine(currentUser, weights, quickWinLabels)
 	items := engine.Prioritize(notifications)
@@ -465,7 +576,8 @@ func runList(_ *cobra.Command, _ []string, opts *Options) error {
 	}
 
 	// If running in a TTY with table format, launch interactive UI
-	if tui.ShouldUseTUI() && (format == "" || format == output.FormatTable) {
+	// Use shouldUseTUI to respect verbose mode and --tui flag
+	if shouldUseTUI(opts) && (format == "" || format == output.FormatTable) {
 		return tui.RunListUI(items, resolvedStore, weights, currentUser)
 	}
 
@@ -477,6 +589,10 @@ func runList(_ *cobra.Command, _ []string, opts *Options) error {
 
 // shouldUseTUI determines whether to use the TUI based on options and environment.
 func shouldUseTUI(opts *Options) bool {
+	// Disable TUI when verbose logging is requested so logs are visible
+	if opts.Verbosity > 0 {
+		return false
+	}
 	if opts.TUI != nil {
 		return *opts.TUI
 	}

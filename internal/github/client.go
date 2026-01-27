@@ -7,7 +7,6 @@ import (
 	"os"
 	"strconv"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/google/go-github/v57/github"
@@ -17,92 +16,75 @@ import (
 
 // rateLimitTransport wraps an http.RoundTripper to handle GitHub rate limits
 type rateLimitTransport struct {
-	base       http.RoundTripper
-	maxRetries int
+	base http.RoundTripper
 }
 
 func (t *rateLimitTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	var resp *http.Response
-	var err error
-
-	maxRetries := t.maxRetries
-	if maxRetries <= 0 {
-		maxRetries = 3
+	// Check if we're already rate limited before making the request
+	if globalRateLimitState.IsLimited() {
+		return nil, ErrRateLimited
 	}
 
-	for attempt := 0; attempt <= maxRetries; attempt++ {
-		if attempt > 0 {
-			// Clone the request for retry (body already consumed)
-			req = req.Clone(req.Context())
+	resp, err := t.base.RoundTrip(req)
+	if err != nil {
+		return resp, err
+	}
+
+	// Parse and update rate limit state from response headers
+	remaining, limit, resetAt := parseRateLimitHeaders(resp)
+	if remaining >= 0 && limit > 0 {
+		globalRateLimitState.Update(remaining, limit, resetAt)
+	}
+
+	// Log warning if rate limit is low
+	if remaining <= 100 && remaining > 0 {
+		log.Debug("rate limit low", "remaining", remaining, "resets_at", resetAt.Format(time.RFC3339))
+	}
+
+	// Handle rate limit responses (403 with rate limit exceeded or 429)
+	if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests {
+		if resp.Header.Get("X-RateLimit-Remaining") == "0" || resp.StatusCode == http.StatusTooManyRequests {
+			// Set global rate limit state
+			globalRateLimitState.SetLimited(true, resetAt)
+			_ = resp.Body.Close()
+			return nil, ErrRateLimited
 		}
-
-		resp, err = t.base.RoundTrip(req)
-		if err != nil {
-			return resp, err
-		}
-
-		// Check rate limit headers and log warning if low
-		if remaining := resp.Header.Get("X-RateLimit-Remaining"); remaining != "" {
-			if rem, parseErr := strconv.Atoi(remaining); parseErr == nil && rem <= 100 && rem > 0 {
-				resetStr := resp.Header.Get("X-RateLimit-Reset")
-				if resetTime, parseErr := strconv.ParseInt(resetStr, 10, 64); parseErr == nil {
-					resetAt := time.Unix(resetTime, 0)
-					log.Debug("rate limit low", "remaining", rem, "resets_at", resetAt.Format(time.RFC3339))
-				}
-			}
-		}
-
-		// Handle rate limit responses (403 with rate limit exceeded or 429)
-		if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusTooManyRequests {
-			// Check if this is actually a rate limit error
-			if resp.Header.Get("X-RateLimit-Remaining") == "0" || resp.StatusCode == http.StatusTooManyRequests {
-				resetStr := resp.Header.Get("X-RateLimit-Reset")
-				var waitDuration time.Duration
-
-				if resetTime, parseErr := strconv.ParseInt(resetStr, 10, 64); parseErr == nil {
-					resetAt := time.Unix(resetTime, 0)
-					waitDuration = time.Until(resetAt)
-					// Cap wait time at 60 seconds per retry
-					if waitDuration > 60*time.Second {
-						waitDuration = 60 * time.Second
-					}
-					// Ensure minimum wait
-					if waitDuration < time.Second {
-						waitDuration = time.Duration(1<<attempt) * time.Second // Exponential backoff: 1s, 2s, 4s
-					}
-				} else {
-					// No reset header, use exponential backoff
-					waitDuration = time.Duration(1<<attempt) * time.Second
-				}
-
-				if attempt < maxRetries {
-					log.Warn("rate limited, retrying",
-						"attempt", attempt+1,
-						"max_retries", maxRetries,
-						"wait", waitDuration.Round(time.Second))
-					_ = resp.Body.Close()
-
-					select {
-					case <-time.After(waitDuration):
-						continue
-					case <-req.Context().Done():
-						return nil, req.Context().Err()
-					}
-				}
-			}
-		}
-
-		// Success or non-retryable error
-		break
 	}
 
 	return resp, err
+}
+
+// parseRateLimitHeaders extracts rate limit info from response headers.
+func parseRateLimitHeaders(resp *http.Response) (remaining, limit int, resetAt time.Time) {
+	remaining = -1
+	limit = -1
+
+	if remainingStr := resp.Header.Get("X-RateLimit-Remaining"); remainingStr != "" {
+		if rem, err := strconv.Atoi(remainingStr); err == nil {
+			remaining = rem
+		}
+	}
+
+	if limitStr := resp.Header.Get("X-RateLimit-Limit"); limitStr != "" {
+		if lim, err := strconv.Atoi(limitStr); err == nil {
+			limit = lim
+		}
+	}
+
+	if resetStr := resp.Header.Get("X-RateLimit-Reset"); resetStr != "" {
+		if resetTime, err := strconv.ParseInt(resetStr, 10, 64); err == nil {
+			resetAt = time.Unix(resetTime, 0)
+		}
+	}
+
+	return remaining, limit, resetAt
 }
 
 // Client wraps the GitHub API client
 type Client struct {
 	client *github.Client
 	ctx    context.Context
+	token  string
 }
 
 // NewClient creates a new GitHub client using a personal access token
@@ -122,8 +104,7 @@ func NewClient(token string) (*Client, error) {
 
 	// Wrap transport with rate limit handling
 	tc.Transport = &rateLimitTransport{
-		base:       tc.Transport,
-		maxRetries: 3,
+		base: tc.Transport,
 	}
 
 	client := github.NewClient(tc)
@@ -131,6 +112,7 @@ func NewClient(token string) (*Client, error) {
 	return &Client{
 		client: client,
 		ctx:    ctx,
+		token:  token,
 	}, nil
 }
 
@@ -151,6 +133,11 @@ func (c *Client) RawClient() *github.Client {
 // Context returns the client's context
 func (c *Client) Context() context.Context {
 	return c.ctx
+}
+
+// Token returns the GitHub token for GraphQL API calls
+func (c *Client) Token() string {
+	return c.token
 }
 
 // ListReviewRequestedPRs fetches open PRs where the user is a requested reviewer
@@ -468,6 +455,11 @@ func (c *Client) ListReviewRequestedPRsCached(username string, cache *Cache) ([]
 		}
 	}
 
+	// Check if rate limited
+	if globalRateLimitState.IsLimited() {
+		return nil, false, ErrRateLimited
+	}
+
 	// Fetch from API
 	prs, err := c.ListReviewRequestedPRs(username)
 	if err != nil {
@@ -493,6 +485,11 @@ func (c *Client) ListAuthoredPRsCached(username string, cache *Cache) ([]Notific
 		}
 	}
 
+	// Check if rate limited
+	if globalRateLimitState.IsLimited() {
+		return nil, false, ErrRateLimited
+	}
+
 	// Fetch from API
 	prs, err := c.ListAuthoredPRs(username)
 	if err != nil {
@@ -516,6 +513,11 @@ func (c *Client) ListAssignedIssuesCached(username string, cache *Cache) ([]Noti
 		if issues, ok := cache.GetPRList(username, "assigned-issues"); ok {
 			return issues, true, nil
 		}
+	}
+
+	// Check if rate limited
+	if globalRateLimitState.IsLimited() {
+		return nil, false, ErrRateLimited
 	}
 
 	// Fetch from API
@@ -546,6 +548,18 @@ type NotificationFetchResult struct {
 func (c *Client) ListUnreadNotificationsCached(username string, since time.Time, cache *Cache) (*NotificationFetchResult, error) {
 	result := &NotificationFetchResult{}
 
+	// Check if rate limited - return cached data if available
+	if globalRateLimitState.IsLimited() {
+		if cache != nil {
+			if cached, _, ok := cache.GetNotificationList(username, since); ok {
+				result.Notifications = cached
+				result.FromCache = true
+				return result, nil
+			}
+		}
+		return nil, ErrRateLimited
+	}
+
 	// Check cache
 	if cache != nil {
 		cached, lastFetch, ok := cache.GetNotificationList(username, since)
@@ -554,7 +568,7 @@ func (c *Client) ListUnreadNotificationsCached(username string, since time.Time,
 			newNotifs, err := c.ListUnreadNotifications(lastFetch)
 			if err != nil {
 				// Return cached on error
-				log.Warn("failed to fetch new notifications, using cache", "error", err)
+				log.Debug("failed to fetch new notifications, using cache", "error", err)
 				result.Notifications = cached
 				result.FromCache = true
 				return result, nil
@@ -627,78 +641,79 @@ func mergeNotifications(cached, fresh []Notification, since time.Time) []Notific
 	return result
 }
 
-// EnrichPRsConcurrent enriches PRs (review-requested or authored) using a worker pool with caching.
+// EnrichPRsConcurrent enriches PRs (review-requested or authored) using GraphQL batch queries with caching.
+// Uses GraphQL API (separate quota from Core API) for efficient batch enrichment.
 // Returns the number of cache hits.
 func (c *Client) EnrichPRsConcurrent(notifications []Notification, workers int, cache *Cache, onProgress func(completed, total int)) (int, error) {
-	if workers <= 0 {
-		workers = 10
-	}
-
 	total := len(notifications)
 	if total == 0 {
 		return 0, nil
 	}
 
-	var completed int64
-	var errors int64
 	var cacheHits int64
 
-	// First pass: check cache
+	// First pass: check cache and build list of items needing enrichment
+	uncachedNotifications := make([]Notification, 0, total)
 	uncachedIndices := make([]int, 0, total)
+
 	for i := range notifications {
 		if cache != nil {
 			if details, ok := cache.Get(&notifications[i]); ok {
 				notifications[i].Details = details
-				atomic.AddInt64(&cacheHits, 1)
-				atomic.AddInt64(&completed, 1)
+				cacheHits++
 				if onProgress != nil {
-					onProgress(int(completed), total)
+					onProgress(1, total) // Report 1 item completed from cache
 				}
 				continue
 			}
 		}
+		uncachedNotifications = append(uncachedNotifications, notifications[i])
 		uncachedIndices = append(uncachedIndices, i)
 	}
 
-	if len(uncachedIndices) == 0 {
+	if len(uncachedNotifications) == 0 {
 		return int(cacheHits), nil
 	}
 
-	// Create work channel for uncached items
-	work := make(chan int, len(uncachedIndices))
-	for _, i := range uncachedIndices {
-		work <- i
-	}
-	close(work)
+	// Use GraphQL for batch enrichment (uses GraphQL quota, not Core API)
+	log.Debug("enriching PRs via GraphQL", "count", len(uncachedNotifications))
 
-	// Create worker pool
-	var wg sync.WaitGroup
-	for w := 0; w < workers; w++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for i := range work {
-				if err := c.EnrichAuthoredPR(&notifications[i]); err != nil {
-					atomic.AddInt64(&errors, 1)
-				} else if cache != nil && notifications[i].Details != nil {
-					// Cache successful enrichment
-					if err := cache.Set(&notifications[i], notifications[i].Details); err != nil {
-						log.Debug("failed to cache PR", "id", notifications[i].ID, "error", err)
-					}
-				}
-				done := atomic.AddInt64(&completed, 1)
-				if onProgress != nil {
-					onProgress(int(done), total)
-				}
+	progressOffset := int(cacheHits)
+	enriched, err := c.EnrichNotificationsGraphQL(uncachedNotifications, c.token, func(completed, batchTotal int) {
+		if onProgress != nil {
+			onProgress(progressOffset+completed, total)
+		}
+	})
+
+	if err != nil {
+		log.Debug("GraphQL PR enrichment error", "error", err)
+	}
+
+	// Copy enriched data back to original slice and cache results
+	for i, origIdx := range uncachedIndices {
+		notifications[origIdx] = uncachedNotifications[i]
+		// Log what we're copying back
+		n := &notifications[origIdx]
+		if n.Details != nil {
+			log.Debug("enriched PR",
+				"id", n.ID,
+				"repo", n.Repository.FullName,
+				"additions", n.Details.Additions,
+				"deletions", n.Details.Deletions,
+				"reviewState", n.Details.ReviewState,
+				"ciStatus", n.Details.CIStatus)
+		} else {
+			log.Debug("PR not enriched - Details is nil", "id", n.ID, "repo", n.Repository.FullName)
+		}
+		// Cache successful enrichment
+		if cache != nil && uncachedNotifications[i].Details != nil {
+			if err := cache.Set(&notifications[origIdx], notifications[origIdx].Details); err != nil {
+				log.Debug("failed to cache PR", "id", notifications[origIdx].ID, "error", err)
 			}
-		}()
+		}
 	}
 
-	wg.Wait()
-
-	if errors > 0 {
-		log.Warn("some PRs failed to enrich", "count", errors)
-	}
+	log.Debug("GraphQL PR enrichment complete", "enriched", enriched, "total", len(uncachedNotifications))
 
 	return int(cacheHits), nil
 }

@@ -14,4 +14,9 @@ type Options struct {
 	IncludeMerged bool
 	IncludeClosed bool
 	TUI           *bool // nil = auto-detect, true = force TUI, false = disable TUI
+
+	// Profiling options
+	CPUProfile string // Write CPU profile to file
+	MemProfile string // Write memory profile to file
+	Trace      string // Write execution trace to file
 }

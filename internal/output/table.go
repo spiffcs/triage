@@ -316,7 +316,7 @@ func (f *TableFormatter) formatStatus(n github.Notification, _ triage.Prioritize
 		case "changes_requested":
 			textParts = append(textParts, color.YellowString("! CHANGES"))
 			plainParts = append(plainParts, "! CHANGES")
-		case "pending", "review_required":
+		case "pending", "review_required", "reviewed":
 			textParts = append(textParts, color.CyanString("* REVIEW"))
 			plainParts = append(plainParts, "* REVIEW")
 		}

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/spinner"
@@ -10,14 +11,16 @@ import (
 
 // Model is the Bubble Tea model for the TUI progress display.
 type Model struct {
-	tasks        []Task
-	spinner      spinner.Model
-	progress     progress.Model
-	events       <-chan Event
-	done         bool
-	username     string
-	windowWidth  int
-	windowHeight int
+	tasks          []Task
+	spinner        spinner.Model
+	progress       progress.Model
+	events         <-chan Event
+	done           bool
+	username       string
+	windowWidth    int
+	windowHeight   int
+	rateLimited    bool
+	rateLimitReset time.Time
 }
 
 // doneMsg signals that all events have been processed.
@@ -86,6 +89,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.done = true
 		return m, tea.Quit
 
+	case RateLimitEvent:
+		m.rateLimited = msg.Limited
+		m.rateLimitReset = msg.ResetAt
+		return m, waitForEvent(m.events)
+
 	case doneMsg:
 		m.done = true
 		return m, tea.Quit
@@ -141,6 +149,14 @@ func (m Model) View() string {
 			continue
 		}
 		s += task.View(m.spinner.View(), m.progress) + "\n"
+	}
+
+	// Show rate limit warning if applicable
+	if m.rateLimited {
+		duration := time.Until(m.rateLimitReset).Round(time.Second)
+		if duration > 0 {
+			s += warnStyle.Render(fmt.Sprintf("\n  Rate limited - using cached data (resets in %s)\n", duration))
+		}
 	}
 
 	// Only show cancel hint while running

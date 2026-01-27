@@ -32,6 +32,9 @@ var (
 	userStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("220")).
 			Bold(true)
+
+	warnStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#F59E0B"))
 )
 
 // StatusIcon returns the appropriate icon for a task status.

@@ -17,6 +17,7 @@ import (
 const (
 	colPriority = 10
 	colType     = 5
+	colCI       = 2
 	colRepo     = 26
 	colTitle    = 40
 	colStatus   = 20
@@ -103,9 +104,10 @@ func calculateScrollWindow(cursor, total, viewHeight int) (start, end int) {
 // renderHeader renders the table header
 func renderHeader() string {
 	return listHeaderStyle.Render(fmt.Sprintf(
-		"  %-*s  %-*s  %-*s  %-*s  %-*s  %s",
+		"  %-*s  %-*s  %-*s  %-*s  %-*s  %-*s  %s",
 		colPriority, "Priority",
 		colType, "Type",
+		colCI, "CI",
 		colRepo, "Repository",
 		colTitle, "Title",
 		colStatus, "Status",
@@ -115,7 +117,7 @@ func renderHeader() string {
 
 // renderSeparator renders the header separator line
 func renderSeparator() string {
-	width := 2 + colPriority + 2 + colType + 2 + colRepo + 2 + colTitle + 2 + colStatus + 2 + colAge
+	width := 2 + colPriority + 2 + colType + 2 + colCI + 2 + colRepo + 2 + colTitle + 2 + colStatus + 2 + colAge
 	return listSeparatorStyle.Render(strings.Repeat("─", width))
 }
 
@@ -131,12 +133,19 @@ func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, pr
 
 	// Type
 	typeStr := "ISS"
+	isPR := false
 	if n.Details != nil && n.Details.IsPR {
 		typeStr = "PR"
+		isPR = true
 	} else if n.Subject.Type == "PullRequest" {
 		typeStr = "PR"
+		isPR = true
 	}
 	typeStr = padRight(typeStr, len(typeStr), colType)
+
+	// CI status
+	ci, ciWidth := renderCI(n.Details, isPR)
+	ci = padRight(ci, ciWidth, colCI)
 
 	// Priority with color - need to pad based on visible width
 	priority, priorityWidth := renderPriority(item.Priority)
@@ -178,10 +187,11 @@ func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, pr
 	// Age
 	age := formatAge(time.Since(n.UpdatedAt))
 
-	row := fmt.Sprintf("%s%s  %s  %s  %s  %s  %s",
+	row := fmt.Sprintf("%s%s  %s  %s  %s  %s  %s  %s",
 		cursor,
 		priority,
 		typeStr,
+		ci,
 		repo,
 		title,
 		status,
@@ -211,6 +221,27 @@ func renderPriority(p triage.PriorityLevel) (string, int) {
 	}
 }
 
+// renderCI renders the CI status column
+// Returns the colored string and its visible width
+func renderCI(d *github.ItemDetails, isPR bool) (string, int) {
+	if !isPR {
+		return "─", 1 // dash for non-PRs
+	}
+	if d == nil {
+		return "─", 1 // dash if no details
+	}
+	switch d.CIStatus {
+	case "success":
+		return listCISuccessStyle.Render("✓"), 1
+	case "failure":
+		return listCIFailureStyle.Render("✗"), 1
+	case "pending":
+		return listCIPendingStyle.Render("○"), 1
+	default:
+		return "─", 1 // dash for no CI
+	}
+}
+
 // renderStatus renders the status column with colors
 // Returns the colored string and its visible width
 func renderStatus(n github.Notification, sizeXS, sizeS, sizeM, sizeL int) (string, int) {
@@ -232,7 +263,7 @@ func renderStatus(n github.Notification, sizeXS, sizeS, sizeM, sizeL int) (strin
 		case "changes_requested":
 			coloredParts = append(coloredParts, listChangesStyle.Render("! CHANGES"))
 			plainWidth += 9
-		case "pending", "review_required":
+		case "pending", "review_required", "reviewed":
 			coloredParts = append(coloredParts, listReviewStyle.Render("* REVIEW"))
 			plainWidth += 8
 		}
@@ -468,6 +499,16 @@ var (
 
 	listSizeLargeStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#EF4444"))
+
+	// CI status
+	listCISuccessStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#22C55E")) // Green
+
+	listCIFailureStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#EF4444")) // Red
+
+	listCIPendingStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#F59E0B")) // Orange
 
 	listHelpStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#64748B"))
