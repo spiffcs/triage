@@ -276,8 +276,12 @@ func (c *Client) getPRReviewState(owner, repo string, number int) string {
 		return "unknown"
 	}
 
-	// Track the latest review state per user
-	latestReviews := make(map[string]string)
+	if len(reviews) == 0 {
+		return "pending"
+	}
+
+	// Single pass: track latest review state per user and determine overall state
+	latestReviews := make(map[string]string, len(reviews))
 	for _, review := range reviews {
 		user := review.GetUser().GetLogin()
 		state := review.GetState()
@@ -286,7 +290,7 @@ func (c *Client) getPRReviewState(owner, repo string, number int) string {
 		}
 	}
 
-	// Determine overall state
+	// Determine overall state from the map
 	hasApproval := false
 	hasChangesRequested := false
 
@@ -305,8 +309,5 @@ func (c *Client) getPRReviewState(owner, repo string, number int) string {
 	if hasApproval {
 		return "approved"
 	}
-	if len(reviews) > 0 {
-		return "reviewed"
-	}
-	return "pending"
+	return "reviewed"
 }
