@@ -165,19 +165,24 @@ func (h *Heuristics) isLowHangingFruit(d *github.ItemDetails) bool {
 func (h *Heuristics) DeterminePriority(n *github.Notification, score int) PriorityLevel {
 	reason := n.Reason
 
-	// Urgent: review requests and direct mentions
-	if reason == github.ReasonReviewRequested || reason == github.ReasonMention {
+	// Urgent: review requests (if enabled)
+	if reason == github.ReasonReviewRequested && h.Weights.ReviewRequestedIsUrgent {
 		return PriorityUrgent
 	}
 
-	// Authored PRs that are approved and mergeable are urgent
+	// Urgent: direct mentions (if enabled)
+	if reason == github.ReasonMention && h.Weights.MentionIsUrgent {
+		return PriorityUrgent
+	}
+
+	// Authored PRs that are approved and mergeable are urgent (if enabled)
 	if reason == github.ReasonAuthor && n.Details != nil {
 		d := n.Details
-		if d.IsPR && d.ReviewState == "approved" && d.Mergeable {
+		if d.IsPR && d.ReviewState == "approved" && d.Mergeable && h.Weights.ApprovedMergeablePRIsUrgent {
 			return PriorityUrgent
 		}
-		// PRs with changes requested need attention
-		if d.IsPR && d.ReviewState == "changes_requested" {
+		// PRs with changes requested need attention (if enabled)
+		if d.IsPR && d.ReviewState == "changes_requested" && h.Weights.ChangesRequestedPRIsUrgent {
 			return PriorityUrgent
 		}
 	}

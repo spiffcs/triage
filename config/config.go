@@ -19,6 +19,7 @@ type Config struct {
 	BaseScores *BaseScoreOverrides `yaml:"base_scores,omitempty"`
 	Scoring    *ScoringOverrides   `yaml:"scoring,omitempty"`
 	PR         *PROverrides        `yaml:"pr,omitempty"`
+	Urgency    *UrgencyOverrides   `yaml:"urgency,omitempty"`
 }
 
 // BaseScoreOverrides allows customizing base scores for notification reasons
@@ -67,6 +68,14 @@ type PROverrides struct {
 	SizeL                 *int `yaml:"size_l,omitempty"`
 }
 
+// UrgencyOverrides allows disabling specific urgency triggers
+type UrgencyOverrides struct {
+	ReviewRequested     *bool `yaml:"review_requested,omitempty"`
+	Mention             *bool `yaml:"mention,omitempty"`
+	ApprovedMergeablePR *bool `yaml:"approved_mergeable_pr,omitempty"`
+	ChangesRequestedPR  *bool `yaml:"changes_requested_pr,omitempty"`
+}
+
 // ScoreWeights defines the complete set of scoring weights
 type ScoreWeights struct {
 	ReviewRequested int
@@ -112,6 +121,12 @@ type ScoreWeights struct {
 	PRSizeS  int // <= this = S
 	PRSizeM  int // <= this = M
 	PRSizeL  int // > M and <= this = L (> this = XL)
+
+	// Urgency trigger settings
+	ReviewRequestedIsUrgent     bool
+	MentionIsUrgent             bool
+	ApprovedMergeablePRIsUrgent bool
+	ChangesRequestedPRIsUrgent  bool
 }
 
 // DefaultScoreWeights returns the default scoring weights
@@ -160,6 +175,12 @@ func DefaultScoreWeights() ScoreWeights {
 		PRSizeS:  50,
 		PRSizeM:  200,
 		PRSizeL:  500,
+
+		// Urgency triggers
+		ReviewRequestedIsUrgent:     true,
+		MentionIsUrgent:             false,
+		ApprovedMergeablePRIsUrgent: true,
+		ChangesRequestedPRIsUrgent:  false,
 	}
 }
 
@@ -284,6 +305,23 @@ func (c *Config) GetScoreWeights() ScoreWeights {
 		}
 	}
 
+	// Apply urgency overrides
+	if c.Urgency != nil {
+		u := c.Urgency
+		if u.ReviewRequested != nil {
+			weights.ReviewRequestedIsUrgent = *u.ReviewRequested
+		}
+		if u.Mention != nil {
+			weights.MentionIsUrgent = *u.Mention
+		}
+		if u.ApprovedMergeablePR != nil {
+			weights.ApprovedMergeablePRIsUrgent = *u.ApprovedMergeablePR
+		}
+		if u.ChangesRequestedPR != nil {
+			weights.ChangesRequestedPRIsUrgent = *u.ChangesRequestedPR
+		}
+	}
+
 	return weights
 }
 
@@ -397,6 +435,9 @@ func mergeConfig(global, local *Config) *Config {
 
 	// Merge PR
 	result.PR = mergePROverrides(global.PR, local.PR)
+
+	// Merge Urgency
+	result.Urgency = mergeUrgencyOverrides(global.Urgency, local.Urgency)
 
 	return result
 }
@@ -606,6 +647,43 @@ func mergePROverrides(global, local *PROverrides) *PROverrides {
 	return result
 }
 
+func mergeUrgencyOverrides(global, local *UrgencyOverrides) *UrgencyOverrides {
+	if global == nil && local == nil {
+		return nil
+	}
+	result := &UrgencyOverrides{}
+
+	if global != nil {
+		result.ReviewRequested = global.ReviewRequested
+		result.Mention = global.Mention
+		result.ApprovedMergeablePR = global.ApprovedMergeablePR
+		result.ChangesRequestedPR = global.ChangesRequestedPR
+	}
+
+	if local != nil {
+		if local.ReviewRequested != nil {
+			result.ReviewRequested = local.ReviewRequested
+		}
+		if local.Mention != nil {
+			result.Mention = local.Mention
+		}
+		if local.ApprovedMergeablePR != nil {
+			result.ApprovedMergeablePR = local.ApprovedMergeablePR
+		}
+		if local.ChangesRequestedPR != nil {
+			result.ChangesRequestedPR = local.ChangesRequestedPR
+		}
+	}
+
+	// Return nil if all fields are nil
+	if result.ReviewRequested == nil && result.Mention == nil &&
+		result.ApprovedMergeablePR == nil && result.ChangesRequestedPR == nil {
+		return nil
+	}
+
+	return result
+}
+
 // Save saves the configuration to disk
 func (c *Config) Save() error {
 	configDir := DefaultConfigDir()
@@ -724,6 +802,12 @@ func DefaultConfig() *Config {
 			SizeS:                 &weights.PRSizeS,
 			SizeM:                 &weights.PRSizeM,
 			SizeL:                 &weights.PRSizeL,
+		},
+		Urgency: &UrgencyOverrides{
+			ReviewRequested:     &weights.ReviewRequestedIsUrgent,
+			Mention:             &weights.MentionIsUrgent,
+			ApprovedMergeablePR: &weights.ApprovedMergeablePRIsUrgent,
+			ChangesRequestedPR:  &weights.ChangesRequestedPRIsUrgent,
 		},
 	}
 }

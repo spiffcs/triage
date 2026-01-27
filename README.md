@@ -236,9 +236,9 @@ Priority is determined by a combination of notification reason, item state, and 
 Priority assignment follows this logic (evaluated in order):
 
 1. **Urgent** is assigned when:
-   - Notification reason is `review_requested` or `mention`
-   - Your authored PR is approved AND mergeable (ready to merge)
-   - Your authored PR has changes requested (needs your attention)
+   - Notification reason is `review_requested` (configurable via `urgency.review_requested`)
+   - Your authored PR is approved AND mergeable (configurable via `urgency.approved_mergeable_pr`)
+   - Other urgency triggers if enabled: `mention`, `changes_requested_pr`
    - Item's score ≥100 (important_promotion_threshold)
 
 2. **Quick Win** is assigned when:
@@ -386,6 +386,35 @@ exclude_authors:
 ```
 
 This removes items authored by these accounts from your triage list, reducing noise from automated dependency updates.
+
+### Customizing Urgency Triggers
+
+By default, review requests and approved mergeable PRs automatically mark items as **Urgent** priority. You can customize these triggers to match your workflow:
+
+```yaml
+urgency:
+  review_requested: true       # Review requests → Urgent (default: true)
+  mention: false               # Direct @mentions → Urgent (default: false)
+  approved_mergeable_pr: true  # Your approved+mergeable PRs → Urgent (default: true)
+  changes_requested_pr: false  # Your PRs with changes requested → Urgent (default: false)
+```
+
+For example, if you want mentions to also be urgent:
+
+```yaml
+urgency:
+  mention: true
+```
+
+Or if you want to disable all automatic urgency triggers and rely purely on score-based promotion:
+
+```yaml
+urgency:
+  review_requested: false
+  approved_mergeable_pr: false
+```
+
+When a trigger is disabled, items that would have been marked Urgent will instead be assigned priority based on their score (see [Score-Based Promotion](#score-based-promotion)).
 
 ## Cache Location
 
