@@ -43,9 +43,11 @@ jobs:
           persist-credentials: false
 
       - name: Validate tag format
+        env:
+          VERSION: ${{ inputs.version || github.ref_name }}
         run: |
-          if [[ ! "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
-            echo "::error::Invalid tag format: ${GITHUB_REF_NAME} (expected vX.Y.Z or vX.Y.Z-suffix)"
+          if [[ ! "${VERSION}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
+            echo "::error::Invalid tag format: ${VERSION} (expected vX.Y.Z or vX.Y.Z-suffix)"
             exit 1
           fi
 
