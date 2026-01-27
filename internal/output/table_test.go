@@ -1,9 +1,112 @@
 package output
 
 import (
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/spiffcs/triage/internal/github"
+	"github.com/spiffcs/triage/internal/triage"
 )
+
+func TestHotTopicSuppression(t *testing.T) {
+	tests := []struct {
+		name           string
+		isPR           bool
+		commentCount   int
+		lastCommenter  string
+		currentUser    string
+		threshold      int
+		expectHotTopic bool
+	}{
+		{
+			name:           "issue with high comments, other user last commenter - show hot topic",
+			isPR:           false,
+			commentCount:   10,
+			lastCommenter:  "other-user",
+			currentUser:    "me",
+			threshold:      5,
+			expectHotTopic: true,
+		},
+		{
+			name:           "issue with high comments, current user last commenter - suppress hot topic",
+			isPR:           false,
+			commentCount:   10,
+			lastCommenter:  "me",
+			currentUser:    "me",
+			threshold:      5,
+			expectHotTopic: false,
+		},
+		{
+			name:           "PR with high comments, current user last commenter - show hot topic (PRs don't suppress)",
+			isPR:           true,
+			commentCount:   10,
+			lastCommenter:  "me",
+			currentUser:    "me",
+			threshold:      5,
+			expectHotTopic: true,
+		},
+		{
+			name:           "issue with comments below threshold - no hot topic",
+			isPR:           false,
+			commentCount:   3,
+			lastCommenter:  "other-user",
+			currentUser:    "me",
+			threshold:      5,
+			expectHotTopic: false,
+		},
+		{
+			name:           "issue with high comments, no current user set - show hot topic",
+			isPR:           false,
+			commentCount:   10,
+			lastCommenter:  "someone",
+			currentUser:    "",
+			threshold:      5,
+			expectHotTopic: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Build test item
+			item := triage.PrioritizedItem{
+				Notification: github.Notification{
+					Subject: github.Subject{
+						Title: "Test issue title",
+						Type:  github.SubjectIssue,
+					},
+					Repository: github.Repository{
+						FullName: "owner/repo",
+					},
+					Details: &github.ItemDetails{
+						IsPR:          tt.isPR,
+						CommentCount:  tt.commentCount,
+						LastCommenter: tt.lastCommenter,
+					},
+				},
+				Priority: triage.PriorityFYI,
+			}
+
+			formatter := &TableFormatter{
+				HotTopicThreshold: tt.threshold,
+				CurrentUser:       tt.currentUser,
+			}
+
+			var buf strings.Builder
+			err := formatter.Format([]triage.PrioritizedItem{item}, &buf)
+			if err != nil {
+				t.Fatalf("Format() error = %v", err)
+			}
+
+			output := buf.String()
+			hasHotTopic := strings.Contains(output, "🔥")
+
+			if hasHotTopic != tt.expectHotTopic {
+				t.Errorf("hot topic indicator: got %v, want %v\nOutput:\n%s", hasHotTopic, tt.expectHotTopic, output)
+			}
+		})
+	}
+}
 
 func TestFormatAge(t *testing.T) {
 	tests := []struct {

@@ -22,11 +22,11 @@ type Formatter interface {
 
 // NewFormatter creates a formatter for the specified format
 func NewFormatter(format Format) Formatter {
-	return NewFormatterWithWeights(format, config.DefaultScoreWeights())
+	return NewFormatterWithWeights(format, config.DefaultScoreWeights(), "")
 }
 
 // NewFormatterWithWeights creates a formatter with custom score weights
-func NewFormatterWithWeights(format Format, weights config.ScoreWeights) Formatter {
+func NewFormatterWithWeights(format Format, weights config.ScoreWeights, currentUser string) Formatter {
 	switch format {
 	case FormatJSON:
 		return &JSONFormatter{}
@@ -37,6 +37,7 @@ func NewFormatterWithWeights(format Format, weights config.ScoreWeights) Formatt
 			PRSizeS:           weights.PRSizeS,
 			PRSizeM:           weights.PRSizeM,
 			PRSizeL:           weights.PRSizeL,
+			CurrentUser:       currentUser,
 		}
 	}
 }
