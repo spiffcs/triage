@@ -44,8 +44,6 @@ jobs:
 
       - name: Bootstrap environment
         uses: ./.github/actions/bootstrap
-        with:
-          download-test-fixture-cache: true
 
       - name: Run unit tests
         run: make test
