@@ -58,7 +58,7 @@ func (e *Engine) Prioritize(notifications []github.Notification) []PrioritizedIt
 
 // FilterByPriority filters items by a specific priority level
 func FilterByPriority(items []PrioritizedItem, targetPriority PriorityLevel) []PrioritizedItem {
-	filtered := make([]PrioritizedItem, 0)
+	filtered := make([]PrioritizedItem, 0, len(items))
 	for _, item := range items {
 		if item.Priority == targetPriority {
 			filtered = append(filtered, item)
@@ -73,12 +73,12 @@ func FilterByReason(items []PrioritizedItem, reasons []github.NotificationReason
 		return items
 	}
 
-	reasonSet := make(map[github.NotificationReason]bool)
+	reasonSet := make(map[github.NotificationReason]bool, len(reasons))
 	for _, r := range reasons {
 		reasonSet[r] = true
 	}
 
-	filtered := make([]PrioritizedItem, 0)
+	filtered := make([]PrioritizedItem, 0, len(items))
 	for _, item := range items {
 		if reasonSet[item.Notification.Reason] {
 			filtered = append(filtered, item)
@@ -117,7 +117,7 @@ func FilterOutClosed(items []PrioritizedItem) []PrioritizedItem {
 
 // FilterByType filters items by subject type (pr, issue)
 func FilterByType(items []PrioritizedItem, subjectType github.SubjectType) []PrioritizedItem {
-	filtered := make([]PrioritizedItem, 0)
+	filtered := make([]PrioritizedItem, 0, len(items))
 	for _, item := range items {
 		if item.Notification.Subject.Type == subjectType {
 			filtered = append(filtered, item)
@@ -132,7 +132,7 @@ func FilterByRepo(items []PrioritizedItem, repo string) []PrioritizedItem {
 		return items
 	}
 
-	filtered := make([]PrioritizedItem, 0)
+	filtered := make([]PrioritizedItem, 0, len(items))
 	for _, item := range items {
 		if item.Notification.Repository.FullName == repo {
 			filtered = append(filtered, item)
@@ -169,7 +169,7 @@ func FilterByExcludedAuthors(items []PrioritizedItem, excludedAuthors []string) 
 	}
 
 	// Build a set for O(1) lookup
-	excludeSet := make(map[string]bool)
+	excludeSet := make(map[string]bool, len(excludedAuthors))
 	for _, author := range excludedAuthors {
 		excludeSet[author] = true
 	}

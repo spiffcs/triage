@@ -287,6 +287,141 @@ func TestDeterminePriority(t *testing.T) {
 	}
 }
 
+func TestDeterminePriorityWithDisabledUrgencyTriggers(t *testing.T) {
+	// Create weights with urgency triggers disabled
+	weights := config.DefaultScoreWeights()
+	weights.ReviewRequestedIsUrgent = false
+	weights.MentionIsUrgent = false
+	weights.ApprovedMergeablePRIsUrgent = false
+	weights.ChangesRequestedPRIsUrgent = false
+
+	h := NewHeuristics("testuser", weights, config.DefaultQuickWinLabels())
+
+	tests := []struct {
+		name         string
+		notification *github.Notification
+		score        int
+		want         PriorityLevel
+	}{
+		{
+			name: "review_requested falls through when disabled (low score)",
+			notification: &github.Notification{
+				Reason: github.ReasonReviewRequested,
+			},
+			score: 0,
+			want:  PriorityFYI, // Falls through to score-based, low score = FYI
+		},
+		{
+			name: "review_requested promoted by high score when disabled",
+			notification: &github.Notification{
+				Reason: github.ReasonReviewRequested,
+			},
+			score: 100, // meets important promotion threshold
+			want:  PriorityUrgent,
+		},
+		{
+			name: "mention falls through when disabled (low score)",
+			notification: &github.Notification{
+				Reason: github.ReasonMention,
+			},
+			score: 0,
+			want:  PriorityFYI,
+		},
+		{
+			name: "mention promoted by score when disabled",
+			notification: &github.Notification{
+				Reason: github.ReasonMention,
+			},
+			score: 60, // meets notable promotion threshold
+			want:  PriorityImportant,
+		},
+		{
+			name: "authored PR approved+mergeable falls through when disabled",
+			notification: &github.Notification{
+				Reason: github.ReasonAuthor,
+				Details: &github.ItemDetails{
+					IsPR:         true,
+					ReviewState:  "approved",
+					Mergeable:    true,
+					ChangedFiles: 10, // Large PR to avoid quick-win
+					Additions:    500,
+					Deletions:    100,
+				},
+			},
+			score: 0,
+			want:  PriorityImportant, // Falls through to reason-based (Author = Important)
+		},
+		{
+			name: "authored PR changes_requested falls through when disabled",
+			notification: &github.Notification{
+				Reason: github.ReasonAuthor,
+				Details: &github.ItemDetails{
+					IsPR:         true,
+					ReviewState:  "changes_requested",
+					ChangedFiles: 10, // Large PR to avoid quick-win
+					Additions:    500,
+					Deletions:    100,
+				},
+			},
+			score: 0,
+			want:  PriorityImportant, // Falls through to reason-based (Author = Important)
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := h.DeterminePriority(tt.notification, tt.score)
+			if got != tt.want {
+				t.Errorf("DeterminePriority() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDeterminePriorityWithPartialUrgencyOverrides(t *testing.T) {
+	// Test with only some triggers disabled
+	weights := config.DefaultScoreWeights()
+	weights.ReviewRequestedIsUrgent = false // Only disable review_requested
+	// Others remain true
+
+	h := NewHeuristics("testuser", weights, config.DefaultQuickWinLabels())
+
+	t.Run("review_requested disabled but mention still urgent", func(t *testing.T) {
+		notification := &github.Notification{
+			Reason: github.ReasonMention,
+		}
+		got := h.DeterminePriority(notification, 0)
+		if got != PriorityUrgent {
+			t.Errorf("DeterminePriority() = %v, want %v (mention should still be urgent)", got, PriorityUrgent)
+		}
+	})
+
+	t.Run("review_requested falls through when disabled", func(t *testing.T) {
+		notification := &github.Notification{
+			Reason: github.ReasonReviewRequested,
+		}
+		got := h.DeterminePriority(notification, 0)
+		if got != PriorityFYI {
+			t.Errorf("DeterminePriority() = %v, want %v (review_requested should fall through)", got, PriorityFYI)
+		}
+	})
+
+	t.Run("approved PR still urgent when that trigger enabled", func(t *testing.T) {
+		notification := &github.Notification{
+			Reason: github.ReasonAuthor,
+			Details: &github.ItemDetails{
+				IsPR:        true,
+				ReviewState: "approved",
+				Mergeable:   true,
+			},
+		}
+		got := h.DeterminePriority(notification, 0)
+		if got != PriorityUrgent {
+			t.Errorf("DeterminePriority() = %v, want %v (approved PR should still be urgent)", got, PriorityUrgent)
+		}
+	})
+}
+
 func TestDetermineAction(t *testing.T) {
 	h := NewHeuristics("testuser", config.DefaultScoreWeights(), config.DefaultQuickWinLabels())
 

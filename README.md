@@ -370,6 +370,37 @@ exclude_authors:
 
 This removes items authored by these accounts from your triage list, reducing noise from automated dependency updates.
 
+### Customizing Urgency Triggers
+
+By default, certain conditions automatically mark items as **Urgent** priority. You can disable specific urgency triggers if they don't match your workflow:
+
+```yaml
+urgency:
+  review_requested_is_urgent: true      # Review requests → Urgent
+  mention_is_urgent: true               # Direct @mentions → Urgent
+  approved_mergeable_pr_is_urgent: true # Your approved+mergeable PRs → Urgent
+  changes_requested_pr_is_urgent: true  # Your PRs with changes requested → Urgent
+```
+
+For example, if you prefer review requests to follow normal score-based priority instead of being automatically urgent:
+
+```yaml
+urgency:
+  review_requested_is_urgent: false
+```
+
+Or if you want to disable all automatic urgency triggers and rely purely on score-based promotion:
+
+```yaml
+urgency:
+  review_requested_is_urgent: false
+  mention_is_urgent: false
+  approved_mergeable_pr_is_urgent: false
+  changes_requested_pr_is_urgent: false
+```
+
+When a trigger is disabled, items that would have been marked Urgent will instead be assigned priority based on their score (see [Score-Based Promotion](#score-based-promotion)).
+
 ## Cache Location
 
 Cached data is stored at `~/.cache/triage/details/`.
