@@ -222,7 +222,7 @@ func (c *Client) executeGraphQL(query string, token string) (json.RawMessage, er
 	if err != nil {
 		return nil, fmt.Errorf("GraphQL request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
