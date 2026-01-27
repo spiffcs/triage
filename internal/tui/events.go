@@ -1,5 +1,7 @@
 package tui
 
+import "time"
+
 // TaskID identifies a task in the TUI progress display.
 type TaskID int
 
@@ -42,3 +44,13 @@ func (TaskEvent) isEvent() {}
 type DoneEvent struct{}
 
 func (DoneEvent) isEvent() {}
+
+// RateLimitEvent signals a rate limit status change.
+type RateLimitEvent struct {
+	Limited   bool
+	ResetAt   time.Time
+	Remaining int
+	Limit     int
+}
+
+func (RateLimitEvent) isEvent() {}

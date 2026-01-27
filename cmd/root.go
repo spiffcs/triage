@@ -29,6 +29,7 @@ triage your work. It uses heuristics to score notifications.`,
 	rootCmd.AddCommand(NewCmdConfig())
 	rootCmd.AddCommand(NewCmdCache())
 	rootCmd.AddCommand(NewCmdVersion())
+	rootCmd.AddCommand(NewCmdRateLimit())
 
 	return rootCmd
 }

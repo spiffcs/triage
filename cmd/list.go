@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -94,8 +96,12 @@ func runList(_ *cobra.Command, _ []string, opts *Options) error {
 	// Determine if TUI should be used
 	useTUI := shouldUseTUI(opts)
 
-	// Initialize logging (suppress progress output if TUI is active)
-	log.Initialize(opts.Verbosity, os.Stderr)
+	// Initialize logging - suppress logs during TUI to avoid interleaving with display
+	if useTUI {
+		log.Initialize(opts.Verbosity, io.Discard)
+	} else {
+		log.Initialize(opts.Verbosity, os.Stderr)
+	}
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -235,20 +241,40 @@ func runList(_ *cobra.Command, _ []string, opts *Options) error {
 
 	wg.Wait()
 
-	// Handle fetch errors
+	// Handle fetch errors - check for rate limiting
+	rateLimited := false
 	if result.notifErr != nil {
-		sendTaskEvent(events, tui.TaskFetch, tui.StatusError, tui.WithError(result.notifErr))
-		closeTUI(events, tuiDone)
-		return fmt.Errorf("failed to fetch notifications: %w", result.notifErr)
+		if errors.Is(result.notifErr, github.ErrRateLimited) {
+			rateLimited = true
+		} else {
+			sendTaskEvent(events, tui.TaskFetch, tui.StatusError, tui.WithError(result.notifErr))
+			closeTUI(events, tuiDone)
+			return fmt.Errorf("failed to fetch notifications: %w", result.notifErr)
+		}
 	}
-	if result.reviewErr != nil {
+	if result.reviewErr != nil && !errors.Is(result.reviewErr, github.ErrRateLimited) {
 		log.Warn("failed to fetch review-requested PRs", "error", result.reviewErr)
+	} else if errors.Is(result.reviewErr, github.ErrRateLimited) {
+		rateLimited = true
 	}
-	if result.authoredErr != nil {
+	if result.authoredErr != nil && !errors.Is(result.authoredErr, github.ErrRateLimited) {
 		log.Warn("failed to fetch authored PRs", "error", result.authoredErr)
+	} else if errors.Is(result.authoredErr, github.ErrRateLimited) {
+		rateLimited = true
 	}
-	if result.assignedErr != nil {
+	if result.assignedErr != nil && !errors.Is(result.assignedErr, github.ErrRateLimited) {
 		log.Warn("failed to fetch assigned issues", "error", result.assignedErr)
+	} else if errors.Is(result.assignedErr, github.ErrRateLimited) {
+		rateLimited = true
+	}
+
+	// Send rate limit event to TUI if rate limited
+	if rateLimited && events != nil {
+		_, _, resetAt, _ := github.GetRateLimitStatus()
+		events <- tui.RateLimitEvent{
+			Limited: true,
+			ResetAt: resetAt,
+		}
 	}
 
 	notifications := result.notifications

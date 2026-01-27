@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 	"sync"
-	"sync/atomic"
 
 	"github.com/google/go-github/v57/github"
 	"github.com/spiffcs/triage/internal/log"
@@ -66,38 +65,35 @@ func (c *Client) EnrichNotificationsWithProgress(notifications []Notification, o
 	return nil
 }
 
-// EnrichNotificationsConcurrent enriches notifications using a worker pool with caching.
+// EnrichNotificationsConcurrent enriches notifications using GraphQL batch queries with caching.
+// Uses GraphQL API (separate quota from Core API) for efficient batch enrichment.
 // Returns the number of cache hits and any error.
 func (c *Client) EnrichNotificationsConcurrent(notifications []Notification, workers int, onProgress func(completed, total int)) (int, error) {
-	if workers <= 0 {
-		workers = 10 // Default concurrency
-	}
-
 	// Initialize cache
 	cache, cacheErr := NewCache()
 	if cacheErr != nil {
-		log.Warn("cache unavailable", "error", cacheErr)
+		log.Debug("cache unavailable", "error", cacheErr)
 	}
 
 	total := len(notifications)
-	var completed int64
-	var errors int64
 	var cacheHits int64
 
-	// First pass: check cache
+	// First pass: check cache and build list of items needing enrichment
+	uncachedNotifications := make([]Notification, 0, len(notifications))
 	uncachedIndices := make([]int, 0, len(notifications))
+
 	for i := range notifications {
 		if cache != nil {
 			if details, ok := cache.Get(&notifications[i]); ok {
 				notifications[i].Details = details
-				atomic.AddInt64(&cacheHits, 1)
-				atomic.AddInt64(&completed, 1)
+				cacheHits++
 				if onProgress != nil {
-					onProgress(int(completed), total)
+					onProgress(int(cacheHits), total)
 				}
 				continue
 			}
 		}
+		uncachedNotifications = append(uncachedNotifications, notifications[i])
 		uncachedIndices = append(uncachedIndices, i)
 	}
 
@@ -105,75 +101,71 @@ func (c *Client) EnrichNotificationsConcurrent(notifications []Notification, wor
 		log.Info("cache hit", "count", cacheHits, "total", total)
 	}
 
-	if len(uncachedIndices) == 0 {
+	if len(uncachedNotifications) == 0 {
 		return int(cacheHits), nil
 	}
 
-	// Create work channel for uncached items
-	work := make(chan int, len(uncachedIndices))
-	for _, i := range uncachedIndices {
-		work <- i
-	}
-	close(work)
+	// Use GraphQL for batch enrichment (uses GraphQL quota, not Core API)
+	log.Debug("enriching via GraphQL", "count", len(uncachedNotifications))
 
-	// Create worker pool
-	var wg sync.WaitGroup
-	for w := 0; w < workers; w++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for i := range work {
-				if err := c.EnrichNotification(&notifications[i]); err != nil {
-					atomic.AddInt64(&errors, 1)
-				} else if cache != nil && notifications[i].Details != nil {
-					// Cache successful enrichment
-					if err := cache.Set(&notifications[i], notifications[i].Details); err != nil {
-						log.Debug("failed to cache notification", "id", notifications[i].ID, "error", err)
-					}
-				}
-				done := atomic.AddInt64(&completed, 1)
-				if onProgress != nil {
-					onProgress(int(done), total)
-				}
+	progressOffset := int(cacheHits)
+	enriched, err := c.EnrichNotificationsGraphQL(uncachedNotifications, c.token, func(completed, batchTotal int) {
+		if onProgress != nil {
+			onProgress(progressOffset+completed, total)
+		}
+	})
+
+	if err != nil {
+		log.Debug("GraphQL enrichment error", "error", err)
+	}
+
+	// Copy enriched data back to original slice and cache results
+	for i, origIdx := range uncachedIndices {
+		notifications[origIdx] = uncachedNotifications[i]
+		// Cache successful enrichment
+		if cache != nil && uncachedNotifications[i].Details != nil {
+			if err := cache.Set(&notifications[origIdx], notifications[origIdx].Details); err != nil {
+				log.Debug("failed to cache notification", "id", notifications[origIdx].ID, "error", err)
 			}
-		}()
+		}
 	}
 
-	wg.Wait()
-
-	if errors > 0 {
-		log.Warn("some notifications failed to enrich", "count", errors, "note", "may be deleted or inaccessible")
-	}
+	log.Debug("GraphQL enrichment complete", "enriched", enriched, "total", len(uncachedNotifications))
 
 	return int(cacheHits), nil
 }
 
 func (c *Client) enrichPullRequest(n *Notification, owner, repo string, number int) error {
-	// Fetch PR details and review state concurrently
 	var pr *github.PullRequest
 	var prErr error
 	var reviewState string
+	var ciStatus string
 
 	var wg sync.WaitGroup
-	wg.Add(2)
 
-	// Fetch PR details
-	go func() {
-		defer wg.Done()
-		pr, _, prErr = c.client.PullRequests.Get(c.ctx, owner, repo, number)
-	}()
-
-	// Fetch review state
+	// Fetch review state concurrently (doesn't need PR details)
+	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		reviewState = c.getPRReviewState(owner, repo, number)
 	}()
 
-	wg.Wait()
-
+	// Fetch PR details first (needed for CI status SHA)
+	pr, _, prErr = c.client.PullRequests.Get(c.ctx, owner, repo, number)
 	if prErr != nil {
+		wg.Wait() // Wait for review state goroutine before returning
 		return fmt.Errorf("failed to get PR #%d: %w", number, prErr)
 	}
+
+	// Fetch CI status concurrently (now that we have the SHA)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		ciStatus = c.getCIStatus(owner, repo, pr.GetHead().GetSHA())
+	}()
+
+	// Wait for review state and CI status to complete
+	wg.Wait()
 
 	details := &ItemDetails{
 		Number:       number,
@@ -188,6 +180,8 @@ func (c *Client) enrichPullRequest(n *Notification, owner, repo string, number i
 		Additions:    pr.GetAdditions(),
 		Deletions:    pr.GetDeletions(),
 		ChangedFiles: pr.GetChangedFiles(),
+		ReviewState:  reviewState,
+		CIStatus:     ciStatus,
 	}
 
 	if pr.ClosedAt != nil {
@@ -210,9 +204,6 @@ func (c *Client) enrichPullRequest(n *Notification, owner, repo string, number i
 	for _, label := range pr.Labels {
 		details.Labels = append(details.Labels, label.GetName())
 	}
-
-	// Set review state (fetched concurrently)
-	details.ReviewState = reviewState
 
 	n.Details = details
 	return nil
@@ -266,6 +257,55 @@ func (c *Client) enrichIssue(n *Notification, owner, repo string, number int) er
 
 	n.Details = details
 	return nil
+}
+
+func (c *Client) getCIStatus(owner, repo, ref string) string {
+	// Check rate limit before making API call
+	if globalRateLimitState.IsLimited() {
+		return ""
+	}
+
+	checkRuns, _, err := c.client.Checks.ListCheckRunsForRef(c.ctx, owner, repo, ref, nil)
+	if err != nil {
+		log.Debug("failed to get CI status", "owner", owner, "repo", repo, "ref", ref, "error", err)
+		return ""
+	}
+
+	if checkRuns == nil || len(checkRuns.CheckRuns) == 0 {
+		return ""
+	}
+
+	hasFailure := false
+	hasPending := false
+	allSuccessful := true
+
+	for _, run := range checkRuns.CheckRuns {
+		status := run.GetStatus()
+		conclusion := run.GetConclusion()
+
+		// Check for failures first
+		if conclusion == "failure" || conclusion == "timed_out" || conclusion == "action_required" {
+			hasFailure = true
+			allSuccessful = false
+		} else if status == "queued" || status == "in_progress" {
+			hasPending = true
+			allSuccessful = false
+		} else if conclusion != "success" && conclusion != "skipped" && conclusion != "neutral" {
+			// Unknown or cancelled - not a success
+			allSuccessful = false
+		}
+	}
+
+	if hasFailure {
+		return "failure"
+	}
+	if hasPending {
+		return "pending"
+	}
+	if allSuccessful {
+		return "success"
+	}
+	return ""
 }
 
 func (c *Client) getPRReviewState(owner, repo string, number int) string {

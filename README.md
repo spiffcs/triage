@@ -115,6 +115,23 @@ triage cache stats    # Show cache statistics
 triage cache clear    # Clear all caches
 ```
 
+### Rate Limit Management
+
+Check your GitHub API rate limit status:
+
+```bash
+triage ratelimit status
+```
+
+Example output:
+```
+GitHub API Rate Limits:
+
+Core API:   4521/5000 remaining (resets in 42m15s)
+Search API: 28/30 remaining (resets in 45s)
+GraphQL:    4892/5000 remaining (resets in 42m15s)
+```
+
 ### Configuration
 
 Manage configuration files and view current settings.

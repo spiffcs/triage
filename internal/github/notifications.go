@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/go-github/v57/github"
@@ -18,15 +19,132 @@ type NotificationOptions struct {
 	Types         []SubjectType // Filter to specific subject types
 }
 
-// ListNotifications fetches notifications with optional filtering
+// ListNotifications fetches notifications with optional filtering.
+// Uses parallel fetching when multiple pages are detected.
 func (c *Client) ListNotifications(opts NotificationOptions) ([]Notification, error) {
-	var allNotifications []Notification
+	listOpts := &github.NotificationListOptions{
+		All:           opts.All,
+		Participating: opts.Participating,
+		ListOptions: github.ListOptions{
+			PerPage: 100,
+		},
+	}
+
+	if !opts.Since.IsZero() {
+		listOpts.Since = opts.Since
+	}
+
+	// Fetch first page to get pagination info
+	notifications, resp, err := c.client.Activity.ListNotifications(c.ctx, listOpts)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list notifications: %w", err)
+	}
+
+	// Convert first page results
+	allNotifications := filterNotifications(notifications, opts)
+
+	// If no more pages, return early
+	if resp.NextPage == 0 {
+		return allNotifications, nil
+	}
+
+	// Determine last page from response
+	lastPage := resp.LastPage
+	if lastPage == 0 {
+		// Fallback to sequential if we can't determine last page
+		return c.listNotificationsSequential(opts, allNotifications, resp.NextPage)
+	}
+
+	// Fetch remaining pages in parallel
+	type pageResult struct {
+		page          int
+		notifications []Notification
+		err           error
+	}
+
+	numPages := lastPage - 1 // pages 2 through lastPage
+	results := make(chan pageResult, numPages)
+
+	var wg sync.WaitGroup
+	for page := 2; page <= lastPage; page++ {
+		wg.Add(1)
+		go func(p int) {
+			defer wg.Done()
+			pageOpts := &github.NotificationListOptions{
+				All:           opts.All,
+				Participating: opts.Participating,
+				ListOptions: github.ListOptions{
+					PerPage: 100,
+					Page:    p,
+				},
+			}
+			if !opts.Since.IsZero() {
+				pageOpts.Since = opts.Since
+			}
+
+			notifs, _, err := c.client.Activity.ListNotifications(c.ctx, pageOpts)
+			if err != nil {
+				results <- pageResult{page: p, err: err}
+				return
+			}
+			results <- pageResult{page: p, notifications: filterNotifications(notifs, opts)}
+		}(page)
+	}
+
+	// Close results channel when all goroutines complete
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	// Collect results
+	pageResults := make([]pageResult, 0, numPages)
+	for result := range results {
+		if result.err != nil {
+			return nil, fmt.Errorf("failed to list notifications page %d: %w", result.page, result.err)
+		}
+		pageResults = append(pageResults, result)
+	}
+
+	// Combine all results (order doesn't matter for notifications)
+	for _, pr := range pageResults {
+		allNotifications = append(allNotifications, pr.notifications...)
+	}
+
+	return allNotifications, nil
+}
+
+// filterNotifications applies type and repo filters to raw notifications
+func filterNotifications(notifications []*github.Notification, opts NotificationOptions) []Notification {
+	var result []Notification
+	for _, n := range notifications {
+		notification := convertNotification(n)
+
+		// Apply type filter
+		if len(opts.Types) > 0 && !containsType(opts.Types, notification.Subject.Type) {
+			continue
+		}
+
+		// Apply repo filter
+		if len(opts.Repos) > 0 && !containsRepo(opts.Repos, notification.Repository.FullName) {
+			continue
+		}
+
+		result = append(result, notification)
+	}
+	return result
+}
+
+// listNotificationsSequential fetches remaining pages sequentially (fallback)
+func (c *Client) listNotificationsSequential(opts NotificationOptions, existing []Notification, startPage int) ([]Notification, error) {
+	allNotifications := existing
 
 	listOpts := &github.NotificationListOptions{
 		All:           opts.All,
 		Participating: opts.Participating,
 		ListOptions: github.ListOptions{
 			PerPage: 100,
+			Page:    startPage,
 		},
 	}
 
@@ -40,21 +158,7 @@ func (c *Client) ListNotifications(opts NotificationOptions) ([]Notification, er
 			return nil, fmt.Errorf("failed to list notifications: %w", err)
 		}
 
-		for _, n := range notifications {
-			notification := convertNotification(n)
-
-			// Apply type filter
-			if len(opts.Types) > 0 && !containsType(opts.Types, notification.Subject.Type) {
-				continue
-			}
-
-			// Apply repo filter
-			if len(opts.Repos) > 0 && !containsRepo(opts.Repos, notification.Repository.FullName) {
-				continue
-			}
-
-			allNotifications = append(allNotifications, notification)
-		}
+		allNotifications = append(allNotifications, filterNotifications(notifications, opts)...)
 
 		if resp.NextPage == 0 {
 			break
