@@ -219,9 +219,9 @@ Priority is determined by a combination of notification reason, item state, and 
 Priority assignment follows this logic (evaluated in order):
 
 1. **Urgent** is assigned when:
-   - Notification reason is `review_requested` or `mention`
-   - Your authored PR is approved AND mergeable (ready to merge)
-   - Your authored PR has changes requested (needs your attention)
+   - Notification reason is `review_requested` (configurable via `urgency.review_requested`)
+   - Your authored PR is approved AND mergeable (configurable via `urgency.approved_mergeable_pr`)
+   - Other urgency triggers if enabled: `mention`, `changes_requested_pr`
    - Item's score ≥100 (important_promotion_threshold)
 
 2. **Quick Win** is assigned when:
@@ -372,31 +372,29 @@ This removes items authored by these accounts from your triage list, reducing no
 
 ### Customizing Urgency Triggers
 
-By default, certain conditions automatically mark items as **Urgent** priority. You can disable specific urgency triggers if they don't match your workflow:
+By default, review requests and approved mergeable PRs automatically mark items as **Urgent** priority. You can customize these triggers to match your workflow:
 
 ```yaml
 urgency:
-  review_requested_is_urgent: true      # Review requests → Urgent
-  mention_is_urgent: true               # Direct @mentions → Urgent
-  approved_mergeable_pr_is_urgent: true # Your approved+mergeable PRs → Urgent
-  changes_requested_pr_is_urgent: true  # Your PRs with changes requested → Urgent
+  review_requested: true       # Review requests → Urgent (default: true)
+  mention: false               # Direct @mentions → Urgent (default: false)
+  approved_mergeable_pr: true  # Your approved+mergeable PRs → Urgent (default: true)
+  changes_requested_pr: false  # Your PRs with changes requested → Urgent (default: false)
 ```
 
-For example, if you prefer review requests to follow normal score-based priority instead of being automatically urgent:
+For example, if you want mentions to also be urgent:
 
 ```yaml
 urgency:
-  review_requested_is_urgent: false
+  mention: true
 ```
 
 Or if you want to disable all automatic urgency triggers and rely purely on score-based promotion:
 
 ```yaml
 urgency:
-  review_requested_is_urgent: false
-  mention_is_urgent: false
-  approved_mergeable_pr_is_urgent: false
-  changes_requested_pr_is_urgent: false
+  review_requested: false
+  approved_mergeable_pr: false
 ```
 
 When a trigger is disabled, items that would have been marked Urgent will instead be assigned priority based on their score (see [Score-Based Promotion](#score-based-promotion)).

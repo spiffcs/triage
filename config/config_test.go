@@ -557,18 +557,17 @@ func TestMergeConfig(t *testing.T) {
 func TestDefaultScoreWeightsUrgency(t *testing.T) {
 	weights := DefaultScoreWeights()
 
-	// All urgency triggers should be enabled by default
 	if !weights.ReviewRequestedIsUrgent {
 		t.Error("DefaultScoreWeights().ReviewRequestedIsUrgent should be true")
 	}
-	if !weights.MentionIsUrgent {
-		t.Error("DefaultScoreWeights().MentionIsUrgent should be true")
+	if weights.MentionIsUrgent {
+		t.Error("DefaultScoreWeights().MentionIsUrgent should be false")
 	}
 	if !weights.ApprovedMergeablePRIsUrgent {
 		t.Error("DefaultScoreWeights().ApprovedMergeablePRIsUrgent should be true")
 	}
-	if !weights.ChangesRequestedPRIsUrgent {
-		t.Error("DefaultScoreWeights().ChangesRequestedPRIsUrgent should be true")
+	if weights.ChangesRequestedPRIsUrgent {
+		t.Error("DefaultScoreWeights().ChangesRequestedPRIsUrgent should be false")
 	}
 }
 
@@ -580,23 +579,25 @@ func TestGetScoreWeightsUrgency(t *testing.T) {
 		if !weights.ReviewRequestedIsUrgent {
 			t.Error("GetScoreWeights().ReviewRequestedIsUrgent should be true by default")
 		}
-		if !weights.MentionIsUrgent {
-			t.Error("GetScoreWeights().MentionIsUrgent should be true by default")
+		if weights.MentionIsUrgent {
+			t.Error("GetScoreWeights().MentionIsUrgent should be false by default")
 		}
 		if !weights.ApprovedMergeablePRIsUrgent {
 			t.Error("GetScoreWeights().ApprovedMergeablePRIsUrgent should be true by default")
 		}
-		if !weights.ChangesRequestedPRIsUrgent {
-			t.Error("GetScoreWeights().ChangesRequestedPRIsUrgent should be true by default")
+		if weights.ChangesRequestedPRIsUrgent {
+			t.Error("GetScoreWeights().ChangesRequestedPRIsUrgent should be false by default")
 		}
 	})
 
 	t.Run("applies urgency overrides", func(t *testing.T) {
 		falseVal := false
+		trueVal := true
 		cfg := &Config{
 			Urgency: &UrgencyOverrides{
-				ReviewRequestedIsUrgent: &falseVal,
-				MentionIsUrgent:         &falseVal,
+				ReviewRequested:     &falseVal,
+				Mention:             &trueVal,
+				ApprovedMergeablePR: &falseVal,
 			},
 		}
 		weights := cfg.GetScoreWeights()
@@ -604,15 +605,15 @@ func TestGetScoreWeightsUrgency(t *testing.T) {
 		if weights.ReviewRequestedIsUrgent {
 			t.Error("GetScoreWeights().ReviewRequestedIsUrgent should be false when overridden")
 		}
-		if weights.MentionIsUrgent {
-			t.Error("GetScoreWeights().MentionIsUrgent should be false when overridden")
+		if !weights.MentionIsUrgent {
+			t.Error("GetScoreWeights().MentionIsUrgent should be true when overridden")
 		}
-		// Non-overridden values should remain true
-		if !weights.ApprovedMergeablePRIsUrgent {
-			t.Error("GetScoreWeights().ApprovedMergeablePRIsUrgent should be true (not overridden)")
+		if weights.ApprovedMergeablePRIsUrgent {
+			t.Error("GetScoreWeights().ApprovedMergeablePRIsUrgent should be false when overridden")
 		}
-		if !weights.ChangesRequestedPRIsUrgent {
-			t.Error("GetScoreWeights().ChangesRequestedPRIsUrgent should be true (not overridden)")
+		// Non-overridden values should remain at defaults (false)
+		if weights.ChangesRequestedPRIsUrgent {
+			t.Error("GetScoreWeights().ChangesRequestedPRIsUrgent should be false (not overridden)")
 		}
 	})
 
@@ -620,10 +621,10 @@ func TestGetScoreWeightsUrgency(t *testing.T) {
 		falseVal := false
 		cfg := &Config{
 			Urgency: &UrgencyOverrides{
-				ReviewRequestedIsUrgent:     &falseVal,
-				MentionIsUrgent:             &falseVal,
-				ApprovedMergeablePRIsUrgent: &falseVal,
-				ChangesRequestedPRIsUrgent:  &falseVal,
+				ReviewRequested:     &falseVal,
+				Mention:             &falseVal,
+				ApprovedMergeablePR: &falseVal,
+				ChangesRequestedPR:  &falseVal,
 			},
 		}
 		weights := cfg.GetScoreWeights()
@@ -655,32 +656,32 @@ func TestMergeUrgencyOverrides(t *testing.T) {
 		trueVal := true
 		falseVal := false
 		global := &UrgencyOverrides{
-			ReviewRequestedIsUrgent: &trueVal,
-			MentionIsUrgent:         &trueVal,
+			ReviewRequested: &trueVal,
+			Mention:         &trueVal,
 		}
 		local := &UrgencyOverrides{
-			ReviewRequestedIsUrgent: &falseVal,
+			ReviewRequested: &falseVal,
 		}
 
 		result := mergeUrgencyOverrides(global, local)
 
-		if *result.ReviewRequestedIsUrgent != false {
-			t.Error("local should override global for ReviewRequestedIsUrgent")
+		if *result.ReviewRequested != false {
+			t.Error("local should override global for ReviewRequested")
 		}
-		if *result.MentionIsUrgent != true {
-			t.Error("global should be preserved for MentionIsUrgent")
+		if *result.Mention != true {
+			t.Error("global should be preserved for Mention")
 		}
 	})
 
 	t.Run("preserves global when local is nil", func(t *testing.T) {
 		trueVal := true
 		global := &UrgencyOverrides{
-			ReviewRequestedIsUrgent: &trueVal,
+			ReviewRequested: &trueVal,
 		}
 
 		result := mergeUrgencyOverrides(global, nil)
 
-		if *result.ReviewRequestedIsUrgent != true {
+		if *result.ReviewRequested != true {
 			t.Error("global value should be preserved")
 		}
 	})

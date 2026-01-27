@@ -70,10 +70,10 @@ type PROverrides struct {
 
 // UrgencyOverrides allows disabling specific urgency triggers
 type UrgencyOverrides struct {
-	ReviewRequestedIsUrgent     *bool `yaml:"review_requested_is_urgent,omitempty"`
-	MentionIsUrgent             *bool `yaml:"mention_is_urgent,omitempty"`
-	ApprovedMergeablePRIsUrgent *bool `yaml:"approved_mergeable_pr_is_urgent,omitempty"`
-	ChangesRequestedPRIsUrgent  *bool `yaml:"changes_requested_pr_is_urgent,omitempty"`
+	ReviewRequested     *bool `yaml:"review_requested,omitempty"`
+	Mention             *bool `yaml:"mention,omitempty"`
+	ApprovedMergeablePR *bool `yaml:"approved_mergeable_pr,omitempty"`
+	ChangesRequestedPR  *bool `yaml:"changes_requested_pr,omitempty"`
 }
 
 // ScoreWeights defines the complete set of scoring weights
@@ -176,11 +176,11 @@ func DefaultScoreWeights() ScoreWeights {
 		PRSizeM:  200,
 		PRSizeL:  500,
 
-		// Urgency triggers (all enabled by default)
+		// Urgency triggers
 		ReviewRequestedIsUrgent:     true,
-		MentionIsUrgent:             true,
+		MentionIsUrgent:             false,
 		ApprovedMergeablePRIsUrgent: true,
-		ChangesRequestedPRIsUrgent:  true,
+		ChangesRequestedPRIsUrgent:  false,
 	}
 }
 
@@ -308,17 +308,17 @@ func (c *Config) GetScoreWeights() ScoreWeights {
 	// Apply urgency overrides
 	if c.Urgency != nil {
 		u := c.Urgency
-		if u.ReviewRequestedIsUrgent != nil {
-			weights.ReviewRequestedIsUrgent = *u.ReviewRequestedIsUrgent
+		if u.ReviewRequested != nil {
+			weights.ReviewRequestedIsUrgent = *u.ReviewRequested
 		}
-		if u.MentionIsUrgent != nil {
-			weights.MentionIsUrgent = *u.MentionIsUrgent
+		if u.Mention != nil {
+			weights.MentionIsUrgent = *u.Mention
 		}
-		if u.ApprovedMergeablePRIsUrgent != nil {
-			weights.ApprovedMergeablePRIsUrgent = *u.ApprovedMergeablePRIsUrgent
+		if u.ApprovedMergeablePR != nil {
+			weights.ApprovedMergeablePRIsUrgent = *u.ApprovedMergeablePR
 		}
-		if u.ChangesRequestedPRIsUrgent != nil {
-			weights.ChangesRequestedPRIsUrgent = *u.ChangesRequestedPRIsUrgent
+		if u.ChangesRequestedPR != nil {
+			weights.ChangesRequestedPRIsUrgent = *u.ChangesRequestedPR
 		}
 	}
 
@@ -654,30 +654,30 @@ func mergeUrgencyOverrides(global, local *UrgencyOverrides) *UrgencyOverrides {
 	result := &UrgencyOverrides{}
 
 	if global != nil {
-		result.ReviewRequestedIsUrgent = global.ReviewRequestedIsUrgent
-		result.MentionIsUrgent = global.MentionIsUrgent
-		result.ApprovedMergeablePRIsUrgent = global.ApprovedMergeablePRIsUrgent
-		result.ChangesRequestedPRIsUrgent = global.ChangesRequestedPRIsUrgent
+		result.ReviewRequested = global.ReviewRequested
+		result.Mention = global.Mention
+		result.ApprovedMergeablePR = global.ApprovedMergeablePR
+		result.ChangesRequestedPR = global.ChangesRequestedPR
 	}
 
 	if local != nil {
-		if local.ReviewRequestedIsUrgent != nil {
-			result.ReviewRequestedIsUrgent = local.ReviewRequestedIsUrgent
+		if local.ReviewRequested != nil {
+			result.ReviewRequested = local.ReviewRequested
 		}
-		if local.MentionIsUrgent != nil {
-			result.MentionIsUrgent = local.MentionIsUrgent
+		if local.Mention != nil {
+			result.Mention = local.Mention
 		}
-		if local.ApprovedMergeablePRIsUrgent != nil {
-			result.ApprovedMergeablePRIsUrgent = local.ApprovedMergeablePRIsUrgent
+		if local.ApprovedMergeablePR != nil {
+			result.ApprovedMergeablePR = local.ApprovedMergeablePR
 		}
-		if local.ChangesRequestedPRIsUrgent != nil {
-			result.ChangesRequestedPRIsUrgent = local.ChangesRequestedPRIsUrgent
+		if local.ChangesRequestedPR != nil {
+			result.ChangesRequestedPR = local.ChangesRequestedPR
 		}
 	}
 
 	// Return nil if all fields are nil
-	if result.ReviewRequestedIsUrgent == nil && result.MentionIsUrgent == nil &&
-		result.ApprovedMergeablePRIsUrgent == nil && result.ChangesRequestedPRIsUrgent == nil {
+	if result.ReviewRequested == nil && result.Mention == nil &&
+		result.ApprovedMergeablePR == nil && result.ChangesRequestedPR == nil {
 		return nil
 	}
 
@@ -804,10 +804,10 @@ func DefaultConfig() *Config {
 			SizeL:                 &weights.PRSizeL,
 		},
 		Urgency: &UrgencyOverrides{
-			ReviewRequestedIsUrgent:     &weights.ReviewRequestedIsUrgent,
-			MentionIsUrgent:             &weights.MentionIsUrgent,
-			ApprovedMergeablePRIsUrgent: &weights.ApprovedMergeablePRIsUrgent,
-			ChangesRequestedPRIsUrgent:  &weights.ChangesRequestedPRIsUrgent,
+			ReviewRequested:     &weights.ReviewRequestedIsUrgent,
+			Mention:             &weights.MentionIsUrgent,
+			ApprovedMergeablePR: &weights.ApprovedMergeablePRIsUrgent,
+			ChangesRequestedPR:  &weights.ChangesRequestedPRIsUrgent,
 		},
 	}
 }
