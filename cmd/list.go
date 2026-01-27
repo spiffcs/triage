@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
+	"runtime/pprof"
+	"runtime/trace"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -51,6 +54,11 @@ func addListFlags(cmd *cobra.Command, opts *Options) {
 
 	// TUI flag with tri-state: nil = auto, true = force, false = disable
 	cmd.Flags().Var(&tuiFlag{opts: opts}, "tui", "Enable/disable TUI progress (default: auto-detect)")
+
+	// Profiling flags
+	cmd.Flags().StringVar(&opts.CPUProfile, "cpuprofile", "", "Write CPU profile to file")
+	cmd.Flags().StringVar(&opts.MemProfile, "memprofile", "", "Write memory profile to file")
+	cmd.Flags().StringVar(&opts.Trace, "trace", "", "Write execution trace to file")
 }
 
 // tuiFlag implements pflag.Value for the tri-state TUI flag.
@@ -93,6 +101,48 @@ func (f *tuiFlag) IsBoolFlag() bool {
 }
 
 func runList(_ *cobra.Command, _ []string, opts *Options) error {
+	// Start CPU profiling if requested
+	if opts.CPUProfile != "" {
+		f, err := os.Create(opts.CPUProfile)
+		if err != nil {
+			return fmt.Errorf("could not create CPU profile: %w", err)
+		}
+		defer f.Close()
+		if err := pprof.StartCPUProfile(f); err != nil {
+			return fmt.Errorf("could not start CPU profile: %w", err)
+		}
+		defer pprof.StopCPUProfile()
+	}
+
+	// Start execution trace if requested
+	if opts.Trace != "" {
+		f, err := os.Create(opts.Trace)
+		if err != nil {
+			return fmt.Errorf("could not create trace: %w", err)
+		}
+		defer f.Close()
+		if err := trace.Start(f); err != nil {
+			return fmt.Errorf("could not start trace: %w", err)
+		}
+		defer trace.Stop()
+	}
+
+	// Write memory profile at end if requested
+	if opts.MemProfile != "" {
+		defer func() {
+			f, err := os.Create(opts.MemProfile)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "could not create memory profile: %v\n", err)
+				return
+			}
+			defer f.Close()
+			runtime.GC() // Get up-to-date statistics
+			if err := pprof.WriteHeapProfile(f); err != nil {
+				fmt.Fprintf(os.Stderr, "could not write memory profile: %v\n", err)
+			}
+		}()
+	}
+
 	// Determine if TUI should be used
 	useTUI := shouldUseTUI(opts)
 
@@ -312,24 +362,36 @@ func runList(_ *cobra.Command, _ []string, opts *Options) error {
 
 	if totalToEnrich > 0 {
 		// Progress callback using atomic counter for concurrent updates
-		var lastPercent int64 = -1
-		onProgress := func(_ int, _ int) {
-			completed := atomic.AddInt64(&totalCompleted, 1)
-			percent := (completed * 100) / int64(totalToEnrich)
-			// Only update at 5% intervals to reduce UI updates
-			if percent != atomic.LoadInt64(&lastPercent) && percent%5 == 0 {
-				atomic.StoreInt64(&lastPercent, percent)
-				cacheHits := atomic.LoadInt64(&totalCacheHits)
-				if useTUI {
-					progress := float64(completed) / float64(totalToEnrich)
-					msg := fmt.Sprintf("%d/%d", completed, totalToEnrich)
-					if cacheHits > 0 {
-						msg = fmt.Sprintf("%d/%d (%d cached)", completed, totalToEnrich, cacheHits)
+		// The delta parameter indicates how many items were just processed
+		var lastLogPercent int64 = -1
+		var lastTUIUpdate int64 = 0 // Unix nanoseconds
+		const tuiUpdateInterval = int64(50 * time.Millisecond)
+
+		onProgress := func(delta int, _ int) {
+			completed := atomic.AddInt64(&totalCompleted, int64(delta))
+			cacheHits := atomic.LoadInt64(&totalCacheHits)
+
+			if useTUI {
+				// Throttle TUI updates to every 50ms for smooth progress without overhead
+				now := time.Now().UnixNano()
+				lastUpdate := atomic.LoadInt64(&lastTUIUpdate)
+				if now-lastUpdate >= tuiUpdateInterval || completed == int64(totalToEnrich) {
+					if atomic.CompareAndSwapInt64(&lastTUIUpdate, lastUpdate, now) {
+						progress := float64(completed) / float64(totalToEnrich)
+						msg := fmt.Sprintf("%d/%d", completed, totalToEnrich)
+						if cacheHits > 0 {
+							msg = fmt.Sprintf("%d/%d (%d cached)", completed, totalToEnrich, cacheHits)
+						}
+						sendTaskEvent(events, tui.TaskEnrich, tui.StatusRunning,
+							tui.WithProgress(progress),
+							tui.WithMessage(msg))
 					}
-					sendTaskEvent(events, tui.TaskEnrich, tui.StatusRunning,
-						tui.WithProgress(progress),
-						tui.WithMessage(msg))
-				} else {
+				}
+			} else {
+				// Throttle log output to 5% intervals
+				percent := (completed * 100) / int64(totalToEnrich)
+				if percent != atomic.LoadInt64(&lastLogPercent) && percent%5 == 0 {
+					atomic.StoreInt64(&lastLogPercent, percent)
 					log.Progress("Enriching items: %d/%d (%d%%)...", completed, totalToEnrich, percent)
 				}
 			}

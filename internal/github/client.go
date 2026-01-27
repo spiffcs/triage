@@ -662,7 +662,7 @@ func (c *Client) EnrichPRsConcurrent(notifications []Notification, workers int, 
 				notifications[i].Details = details
 				cacheHits++
 				if onProgress != nil {
-					onProgress(int(cacheHits), total)
+					onProgress(1, total) // Report 1 item completed from cache
 				}
 				continue
 			}

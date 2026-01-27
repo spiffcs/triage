@@ -52,3 +52,7 @@ Thumbs.db
 
 # Debug
 __debug_bin*
+
+# Profiling
+*.prof
+trace.out

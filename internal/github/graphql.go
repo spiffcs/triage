@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/spiffcs/triage/internal/log"
@@ -15,8 +16,22 @@ import (
 const (
 	graphqlEndpoint = "https://api.github.com/graphql"
 	// Maximum items per GraphQL query (GitHub's complexity limits)
-	graphqlBatchSize = 50
+	// With reviewDecision instead of reviews(last:100), we can fit more per batch
+	graphqlBatchSize = 100
+	// Maximum concurrent batch requests to avoid rate limiting
+	maxConcurrentBatches = 12
 )
+
+// graphqlHTTPClient is a configured HTTP client optimized for GraphQL requests
+// with connection pooling and keep-alive for reduced latency.
+var graphqlHTTPClient = &http.Client{
+	Transport: &http.Transport{
+		MaxIdleConns:        20,
+		MaxIdleConnsPerHost: 20,
+		IdleConnTimeout:     30 * time.Second,
+	},
+	Timeout: 30 * time.Second,
+}
 
 // graphqlRequest represents a GraphQL request payload.
 type graphqlRequest struct {
@@ -78,6 +93,16 @@ type enrichmentItem struct {
 	isPR   bool   // True if PR, false if Issue
 }
 
+// batchResult holds the results from processing a single batch.
+type batchResult struct {
+	batchIdx     int
+	batchSize    int
+	prResults    map[int]*PRGraphQLResult
+	issueResults map[int]*IssueGraphQLResult
+	prErr        error
+	issueErr     error
+}
+
 // EnrichNotificationsGraphQL enriches notifications using GraphQL batch queries.
 // Returns the number of successfully enriched items.
 func (c *Client) EnrichNotificationsGraphQL(notifications []Notification, token string, onProgress func(completed, total int)) (int, error) {
@@ -122,71 +147,124 @@ func (c *Client) EnrichNotificationsGraphQL(notifications []Notification, token 
 	total := len(items)
 	enriched := 0
 
-	// Process in batches
+	// Create batch jobs
+	var batches [][]enrichmentItem
 	for batchStart := 0; batchStart < len(items); batchStart += graphqlBatchSize {
 		batchEnd := batchStart + graphqlBatchSize
 		if batchEnd > len(items) {
 			batchEnd = len(items)
 		}
-		batch := items[batchStart:batchEnd]
+		batches = append(batches, items[batchStart:batchEnd])
+	}
 
-		// Separate PRs and Issues in this batch
-		var prItems, issueItems []enrichmentItem
-		for _, item := range batch {
-			if item.isPR {
-				prItems = append(prItems, item)
-			} else {
-				issueItems = append(issueItems, item)
+	log.Debug("processing batches concurrently", "batches", len(batches), "maxConcurrent", maxConcurrentBatches)
+
+	// Process batches with semaphore-limited concurrency
+	sem := make(chan struct{}, maxConcurrentBatches)
+	results := make(chan batchResult, len(batches))
+	var wg sync.WaitGroup
+
+	for batchIdx, batch := range batches {
+		wg.Add(1)
+		go func(idx int, b []enrichmentItem) {
+			defer wg.Done()
+			sem <- struct{}{}        // Acquire semaphore
+			defer func() { <-sem }() // Release semaphore
+
+			result := c.processBatch(b, token)
+			result.batchIdx = idx
+			result.batchSize = len(b)
+			results <- result
+		}(batchIdx, batch)
+	}
+
+	// Close results channel when all workers done
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	// Collect results and apply to notifications
+	for result := range results {
+		// Apply PR results
+		if result.prErr != nil {
+			log.Debug("GraphQL PR enrichment failed", "batch", result.batchIdx, "error", result.prErr)
+		} else if result.prResults != nil {
+			for idx, prResult := range result.prResults {
+				log.Debug("applying PR result",
+					"number", prResult.Number,
+					"additions", prResult.Additions,
+					"deletions", prResult.Deletions,
+					"reviewState", prResult.ReviewState,
+					"ciStatus", prResult.CIStatus)
+				applyPRResult(&notifications[idx], prResult)
+				enriched++
 			}
 		}
 
-		// Enrich PRs
-		if len(prItems) > 0 {
-			log.Debug("enriching PRs via GraphQL", "count", len(prItems))
-			results, err := c.batchEnrichPRs(prItems, token)
-			if err != nil {
-				log.Debug("GraphQL PR enrichment failed", "error", err)
-			} else {
-				log.Debug("GraphQL PR enrichment returned", "results", len(results))
-				for _, item := range prItems {
-					if result, ok := results[item.index]; ok {
-						log.Debug("applying PR result",
-							"repo", item.owner+"/"+item.repo,
-							"number", item.number,
-							"additions", result.Additions,
-							"deletions", result.Deletions,
-							"reviewState", result.ReviewState,
-							"ciStatus", result.CIStatus)
-						applyPRResult(&notifications[item.index], result)
-						enriched++
-					} else {
-						log.Debug("no result for PR", "repo", item.owner+"/"+item.repo, "number", item.number)
-					}
-				}
+		// Apply Issue results
+		if result.issueErr != nil {
+			log.Debug("GraphQL Issue enrichment failed", "batch", result.batchIdx, "error", result.issueErr)
+		} else if result.issueResults != nil {
+			for idx, issueResult := range result.issueResults {
+				applyIssueResult(&notifications[idx], issueResult)
+				enriched++
 			}
 		}
 
-		// Enrich Issues
-		if len(issueItems) > 0 {
-			results, err := c.batchEnrichIssues(issueItems, token)
-			if err != nil {
-				log.Debug("GraphQL Issue enrichment failed", "error", err)
-			} else {
-				for _, item := range issueItems {
-					if result, ok := results[item.index]; ok {
-						applyIssueResult(&notifications[item.index], result)
-						enriched++
-					}
-				}
-			}
-		}
-
+		// Report batch progress
 		if onProgress != nil {
-			onProgress(batchEnd, total)
+			onProgress(result.batchSize, total)
 		}
 	}
 
 	return enriched, nil
+}
+
+// processBatch processes a single batch, fetching PRs and Issues in parallel.
+func (c *Client) processBatch(batch []enrichmentItem, token string) batchResult {
+	var prItems, issueItems []enrichmentItem
+	for _, item := range batch {
+		if item.isPR {
+			prItems = append(prItems, item)
+		} else {
+			issueItems = append(issueItems, item)
+		}
+	}
+
+	var wg sync.WaitGroup
+	var prResults map[int]*PRGraphQLResult
+	var issueResults map[int]*IssueGraphQLResult
+	var prErr, issueErr error
+
+	// Fetch PRs and Issues in parallel within this batch
+	if len(prItems) > 0 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			log.Debug("enriching PRs via GraphQL", "count", len(prItems))
+			prResults, prErr = c.batchEnrichPRs(prItems, token)
+			if prErr == nil {
+				log.Debug("GraphQL PR enrichment returned", "results", len(prResults))
+			}
+		}()
+	}
+	if len(issueItems) > 0 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			log.Debug("enriching Issues via GraphQL", "count", len(issueItems))
+			issueResults, issueErr = c.batchEnrichIssues(issueItems, token)
+		}()
+	}
+	wg.Wait()
+
+	return batchResult{
+		prResults:    prResults,
+		issueResults: issueResults,
+		prErr:        prErr,
+		issueErr:     issueErr,
+	}
 }
 
 // batchEnrichPRs fetches PR details for multiple items in a single GraphQL query.
@@ -235,7 +313,7 @@ func (c *Client) executeGraphQL(query string, token string) (json.RawMessage, er
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := graphqlHTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("GraphQL request failed: %w", err)
 	}
@@ -288,12 +366,7 @@ func buildPRQuery(items []enrichmentItem) string {
       author { login }
       assignees(first: 10) { nodes { login } }
       labels(first: 20) { nodes { name } }
-      reviews(last: 100) {
-        nodes {
-          state
-          author { login }
-        }
-      }
+      reviewDecision
       commits(last: 1) {
         nodes {
           commit {
@@ -415,8 +488,8 @@ func parsePRResponse(data json.RawMessage, items []enrichmentItem) (map[int]*PRG
 			}
 		}
 
-		// Calculate review state from reviews
-		result.ReviewState = calculateReviewState(pr.Reviews.Nodes)
+		// Map reviewDecision to our review state format
+		result.ReviewState = mapReviewDecision(pr.ReviewDecision)
 
 		// Get CI status from status check rollup
 		result.CIStatus = getCIStatusFromCommits(pr.Commits.Nodes)
@@ -453,15 +526,8 @@ type prGraphQLData struct {
 			Name string `json:"name"`
 		} `json:"nodes"`
 	} `json:"labels"`
-	Reviews struct {
-		Nodes []struct {
-			State  string `json:"state"`
-			Author *struct {
-				Login string `json:"login"`
-			} `json:"author"`
-		} `json:"nodes"`
-	} `json:"reviews"`
-	Commits struct {
+	ReviewDecision string `json:"reviewDecision"`
+	Commits        struct {
 		Nodes []struct {
 			Commit struct {
 				StatusCheckRollup *struct {
@@ -577,47 +643,18 @@ type issueGraphQLData struct {
 	} `json:"comments"`
 }
 
-// calculateReviewState determines the overall review state from individual reviews.
-func calculateReviewState(reviews []struct {
-	State  string `json:"state"`
-	Author *struct {
-		Login string `json:"login"`
-	} `json:"author"`
-}) string {
-	// Track the latest review state per user
-	latestReviews := make(map[string]string)
-	for _, review := range reviews {
-		if review.Author == nil {
-			continue
-		}
-		state := review.State
-		if state != "" && state != "COMMENTED" && state != "PENDING" {
-			latestReviews[review.Author.Login] = state
-		}
-	}
-
-	hasApproval := false
-	hasChangesRequested := false
-
-	for _, state := range latestReviews {
-		switch state {
-		case "APPROVED":
-			hasApproval = true
-		case "CHANGES_REQUESTED":
-			hasChangesRequested = true
-		}
-	}
-
-	if hasChangesRequested {
-		return "changes_requested"
-	}
-	if hasApproval {
+// mapReviewDecision converts GitHub's reviewDecision enum to our internal format.
+func mapReviewDecision(decision string) string {
+	switch decision {
+	case "APPROVED":
 		return "approved"
+	case "CHANGES_REQUESTED":
+		return "changes_requested"
+	case "REVIEW_REQUIRED":
+		return "pending"
+	default:
+		return "pending"
 	}
-	if len(reviews) > 0 {
-		return "reviewed"
-	}
-	return "pending"
 }
 
 // getCIStatusFromCommits extracts CI status from the commit's status check rollup.

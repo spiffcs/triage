@@ -87,14 +87,16 @@ func (c *Client) EnrichNotificationsConcurrent(notifications []Notification, wor
 			if details, ok := cache.Get(&notifications[i]); ok {
 				notifications[i].Details = details
 				cacheHits++
-				if onProgress != nil {
-					onProgress(int(cacheHits), total)
-				}
 				continue
 			}
 		}
 		uncachedNotifications = append(uncachedNotifications, notifications[i])
 		uncachedIndices = append(uncachedIndices, i)
+	}
+
+	// Report cache hits as a single progress update (delta = cacheHits)
+	if cacheHits > 0 && onProgress != nil {
+		onProgress(int(cacheHits), total)
 	}
 
 	if cacheHits > 0 {
@@ -108,10 +110,10 @@ func (c *Client) EnrichNotificationsConcurrent(notifications []Notification, wor
 	// Use GraphQL for batch enrichment (uses GraphQL quota, not Core API)
 	log.Debug("enriching via GraphQL", "count", len(uncachedNotifications))
 
-	progressOffset := int(cacheHits)
-	enriched, err := c.EnrichNotificationsGraphQL(uncachedNotifications, c.token, func(completed, batchTotal int) {
+	enriched, err := c.EnrichNotificationsGraphQL(uncachedNotifications, c.token, func(delta, batchTotal int) {
 		if onProgress != nil {
-			onProgress(progressOffset+completed, total)
+			// Pass through the delta (number of items just processed)
+			onProgress(delta, total)
 		}
 	})
 
