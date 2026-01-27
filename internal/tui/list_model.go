@@ -26,10 +26,11 @@ type ListModel struct {
 	prSizeS           int
 	prSizeM           int
 	prSizeL           int
+	currentUser       string
 }
 
 // NewListModel creates a new list model
-func NewListModel(items []triage.PrioritizedItem, store *resolved.Store, weights config.ScoreWeights) ListModel {
+func NewListModel(items []triage.PrioritizedItem, store *resolved.Store, weights config.ScoreWeights, currentUser string) ListModel {
 	return ListModel{
 		items:             items,
 		cursor:            0,
@@ -41,6 +42,7 @@ func NewListModel(items []triage.PrioritizedItem, store *resolved.Store, weights
 		prSizeS:           weights.PRSizeS,
 		prSizeM:           weights.PRSizeM,
 		prSizeL:           weights.PRSizeL,
+		currentUser:       currentUser,
 	}
 }
 

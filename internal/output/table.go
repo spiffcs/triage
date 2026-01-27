@@ -27,6 +27,7 @@ type TableFormatter struct {
 	PRSizeS           int
 	PRSizeM           int
 	PRSizeL           int
+	CurrentUser       string
 }
 
 // hyperlink creates a clickable terminal hyperlink using OSC 8
@@ -205,9 +206,12 @@ func (f *TableFormatter) Format(items []triage.PrioritizedItem, w io.Writer) err
 			title = "⚡ " + title
 		}
 
-		// Add hot topic indicator
+		// Add hot topic indicator (suppress for issues where current user was the last commenter)
 		if n.Details != nil && f.HotTopicThreshold > 0 && n.Details.CommentCount > f.HotTopicThreshold {
-			title = "🔥 " + title
+			suppressForIssue := !n.Details.IsPR && n.Details.LastCommenter == f.CurrentUser
+			if !suppressForIssue {
+				title = "🔥 " + title
+			}
 		}
 
 		// Truncate title if too long (using display width for emoji support)

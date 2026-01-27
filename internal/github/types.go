@@ -72,8 +72,9 @@ type ItemDetails struct {
 	Assignees []string `json:"assignees"`
 
 	// Metadata
-	Labels       []string `json:"labels"`
-	CommentCount int      `json:"commentCount"`
+	Labels        []string `json:"labels"`
+	CommentCount  int      `json:"commentCount"`
+	LastCommenter string   `json:"lastCommenter,omitempty"`
 
 	// PR-specific
 	IsPR           bool       `json:"isPR"`

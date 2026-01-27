@@ -250,6 +250,20 @@ func (c *Client) enrichIssue(n *Notification, owner, repo string, number int) er
 		details.Labels = append(details.Labels, label.GetName())
 	}
 
+	// Fetch last commenter if there are comments
+	if issue.GetComments() > 0 {
+		comments, _, err := c.client.Issues.ListComments(c.ctx, owner, repo, number, &github.IssueListCommentsOptions{
+			Sort:      github.String("created"),
+			Direction: github.String("desc"),
+			ListOptions: github.ListOptions{
+				PerPage: 1,
+			},
+		})
+		if err == nil && len(comments) > 0 {
+			details.LastCommenter = comments[0].GetUser().GetLogin()
+		}
+	}
+
 	n.Details = details
 	return nil
 }

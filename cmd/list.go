@@ -466,11 +466,11 @@ func runList(_ *cobra.Command, _ []string, opts *Options) error {
 
 	// If running in a TTY with table format, launch interactive UI
 	if tui.ShouldUseTUI() && (format == "" || format == output.FormatTable) {
-		return tui.RunListUI(items, resolvedStore, weights)
+		return tui.RunListUI(items, resolvedStore, weights, currentUser)
 	}
 
 	// Output
-	formatter := output.NewFormatterWithWeights(format, weights)
+	formatter := output.NewFormatterWithWeights(format, weights, currentUser)
 
 	return formatter.Format(items, os.Stdout)
 }

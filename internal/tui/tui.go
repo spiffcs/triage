@@ -102,8 +102,8 @@ func WithError(err error) TaskEventOption {
 }
 
 // RunListUI starts the interactive list UI for triaging items
-func RunListUI(items []triage.PrioritizedItem, store *resolved.Store, weights config.ScoreWeights) error {
-	model := NewListModel(items, store, weights)
+func RunListUI(items []triage.PrioritizedItem, store *resolved.Store, weights config.ScoreWeights, currentUser string) error {
+	model := NewListModel(items, store, weights, currentUser)
 	p := tea.NewProgram(model, tea.WithAltScreen())
 	_, err := p.Run()
 	return err
