@@ -122,6 +122,19 @@ func (c *Client) EnrichNotificationsConcurrent(notifications []Notification, wor
 	// Copy enriched data back to original slice and cache results
 	for i, origIdx := range uncachedIndices {
 		notifications[origIdx] = uncachedNotifications[i]
+		// Log what we're copying back
+		n := &notifications[origIdx]
+		if n.Details != nil {
+			log.Debug("enriched notification",
+				"id", n.ID,
+				"repo", n.Repository.FullName,
+				"isPR", n.Details.IsPR,
+				"additions", n.Details.Additions,
+				"deletions", n.Details.Deletions,
+				"reviewState", n.Details.ReviewState)
+		} else {
+			log.Debug("notification not enriched - Details is nil", "id", n.ID, "repo", n.Repository.FullName)
+		}
 		// Cache successful enrichment
 		if cache != nil && uncachedNotifications[i].Details != nil {
 			if err := cache.Set(&notifications[origIdx], notifications[origIdx].Details); err != nil {

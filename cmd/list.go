@@ -427,6 +427,17 @@ func runList(_ *cobra.Command, _ []string, opts *Options) error {
 	// Process results: score and filter
 	sendTaskEvent(events, tui.TaskProcess, tui.StatusRunning)
 
+	// Debug: log state of notifications before prioritization
+	var withDetails, withoutDetails int
+	for _, n := range notifications {
+		if n.Details != nil {
+			withDetails++
+		} else {
+			withoutDetails++
+		}
+	}
+	log.Debug("notifications before prioritization", "total", len(notifications), "withDetails", withDetails, "withoutDetails", withoutDetails)
+
 	// Prioritize
 	engine := triage.NewEngine(currentUser, weights, quickWinLabels)
 	items := engine.Prioritize(notifications)
@@ -491,7 +502,8 @@ func runList(_ *cobra.Command, _ []string, opts *Options) error {
 	}
 
 	// If running in a TTY with table format, launch interactive UI
-	if tui.ShouldUseTUI() && (format == "" || format == output.FormatTable) {
+	// Use shouldUseTUI to respect verbose mode and --tui flag
+	if shouldUseTUI(opts) && (format == "" || format == output.FormatTable) {
 		return tui.RunListUI(items, resolvedStore, weights, currentUser)
 	}
 
@@ -503,6 +515,10 @@ func runList(_ *cobra.Command, _ []string, opts *Options) error {
 
 // shouldUseTUI determines whether to use the TUI based on options and environment.
 func shouldUseTUI(opts *Options) bool {
+	// Disable TUI when verbose logging is requested so logs are visible
+	if opts.Verbosity > 0 {
+		return false
+	}
 	if opts.TUI != nil {
 		return *opts.TUI
 	}

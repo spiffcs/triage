@@ -263,7 +263,7 @@ func renderStatus(n github.Notification, sizeXS, sizeS, sizeM, sizeL int) (strin
 		case "changes_requested":
 			coloredParts = append(coloredParts, listChangesStyle.Render("! CHANGES"))
 			plainWidth += 9
-		case "pending", "review_required":
+		case "pending", "review_required", "reviewed":
 			coloredParts = append(coloredParts, listReviewStyle.Render("* REVIEW"))
 			plainWidth += 8
 		}

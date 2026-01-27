@@ -692,6 +692,19 @@ func (c *Client) EnrichPRsConcurrent(notifications []Notification, workers int, 
 	// Copy enriched data back to original slice and cache results
 	for i, origIdx := range uncachedIndices {
 		notifications[origIdx] = uncachedNotifications[i]
+		// Log what we're copying back
+		n := &notifications[origIdx]
+		if n.Details != nil {
+			log.Debug("enriched PR",
+				"id", n.ID,
+				"repo", n.Repository.FullName,
+				"additions", n.Details.Additions,
+				"deletions", n.Details.Deletions,
+				"reviewState", n.Details.ReviewState,
+				"ciStatus", n.Details.CIStatus)
+		} else {
+			log.Debug("PR not enriched - Details is nil", "id", n.ID, "repo", n.Repository.FullName)
+		}
 		// Cache successful enrichment
 		if cache != nil && uncachedNotifications[i].Details != nil {
 			if err := cache.Set(&notifications[origIdx], notifications[origIdx].Details); err != nil {

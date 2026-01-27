@@ -87,16 +87,19 @@ func (c *Client) EnrichNotificationsGraphQL(notifications []Notification, token 
 	for i := range notifications {
 		n := &notifications[i]
 		if n.Subject.URL == "" {
+			log.Debug("skipping notification without Subject.URL", "id", n.ID)
 			continue
 		}
 
 		number, err := ExtractIssueNumber(n.Subject.URL)
 		if err != nil {
+			log.Debug("failed to extract issue number", "url", n.Subject.URL, "error", err)
 			continue
 		}
 
 		parts := strings.Split(n.Repository.FullName, "/")
 		if len(parts) != 2 {
+			log.Debug("invalid repository name", "fullName", n.Repository.FullName)
 			continue
 		}
 
@@ -110,8 +113,11 @@ func (c *Client) EnrichNotificationsGraphQL(notifications []Notification, token 
 	}
 
 	if len(items) == 0 {
+		log.Debug("no items to enrich via GraphQL")
 		return 0, nil
 	}
+
+	log.Debug("enriching items via GraphQL", "total", len(items))
 
 	total := len(items)
 	enriched := 0
@@ -136,14 +142,25 @@ func (c *Client) EnrichNotificationsGraphQL(notifications []Notification, token 
 
 		// Enrich PRs
 		if len(prItems) > 0 {
+			log.Debug("enriching PRs via GraphQL", "count", len(prItems))
 			results, err := c.batchEnrichPRs(prItems, token)
 			if err != nil {
 				log.Debug("GraphQL PR enrichment failed", "error", err)
 			} else {
+				log.Debug("GraphQL PR enrichment returned", "results", len(results))
 				for _, item := range prItems {
 					if result, ok := results[item.index]; ok {
+						log.Debug("applying PR result",
+							"repo", item.owner+"/"+item.repo,
+							"number", item.number,
+							"additions", result.Additions,
+							"deletions", result.Deletions,
+							"reviewState", result.ReviewState,
+							"ciStatus", result.CIStatus)
 						applyPRResult(&notifications[item.index], result)
 						enriched++
+					} else {
+						log.Debug("no result for PR", "repo", item.owner+"/"+item.repo, "number", item.number)
 					}
 				}
 			}
@@ -287,7 +304,7 @@ func buildPRQuery(items []enrichmentItem) string {
         }
       }
       comments { totalCount }
-      reviewComments { totalCount }
+      reviewThreads { totalCount }
     }
   }
 `, alias, item.owner, item.repo, item.number))
@@ -336,12 +353,14 @@ func parsePRResponse(data json.RawMessage, items []enrichmentItem) (map[int]*PRG
 		return nil, fmt.Errorf("failed to parse PR response data: %w", err)
 	}
 
+	log.Debug("parsing PR response", "aliases", len(rawData), "items", len(items))
 	results := make(map[int]*PRGraphQLResult)
 
 	for i, item := range items {
 		alias := fmt.Sprintf("pr%d", i)
 		repoData, ok := rawData[alias]
 		if !ok || repoData == nil || string(repoData) == "null" {
+			log.Debug("no data for PR alias", "alias", alias, "repo", item.owner+"/"+item.repo, "number", item.number)
 			continue
 		}
 
@@ -367,7 +386,7 @@ func parsePRResponse(data json.RawMessage, items []enrichmentItem) (map[int]*PRG
 			Mergeable:    pr.Mergeable,
 			CreatedAt:    pr.CreatedAt,
 			UpdatedAt:    pr.UpdatedAt,
-			CommentCount: pr.Comments.TotalCount + pr.ReviewComments.TotalCount,
+			CommentCount: pr.Comments.TotalCount + pr.ReviewThreads.TotalCount,
 		}
 
 		if pr.Author != nil {
@@ -454,9 +473,9 @@ type prGraphQLData struct {
 	Comments struct {
 		TotalCount int `json:"totalCount"`
 	} `json:"comments"`
-	ReviewComments struct {
+	ReviewThreads struct {
 		TotalCount int `json:"totalCount"`
-	} `json:"reviewComments"`
+	} `json:"reviewThreads"`
 }
 
 // parseIssueResponse parses the GraphQL response for Issues.
