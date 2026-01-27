@@ -52,6 +52,13 @@ jobs:
       - name: Bootstrap environment
         uses: ./.github/actions/bootstrap
 
+      - name: Validate Apple notarization credentials
+        run: .tool/quill submission list
+        env:
+          QUILL_NOTARY_ISSUER: ${{ secrets.APPLE_NOTARY_ISSUER }}
+          QUILL_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          QUILL_NOTARY_KEY: ${{ secrets.APPLE_NOTARY_KEY }}
+
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@e435ccd777264be153ace6237001ef4d979d3a7a # v6.4.0
         with:
@@ -60,6 +67,11 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          QUILL_SIGN_P12: ${{ secrets.APPLE_DEVELOPER_ID_CERT_CHAIN }}
+          QUILL_SIGN_PASSWORD: ${{ secrets.APPLE_SIGNING_CERT_PASSWORD }}
+          QUILL_NOTARY_ISSUER: ${{ secrets.APPLE_NOTARY_ISSUER }}
+          QUILL_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          QUILL_NOTARY_KEY: ${{ secrets.APPLE_NOTARY_KEY }}
 
   release-install-script:
     name: "Release install script"
