@@ -273,6 +273,11 @@ default_format: table
 # exclude_repos:
 #   - kubernetes/kubernetes
 #   - some-org/noisy-repo
+
+# Exclude bot authors (optional)
+# exclude_authors:
+#   - dependabot[bot]
+#   - renovate[bot]
 ```
 
 ### Customizing Score Weights
@@ -351,6 +356,19 @@ quick_win_labels:
 ```
 
 Labels are matched case-insensitively, use substring matching (e.g., `doc` matches `documentation`), and treat hyphens and spaces as equivalent (e.g., `good first issue` matches `good-first-issue`).
+
+### Excluding Bot Authors
+
+You can filter out PRs and issues from automated accounts like Dependabot or Renovate:
+
+```yaml
+exclude_authors:
+  - dependabot[bot]
+  - renovate[bot]
+  - github-actions[bot]
+```
+
+This removes items authored by these accounts from your triage list, reducing noise from automated dependency updates.
 
 ## Cache Location
 

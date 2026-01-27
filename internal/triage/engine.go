@@ -160,3 +160,34 @@ func FilterResolved(items []PrioritizedItem, store ResolvedStore) []PrioritizedI
 	}
 	return filtered
 }
+
+// FilterByExcludedAuthors removes items authored by users in the exclude list.
+// This is useful for filtering out bot accounts like dependabot, renovate, etc.
+func FilterByExcludedAuthors(items []PrioritizedItem, excludedAuthors []string) []PrioritizedItem {
+	if len(excludedAuthors) == 0 {
+		return items
+	}
+
+	// Build a set for O(1) lookup
+	excludeSet := make(map[string]bool)
+	for _, author := range excludedAuthors {
+		excludeSet[author] = true
+	}
+
+	filtered := make([]PrioritizedItem, 0, len(items))
+	for _, item := range items {
+		// Skip items without details (can't determine author)
+		if item.Notification.Details == nil {
+			filtered = append(filtered, item)
+			continue
+		}
+
+		// Skip if author is in the exclude list
+		if excludeSet[item.Notification.Details.Author] {
+			continue
+		}
+
+		filtered = append(filtered, item)
+	}
+	return filtered
+}
