@@ -12,6 +12,7 @@ import (
 type Config struct {
 	DefaultFormat  string   `yaml:"default_format,omitempty"`
 	ExcludeRepos   []string `yaml:"exclude_repos,omitempty"`
+	ExcludeAuthors []string `yaml:"exclude_authors,omitempty"`
 	QuickWinLabels []string `yaml:"quick_win_labels,omitempty"`
 
 	// Top-level config sections
@@ -376,6 +377,12 @@ func mergeConfig(global, local *Config) *Config {
 		result.ExcludeRepos = global.ExcludeRepos
 	}
 
+	if len(local.ExcludeAuthors) > 0 {
+		result.ExcludeAuthors = local.ExcludeAuthors
+	} else {
+		result.ExcludeAuthors = global.ExcludeAuthors
+	}
+
 	if len(local.QuickWinLabels) > 0 {
 		result.QuickWinLabels = local.QuickWinLabels
 	} else {
@@ -676,6 +683,7 @@ func DefaultConfig() *Config {
 	return &Config{
 		DefaultFormat:  "table",
 		ExcludeRepos:   []string{},
+		ExcludeAuthors: []string{},
 		QuickWinLabels: labels,
 		BaseScores: &BaseScoreOverrides{
 			ReviewRequested: &weights.ReviewRequested,
@@ -770,6 +778,11 @@ default_format: table
 # Exclude noisy repositories (optional)
 # exclude_repos:
 #   - owner/noisy-repo
+
+# Exclude bot authors (optional)
+# exclude_authors:
+#   - dependabot[bot]
+#   - renovate[bot]
 
 # Override scoring weights (optional)
 # base_scores:

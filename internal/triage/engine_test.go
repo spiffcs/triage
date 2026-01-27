@@ -283,3 +283,59 @@ func TestFilterByType(t *testing.T) {
 		})
 	}
 }
+
+func TestFilterByExcludedAuthors(t *testing.T) {
+	items := []PrioritizedItem{
+		makePrioritizedItem("1", github.ReasonReviewRequested, github.SubjectPullRequest, PriorityUrgent, &github.ItemDetails{Author: "dependabot[bot]"}),
+		makePrioritizedItem("2", github.ReasonReviewRequested, github.SubjectPullRequest, PriorityUrgent, &github.ItemDetails{Author: "renovate[bot]"}),
+		makePrioritizedItem("3", github.ReasonReviewRequested, github.SubjectPullRequest, PriorityUrgent, &github.ItemDetails{Author: "human-user"}),
+		makePrioritizedItem("4", github.ReasonSubscribed, github.SubjectIssue, PriorityFYI, nil), // nil Details - should be kept
+	}
+
+	tests := []struct {
+		name            string
+		excludedAuthors []string
+		wantIDs         []string
+	}{
+		{
+			name:            "filter dependabot",
+			excludedAuthors: []string{"dependabot[bot]"},
+			wantIDs:         []string{"2", "3", "4"},
+		},
+		{
+			name:            "filter multiple bots",
+			excludedAuthors: []string{"dependabot[bot]", "renovate[bot]"},
+			wantIDs:         []string{"3", "4"},
+		},
+		{
+			name:            "empty exclude list returns all",
+			excludedAuthors: []string{},
+			wantIDs:         []string{"1", "2", "3", "4"},
+		},
+		{
+			name:            "nil exclude list returns all",
+			excludedAuthors: nil,
+			wantIDs:         []string{"1", "2", "3", "4"},
+		},
+		{
+			name:            "non-matching author returns all",
+			excludedAuthors: []string{"unknown-bot"},
+			wantIDs:         []string{"1", "2", "3", "4"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := FilterByExcludedAuthors(items, tt.excludedAuthors)
+			if len(got) != len(tt.wantIDs) {
+				t.Errorf("FilterByExcludedAuthors() returned %d items, want %d", len(got), len(tt.wantIDs))
+				return
+			}
+			for i, item := range got {
+				if item.Notification.ID != tt.wantIDs[i] {
+					t.Errorf("FilterByExcludedAuthors()[%d].ID = %s, want %s", i, item.Notification.ID, tt.wantIDs[i])
+				}
+			}
+		})
+	}
+}

@@ -439,6 +439,11 @@ func runList(_ *cobra.Command, _ []string, opts *Options) error {
 		items = triage.FilterByType(items, subjectType)
 	}
 
+	// Filter out excluded authors (bots like dependabot, renovate, etc.)
+	if len(cfg.ExcludeAuthors) > 0 {
+		items = triage.FilterByExcludedAuthors(items, cfg.ExcludeAuthors)
+	}
+
 	// Filter out resolved items (that haven't had new activity)
 	if resolvedStore != nil {
 		items = triage.FilterResolved(items, resolvedStore)
