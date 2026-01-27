@@ -3,13 +3,28 @@ version: 2
 project_name: triage
 
 builds:
-  - id: triage
+  - id: triage-linux
     binary: triage
     main: ./main.go
     env:
       - CGO_ENABLED=0
     goos:
       - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/spiffcs/triage/cmd.version={{ .Version }}
+      - -X github.com/spiffcs/triage/cmd.commit={{ .Commit }}
+      - -X github.com/spiffcs/triage/cmd.date={{ .Date }}
+
+  - id: triage-darwin
+    binary: triage
+    main: ./main.go
+    env:
+      - CGO_ENABLED=0
+    goos:
       - darwin
     goarch:
       - amd64
@@ -19,6 +34,11 @@ builds:
       - -X github.com/spiffcs/triage/cmd.version={{ .Version }}
       - -X github.com/spiffcs/triage/cmd.commit={{ .Commit }}
       - -X github.com/spiffcs/triage/cmd.date={{ .Date }}
+    hooks:
+      post:
+        - cmd: .tool/quill sign-and-notarize "{{ .Path }}" --dry-run={{ .IsSnapshot }} --ad-hoc={{ .IsSnapshot }} -vv
+          env:
+            - QUILL_LOG_FILE=/tmp/quill-{{ .Target }}.log
 
 archives:
   - id: default
