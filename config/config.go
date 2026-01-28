@@ -30,6 +30,8 @@ type OrphanedConfig struct {
 	StaleDays                 int      `yaml:"stale_days,omitempty"`                   // Default: 7
 	ConsecutiveAuthorComments int      `yaml:"consecutive_author_comments,omitempty"` // Default: 2
 	MaxItemsPerRepo           int      `yaml:"max_items_per_repo,omitempty"`           // Default: 20
+	AutoDiscover              *bool    `yaml:"auto_discover,omitempty"`                // Default: true
+	MaxDiscover               int      `yaml:"max_discover,omitempty"`                 // Default: 50
 }
 
 // BaseScoreOverrides allows customizing base scores for notification reasons
@@ -720,6 +722,8 @@ func mergeOrphanedConfig(global, local *OrphanedConfig) *OrphanedConfig {
 		result.StaleDays = global.StaleDays
 		result.ConsecutiveAuthorComments = global.ConsecutiveAuthorComments
 		result.MaxItemsPerRepo = global.MaxItemsPerRepo
+		result.AutoDiscover = global.AutoDiscover
+		result.MaxDiscover = global.MaxDiscover
 	}
 
 	if local != nil {
@@ -741,11 +745,20 @@ func mergeOrphanedConfig(global, local *OrphanedConfig) *OrphanedConfig {
 		if local.MaxItemsPerRepo > 0 {
 			result.MaxItemsPerRepo = local.MaxItemsPerRepo
 		}
+		// Local AutoDiscover overrides global if set
+		if local.AutoDiscover != nil {
+			result.AutoDiscover = local.AutoDiscover
+		}
+		// Local MaxDiscover overrides if non-zero
+		if local.MaxDiscover > 0 {
+			result.MaxDiscover = local.MaxDiscover
+		}
 	}
 
 	// Return nil if effectively empty
 	if !result.Enabled && len(result.Repos) == 0 && result.StaleDays == 0 &&
-		result.ConsecutiveAuthorComments == 0 && result.MaxItemsPerRepo == 0 {
+		result.ConsecutiveAuthorComments == 0 && result.MaxItemsPerRepo == 0 &&
+		result.AutoDiscover == nil && result.MaxDiscover == 0 {
 		return nil
 	}
 
@@ -796,6 +809,11 @@ func (c *Config) IsRepoExcluded(repoFullName string) bool {
 	return false
 }
 
+// boolPtr returns a pointer to a bool value
+func boolPtr(b bool) *bool {
+	return &b
+}
+
 // DefaultQuickWinLabels returns the default labels that indicate quick wins.
 // Labels are matched case-insensitively and hyphens/spaces are treated as equivalent,
 // so "good first issue" will match "good-first-issue", "Good First Issue", etc.
@@ -818,6 +836,22 @@ func (c *Config) GetQuickWinLabels() []string {
 		return c.QuickWinLabels
 	}
 	return DefaultQuickWinLabels()
+}
+
+// GetOrphanedAutoDiscover returns whether auto-discovery is enabled (default: true)
+func (c *Config) GetOrphanedAutoDiscover() bool {
+	if c.Orphaned != nil && c.Orphaned.AutoDiscover != nil {
+		return *c.Orphaned.AutoDiscover
+	}
+	return true // Default to enabled
+}
+
+// GetOrphanedMaxDiscover returns the maximum number of repos to discover (default: 15)
+func (c *Config) GetOrphanedMaxDiscover() int {
+	if c.Orphaned != nil && c.Orphaned.MaxDiscover > 0 {
+		return c.Orphaned.MaxDiscover
+	}
+	return 15 // Default
 }
 
 // DefaultConfig returns a fully populated config with all default values.
@@ -883,6 +917,8 @@ func DefaultConfig() *Config {
 			StaleDays:                 7,
 			ConsecutiveAuthorComments: 2,
 			MaxItemsPerRepo:           50,
+			AutoDiscover:              boolPtr(true),
+			MaxDiscover:               15,
 		},
 	}
 }
@@ -950,12 +986,14 @@ default_format: table
 
 # Orphaned contribution detection (for 'triage orphaned' command)
 # orphaned:
-#   repos:
+#   repos:                              # Explicit repos to monitor (optional)
 #     - myorg/repo1
 #     - myorg/repo2
-#   stale_days: 7                      # Days without team response
-#   consecutive_author_comments: 2     # Consecutive unanswered comments
-#   max_items_per_repo: 50             # Limit per repository
+#   auto_discover: true                 # Auto-discover repos with write access
+#   max_discover: 15                    # Max repos to auto-discover
+#   stale_days: 7                       # Days without team response
+#   consecutive_author_comments: 2      # Consecutive unanswered comments
+#   max_items_per_repo: 50              # Limit per repository
 
 # See README.md for full configuration options
 `

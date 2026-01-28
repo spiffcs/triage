@@ -26,7 +26,9 @@ type OrphanedOptions struct {
 	Limit               int
 	Format              string
 	Verbosity           int
-	TUI                 *bool // nil = auto-detect, true = force TUI, false = disable TUI
+	TUI                 *bool  // nil = auto-detect, true = force TUI, false = disable TUI
+	NoDiscover          bool   // Disable automatic repository discovery
+	Type                string // Filter by type (pr, issue)
 }
 
 // NewCmdOrphaned creates the orphaned command.
@@ -68,6 +70,12 @@ Examples:
 
 	// TUI flag with tri-state: nil = auto, true = force, false = disable
 	cmd.Flags().Var(&orphanedTUIFlag{opts: opts}, "tui", "Enable/disable TUI progress (default: auto-detect)")
+
+	// Discovery opt-out flag
+	cmd.Flags().BoolVar(&opts.NoDiscover, "no-discover", false, "Disable automatic repository discovery")
+
+	// Type filter
+	cmd.Flags().StringVarP(&opts.Type, "type", "t", "", "Filter by type (pr, issue)")
 
 	return cmd
 }
@@ -143,8 +151,68 @@ func runOrphaned(opts *OrphanedOptions) error {
 		repos = cfg.Orphaned.Repos
 	}
 
+	// Create GitHub client early (needed for discovery)
+	token := cfg.GetGitHubToken()
+	if token == "" {
+		return fmt.Errorf("GitHub token not configured. Set the GITHUB_TOKEN environment variable")
+	}
+
+	ghClient, err := github.NewClient(token)
+	if err != nil {
+		return err
+	}
+
+	// Set up TUI event channel if using TUI
+	var events chan tui.Event
+	var tuiDone chan error
+	if useTUI {
+		events = make(chan tui.Event, 100)
+		tuiDone = make(chan error, 1)
+		// Start TUI immediately so it can show auth progress
+		// Use OrphanedTasks since we don't have an enrichment step
+		go func() {
+			tuiDone <- tui.Run(events, tui.WithTasks(tui.OrphanedTasks()))
+		}()
+	}
+
+	// Get current user for scoring and discovery
+	sendTaskEvent(events, tui.TaskAuth, tui.StatusRunning)
+	currentUser, err := ghClient.GetAuthenticatedUser()
+	if err != nil {
+		sendTaskEvent(events, tui.TaskAuth, tui.StatusError, tui.WithError(err))
+		closeTUI(events, tuiDone)
+		return fmt.Errorf("failed to get authenticated user: %w", err)
+	}
+	sendTaskEvent(events, tui.TaskAuth, tui.StatusComplete, tui.WithMessage(currentUser))
+
+	// Auto-discover repos if none specified and discovery is enabled
+	if len(repos) == 0 && !opts.NoDiscover && cfg.GetOrphanedAutoDiscover() {
+		sendTaskEvent(events, tui.TaskFetch, tui.StatusRunning,
+			tui.WithMessage("discovering repositories..."))
+
+		discovered, err := ghClient.DiscoverMaintainableRepos(github.DiscoveryOptions{
+			MaxRepos: cfg.GetOrphanedMaxDiscover(),
+		})
+		if err != nil {
+			sendTaskEvent(events, tui.TaskFetch, tui.StatusError, tui.WithError(err))
+			closeTUI(events, tuiDone)
+			return fmt.Errorf("failed to discover repositories: %w", err)
+		}
+
+		if len(discovered) == 0 {
+			sendTaskEvent(events, tui.TaskFetch, tui.StatusError,
+				tui.WithError(fmt.Errorf("no repositories found")))
+			closeTUI(events, tuiDone)
+			return fmt.Errorf("no repositories found where you have maintainer access")
+		}
+
+		repos = github.RepoNamesToStrings(discovered)
+		log.Info("discovered maintainable repositories", "count", len(repos))
+	}
+
 	if len(repos) == 0 {
-		return fmt.Errorf("no repositories specified. Use --repos flag or configure orphaned.repos in config")
+		closeTUI(events, tuiDone)
+		return fmt.Errorf("no repositories specified. Use --repos flag, configure orphaned.repos in config, or allow auto-discovery")
 	}
 
 	// Apply config defaults if flags weren't explicitly set
@@ -163,41 +231,9 @@ func runOrphaned(opts *OrphanedOptions) error {
 	// Parse since duration
 	sinceTime, err := parseDuration(opts.Since)
 	if err != nil {
+		closeTUI(events, tuiDone)
 		return fmt.Errorf("invalid since duration: %w", err)
 	}
-
-	// Create GitHub client
-	token := cfg.GetGitHubToken()
-	if token == "" {
-		return fmt.Errorf("GitHub token not configured. Set the GITHUB_TOKEN environment variable")
-	}
-
-	ghClient, err := github.NewClient(token)
-	if err != nil {
-		return err
-	}
-
-	// Set up TUI event channel if using TUI
-	var events chan tui.Event
-	var tuiDone chan error
-	if useTUI {
-		events = make(chan tui.Event, 100)
-		tuiDone = make(chan error, 1)
-		// Start TUI immediately so it can show auth progress
-		go func() {
-			tuiDone <- tui.Run(events)
-		}()
-	}
-
-	// Get current user for scoring
-	sendTaskEvent(events, tui.TaskAuth, tui.StatusRunning)
-	currentUser, err := ghClient.GetAuthenticatedUser()
-	if err != nil {
-		sendTaskEvent(events, tui.TaskAuth, tui.StatusError, tui.WithError(err))
-		closeTUI(events, tuiDone)
-		return fmt.Errorf("failed to get authenticated user: %w", err)
-	}
-	sendTaskEvent(events, tui.TaskAuth, tui.StatusComplete, tui.WithMessage(currentUser))
 
 	log.Info("searching for orphaned contributions",
 		"repos", strings.Join(repos, ","),
@@ -244,6 +280,21 @@ func runOrphaned(opts *OrphanedOptions) error {
 		return items[i].Score > items[j].Score
 	})
 
+	// Filter by type if specified
+	if opts.Type != "" {
+		var subjectType github.SubjectType
+		switch opts.Type {
+		case "pr", "PR", "pullrequest", "PullRequest":
+			subjectType = github.SubjectPullRequest
+		case "issue", "Issue":
+			subjectType = github.SubjectIssue
+		default:
+			closeTUI(events, tuiDone)
+			return fmt.Errorf("invalid type: %s (must be 'pr' or 'issue')", opts.Type)
+		}
+		items = triage.FilterByType(items, subjectType)
+	}
+
 	// Filter out resolved items (that haven't had new activity)
 	if resolvedStore != nil {
 		items = triage.FilterResolved(items, resolvedStore)
@@ -263,7 +314,7 @@ func runOrphaned(opts *OrphanedOptions) error {
 
 	// If running in a TTY with table format, launch interactive UI
 	if shouldUseOrphanedTUI(opts) && (format == "" || format == output.FormatTable) {
-		return tui.RunListUI(items, resolvedStore, weights, currentUser, tui.WithHideAssignedCI())
+		return tui.RunListUI(items, resolvedStore, weights, currentUser, tui.WithHideAssignedCI(), tui.WithHidePriority())
 	}
 
 	// Output

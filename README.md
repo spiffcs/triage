@@ -111,6 +111,9 @@ triage -l 20         # Show only first 20 items
 Find external contributions (PRs and issues from non-team members) that haven't received team engagement. This helps teams identify community contributions that may be falling through the cracks.
 
 ```bash
+# Auto-discover repos where you have write access (default behavior)
+triage orphaned
+
 # Search specific repositories
 triage orphaned --repos anchore/vunnel,anchore/grype
 
@@ -123,6 +126,9 @@ triage orphaned --repos myorg/myrepo --stale-days 14 --consecutive 3
 # Look back further in time
 triage orphaned --repos myorg/myrepo --since 60d
 
+# Disable auto-discovery (requires --repos or config)
+triage orphaned --no-discover --repos myorg/myrepo
+
 # Output as JSON for scripting
 triage orphaned --repos myorg/myrepo -f json
 
@@ -130,11 +136,16 @@ triage orphaned --repos myorg/myrepo -f json
 triage orphaned --repos myorg/myrepo -v
 ```
 
+**Auto-Discovery:**
+
+When no repositories are specified via `--repos` or config, the command automatically discovers repositories where you have maintainer-level access (WRITE, MAINTAIN, or ADMIN permissions). Repositories are sorted by most recently pushed, prioritizing active repos. By default, up to 15 repositories are discovered (configurable via `orphaned.max_discover`).
+
 **Flags:**
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--repos` | (from config) | Repositories to monitor (owner/repo) |
+| `--repos` | (auto-discover) | Repositories to monitor (owner/repo) |
+| `--no-discover` | `false` | Disable automatic repository discovery |
 | `--since` | `30d` | Look back period for contributions |
 | `--stale-days` | `7` | Days without team activity to be considered orphaned |
 | `--consecutive` | `2` | Consecutive author comments without response to flag |
@@ -159,9 +170,10 @@ The orphaned command uses the same interactive TUI as the main `triage` command,
 
 ### Cache Management
 
-The tool uses a three-tier caching strategy to reduce API usage:
+The tool uses a multi-tier caching strategy to reduce API usage:
 - **Item details** (issue/PR metadata): cached for 24 hours
 - **Notification lists**: cached for 1 hour
+- **Discovered repos** (for orphaned command): cached for 1 hour
 - **PR lists** (review-requested and authored PRs): cached for 5 minutes
 
 ```bash
@@ -443,19 +455,28 @@ This removes items authored by these accounts from your triage list, reducing no
 
 ### Configuring Orphaned Detection
 
-Configure defaults for the `triage orphaned` command to monitor your team's repositories:
+Configure defaults for the `triage orphaned` command:
 
 ```yaml
 orphaned:
+  # Repository discovery (when --repos not specified)
+  auto_discover: true                # Auto-discover repos with write access (default: true)
+  max_discover: 15                   # Max repos to auto-discover (default: 15)
+
+  # Or specify explicit repos to monitor
   repos:
     - myorg/repo1
     - myorg/repo2
+
+  # Detection thresholds
   stale_days: 7                      # Days without team response
   consecutive_author_comments: 2     # Consecutive unanswered comments
   max_items_per_repo: 50             # Limit per repository
 ```
 
-With this configuration, running `triage orphaned` will automatically use these settings without requiring command-line flags.
+**Auto-discovery** finds repositories where you have WRITE, MAINTAIN, or ADMIN permissions, sorted by most recently pushed. This is useful when you want the command to "just work" without configuration. Set `auto_discover: false` to require explicit `--repos` or configured repos.
+
+With explicit repos configured, running `triage orphaned` will use those settings without requiring command-line flags.
 
 ### Customizing Urgency Triggers
 

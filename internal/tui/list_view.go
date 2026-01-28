@@ -46,9 +46,9 @@ func renderListView(m ListModel) string {
 	}
 
 	// Render header
-	b.WriteString(renderHeader(m.hideAssignedCI))
+	b.WriteString(renderHeader(m.hideAssignedCI, m.hidePriority))
 	b.WriteString("\n")
-	b.WriteString(renderSeparator(m.hideAssignedCI))
+	b.WriteString(renderSeparator(m.hideAssignedCI, m.hidePriority))
 	b.WriteString("\n")
 
 	// Calculate scroll window
@@ -57,7 +57,7 @@ func renderListView(m ListModel) string {
 	// Render visible items
 	for i := start; i < end; i++ {
 		selected := i == m.cursor
-		b.WriteString(renderRow(m.items[i], selected, m.hotTopicThreshold, m.prSizeXS, m.prSizeS, m.prSizeM, m.prSizeL, m.currentUser, m.hideAssignedCI))
+		b.WriteString(renderRow(m.items[i], selected, m.hotTopicThreshold, m.prSizeXS, m.prSizeS, m.prSizeM, m.prSizeL, m.currentUser, m.hideAssignedCI, m.hidePriority))
 		b.WriteString("\n")
 	}
 
@@ -104,8 +104,19 @@ func calculateScrollWindow(cursor, total, viewHeight int) (start, end int) {
 }
 
 // renderHeader renders the table header
-func renderHeader(hideAssignedCI bool) string {
+func renderHeader(hideAssignedCI, hidePriority bool) string {
 	if hideAssignedCI {
+		if hidePriority {
+			return listHeaderStyle.Render(fmt.Sprintf(
+				"  %-*s  %-*s  %-*s  %-*s  %-*s  %s",
+				colType, "Type",
+				colRepo, "Repository",
+				colTitle, "Title",
+				colStatus, "Status",
+				colSignal, "Signal",
+				"Age",
+			))
+		}
 		return listHeaderStyle.Render(fmt.Sprintf(
 			"  %-*s  %-*s  %-*s  %-*s  %-*s  %-*s  %s",
 			colPriority, "Priority",
@@ -114,6 +125,18 @@ func renderHeader(hideAssignedCI bool) string {
 			colTitle, "Title",
 			colStatus, "Status",
 			colSignal, "Signal",
+			"Age",
+		))
+	}
+	if hidePriority {
+		return listHeaderStyle.Render(fmt.Sprintf(
+			"  %-*s  %-*s  %-*s  %-*s  %-*s  %-*s  %s",
+			colType, "Type",
+			colAssigned, "Assigned",
+			colCI, "CI",
+			colRepo, "Repository",
+			colTitle, "Title",
+			colStatus, "Status",
 			"Age",
 		))
 	}
@@ -131,18 +154,22 @@ func renderHeader(hideAssignedCI bool) string {
 }
 
 // renderSeparator renders the header separator line
-func renderSeparator(hideAssignedCI bool) string {
+func renderSeparator(hideAssignedCI, hidePriority bool) string {
 	var width int
+	priorityWidth := colPriority + 2 // column + spacing
+	if hidePriority {
+		priorityWidth = 0
+	}
 	if hideAssignedCI {
-		width = 2 + colPriority + 2 + colType + 2 + colRepo + 2 + colTitle + 2 + colStatus + 2 + colSignal + 2 + colAge
+		width = 2 + priorityWidth + colType + 2 + colRepo + 2 + colTitle + 2 + colStatus + 2 + colSignal + 2 + colAge
 	} else {
-		width = 2 + colPriority + 2 + colType + 2 + colAssigned + 2 + colCI + 2 + colRepo + 2 + colTitle + 2 + colStatus + 2 + colAge
+		width = 2 + priorityWidth + colType + 2 + colAssigned + 2 + colCI + 2 + colRepo + 2 + colTitle + 2 + colStatus + 2 + colAge
 	}
 	return listSeparatorStyle.Render(strings.Repeat("─", width))
 }
 
 // renderRow renders a single item row
-func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, prSizeXS, prSizeS, prSizeM, prSizeL int, currentUser string, hideAssignedCI bool) string {
+func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, prSizeXS, prSizeS, prSizeM, prSizeL int, currentUser string, hideAssignedCI, hidePriority bool) string {
 	n := item.Notification
 
 	// Cursor indicator
@@ -164,8 +191,13 @@ func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, pr
 	typeStr = padRight(typeStr, len(typeStr), colType)
 
 	// Priority with color - need to pad based on visible width
-	priority, priorityWidth := renderPriority(item.Priority)
-	priority = padRight(priority, priorityWidth, colPriority)
+	priority := ""
+	if !hidePriority {
+		var priorityWidth int
+		priority, priorityWidth = renderPriority(item.Priority)
+		priority = padRight(priority, priorityWidth, colPriority)
+		priority += "  " // spacing
+	}
 
 	// Title with indicators
 	title := n.Subject.Title
@@ -209,7 +241,7 @@ func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, pr
 		signal, signalWidth := renderSignal(n.Details)
 		signal = padRight(signal, signalWidth, colSignal)
 
-		row = fmt.Sprintf("%s%s  %s  %s  %s  %s  %s  %s",
+		row = fmt.Sprintf("%s%s%s  %s  %s  %s  %s  %s",
 			cursor,
 			priority,
 			typeStr,
@@ -227,7 +259,7 @@ func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, pr
 		ci, ciWidth := renderCI(n.Details, isPR)
 		ci = padRight(ci, ciWidth, colCI)
 
-		row = fmt.Sprintf("%s%s  %s  %s  %s  %s  %s  %s  %s",
+		row = fmt.Sprintf("%s%s%s  %s  %s  %s  %s  %s  %s",
 			cursor,
 			priority,
 			typeStr,

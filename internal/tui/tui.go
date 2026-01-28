@@ -11,8 +11,8 @@ import (
 )
 
 // Run starts the TUI and blocks until it completes.
-func Run(events <-chan Event) error {
-	model := NewModel(events)
+func Run(events <-chan Event, opts ...ModelOption) error {
+	model := NewModel(events, opts...)
 	// Don't use alt screen - render inline
 	p := tea.NewProgram(model)
 	_, err := p.Run()

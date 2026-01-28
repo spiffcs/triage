@@ -28,6 +28,7 @@ type ListModel struct {
 	prSizeL           int
 	currentUser       string
 	hideAssignedCI    bool // Hide Assigned and CI columns (for orphaned view)
+	hidePriority      bool // Hide Priority column (for orphaned view)
 }
 
 // ListOption is a functional option for configuring ListModel
@@ -37,6 +38,13 @@ type ListOption func(*ListModel)
 func WithHideAssignedCI() ListOption {
 	return func(m *ListModel) {
 		m.hideAssignedCI = true
+	}
+}
+
+// WithHidePriority hides the Priority column
+func WithHidePriority() ListOption {
+	return func(m *ListModel) {
+		m.hidePriority = true
 	}
 }
 

@@ -26,8 +26,37 @@ type Model struct {
 // doneMsg signals that all events have been processed.
 type doneMsg struct{}
 
+// ModelOption is a functional option for configuring a Model.
+type ModelOption func(*Model)
+
+// WithTasks sets the tasks to display in the TUI.
+func WithTasks(tasks []Task) ModelOption {
+	return func(m *Model) {
+		m.tasks = tasks
+	}
+}
+
+// DefaultTasks returns the default task list for the main triage command.
+func DefaultTasks() []Task {
+	return []Task{
+		NewTask(TaskAuth, "Authenticating"),
+		NewTask(TaskFetch, "Fetching data"),
+		NewTask(TaskEnrich, "Enriching items"),
+		NewTask(TaskProcess, "Processing results"),
+	}
+}
+
+// OrphanedTasks returns the task list for the orphaned command (no enrichment step).
+func OrphanedTasks() []Task {
+	return []Task{
+		NewTask(TaskAuth, "Authenticating"),
+		NewTask(TaskFetch, "Fetching data"),
+		NewTask(TaskProcess, "Processing results"),
+	}
+}
+
 // NewModel creates a new TUI model.
-func NewModel(events <-chan Event) Model {
+func NewModel(events <-chan Event, opts ...ModelOption) Model {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 
@@ -37,21 +66,18 @@ func NewModel(events <-chan Event) Model {
 		progress.WithoutPercentage(),
 	)
 
-	// Task order matches actual execution order in cmd/list.go
-	// Using simplified parallel flow for better performance
-	tasks := []Task{
-		NewTask(TaskAuth, "Authenticating"),
-		NewTask(TaskFetch, "Fetching data"),
-		NewTask(TaskEnrich, "Enriching items"),
-		NewTask(TaskProcess, "Processing results"),
-	}
-
-	return Model{
-		tasks:    tasks,
+	m := Model{
+		tasks:    DefaultTasks(),
 		spinner:  s,
 		progress: p,
 		events:   events,
 	}
+
+	for _, opt := range opts {
+		opt(&m)
+	}
+
+	return m
 }
 
 // Init initializes the model.

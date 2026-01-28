@@ -243,6 +243,16 @@ const NotificationListCacheTTL = 1 * time.Hour
 // but we want relatively fresh results for proactive outreach
 const OrphanedListCacheTTL = 15 * time.Minute
 
+// DiscoveredReposCacheTTL is longer since repo access doesn't change frequently
+const DiscoveredReposCacheTTL = 1 * time.Hour
+
+// DiscoveredReposCacheEntry stores cached discovered repositories
+type DiscoveredReposCacheEntry struct {
+	Repos    []string  `json:"repos"`
+	CachedAt time.Time `json:"cachedAt"`
+	Version  int       `json:"version"`
+}
+
 // prListCacheKey generates a cache key for a PR list
 func (c *Cache) prListCacheKey(username string, listType string) string {
 	return fmt.Sprintf("prlist_%s_%s.json", listType, username)
@@ -351,6 +361,58 @@ func (c *Cache) SetNotificationList(username string, notifications []Notificatio
 	}
 
 	key := c.notificationListCacheKey(username)
+	path := filepath.Join(c.dir, key)
+
+	return os.WriteFile(path, data, 0600)
+}
+
+// discoveredReposCacheKey generates a cache key for discovered repos
+func (c *Cache) discoveredReposCacheKey(username string) string {
+	return fmt.Sprintf("discovered_repos_%s.json", username)
+}
+
+// GetDiscoveredRepos retrieves cached discovered repositories
+func (c *Cache) GetDiscoveredRepos(username string) ([]string, bool) {
+	key := c.discoveredReposCacheKey(username)
+	path := filepath.Join(c.dir, key)
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, false
+	}
+
+	var entry DiscoveredReposCacheEntry
+	if err := json.Unmarshal(data, &entry); err != nil {
+		return nil, false
+	}
+
+	// Check version (invalidate old cache format)
+	if entry.Version != cacheVersion {
+		return nil, false
+	}
+
+	// Check TTL
+	if time.Since(entry.CachedAt) > DiscoveredReposCacheTTL {
+		return nil, false
+	}
+
+	return entry.Repos, true
+}
+
+// SetDiscoveredRepos caches discovered repositories
+func (c *Cache) SetDiscoveredRepos(username string, repos []string) error {
+	entry := DiscoveredReposCacheEntry{
+		Repos:    repos,
+		CachedAt: time.Now(),
+		Version:  cacheVersion,
+	}
+
+	data, err := json.Marshal(entry)
+	if err != nil {
+		return err
+	}
+
+	key := c.discoveredReposCacheKey(username)
 	path := filepath.Join(c.dir, key)
 
 	return os.WriteFile(path, data, 0600)
