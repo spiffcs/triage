@@ -204,3 +204,59 @@ func TestParseDuration(t *testing.T) {
 		})
 	}
 }
+
+func TestParseSortFlag(t *testing.T) {
+	tests := []struct {
+		input      string
+		wantColumn string
+		wantDesc   bool
+		wantErr    bool
+	}{
+		// Empty defaults to updated descending
+		{"", "updated", true, false},
+		// Valid columns without prefix (default to descending for dates)
+		{"updated", "updated", true, false},
+		{"created", "created", true, false},
+		{"author", "author", true, false},
+		{"repo", "repo", true, false},
+		{"comments", "comments", true, false},
+		{"stale", "stale", true, false},
+		{"size", "size", true, false},
+		// Explicit descending
+		{"-updated", "updated", true, false},
+		{"-author", "author", true, false},
+		// Explicit ascending
+		{"+updated", "updated", false, false},
+		{"+author", "author", false, false},
+		{"+stale", "stale", false, false},
+		// Invalid columns
+		{"invalid", "", false, true},
+		{"foo", "", false, true},
+		{"-invalid", "", false, true},
+		{"+bar", "", false, true},
+		// Edge cases
+		{"-", "", false, true},
+		{"+", "", false, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			cfg, err := parseSortFlag(tt.input)
+			if tt.wantErr {
+				if err == nil {
+					t.Error("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if cfg.Column != tt.wantColumn {
+				t.Errorf("expected column %q, got %q", tt.wantColumn, cfg.Column)
+			}
+			if cfg.Descending != tt.wantDesc {
+				t.Errorf("expected descending=%v, got %v", tt.wantDesc, cfg.Descending)
+			}
+		})
+	}
+}

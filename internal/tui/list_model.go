@@ -12,14 +12,14 @@ import (
 	"github.com/spiffcs/triage/internal/triage"
 )
 
-// Pane represents which pane is active in the dual-pane TUI
-type Pane int
+// pane represents which pane is active in the dual-pane TUI
+type pane int
 
 const (
-	// PanePriority is the priority list pane (non-orphaned items)
-	PanePriority Pane = iota
-	// PaneOrphaned is the orphaned list pane
-	PaneOrphaned
+	// panePriority is the priority list pane (non-orphaned items)
+	panePriority pane = iota
+	// paneOrphaned is the orphaned list pane
+	paneOrphaned
 )
 
 // ListModel is the Bubble Tea model for the interactive notification list
@@ -27,7 +27,7 @@ type ListModel struct {
 	items               []triage.PrioritizedItem
 	priorityItems       []triage.PrioritizedItem // Items excluding orphaned
 	orphanedItems       []triage.PrioritizedItem // Only orphaned items
-	activePane          Pane                     // Which pane is focused
+	activePane          pane                     // Which pane is focused
 	priorityCursor      int                      // Cursor for priority pane
 	orphanedCursor      int                      // Cursor for orphaned pane
 	resolved            *resolved.Store
@@ -42,32 +42,22 @@ type ListModel struct {
 	prSizeM             int
 	prSizeL             int
 	currentUser         string
-	hideAssignedCI      bool // Hide Assigned and CI columns (for orphaned view)
-	hidePriority        bool // Hide Priority column (for orphaned view)
-	orphanedOldestFirst bool // Sort orphaned by oldest first instead of newest
+	hideAssignedCI bool // Hide Assigned and CI columns (for orphaned view)
+	hidePriority   bool // Hide Priority column (for orphaned view)
+	sortColumn     string // Sort column for orphaned pane
+	sortDescending bool   // Sort direction for orphaned pane (true = descending)
 }
 
 // ListOption is a functional option for configuring ListModel
 type ListOption func(*ListModel)
 
-// WithHideAssignedCI hides the Assigned and CI columns
-func WithHideAssignedCI() ListOption {
+// WithSortBy configures the sort column and direction for the orphaned pane.
+// Column can be: updated, created, author, repo, comments, stale, size.
+// Descending=true sorts highest/newest first, false sorts lowest/oldest first.
+func WithSortBy(column string, descending bool) ListOption {
 	return func(m *ListModel) {
-		m.hideAssignedCI = true
-	}
-}
-
-// WithHidePriority hides the Priority column
-func WithHidePriority() ListOption {
-	return func(m *ListModel) {
-		m.hidePriority = true
-	}
-}
-
-// WithOrphanedOldestFirst sorts orphaned items oldest first instead of newest
-func WithOrphanedOldestFirst() ListOption {
-	return func(m *ListModel) {
-		m.orphanedOldestFirst = true
+		m.sortColumn = column
+		m.sortDescending = descending
 	}
 }
 
@@ -84,7 +74,7 @@ func NewListModel(items []triage.PrioritizedItem, store *resolved.Store, weights
 		prSizeM:           weights.PRSizeM,
 		prSizeL:           weights.PRSizeL,
 		currentUser:       currentUser,
-		activePane:        PanePriority,
+		activePane:        panePriority,
 		priorityCursor:    0,
 		orphanedCursor:    0,
 	}
@@ -107,18 +97,96 @@ func (m *ListModel) splitItems() {
 			m.priorityItems = append(m.priorityItems, item)
 		}
 	}
-	// Sort orphaned items by age (newest first by default)
+	// Sort orphaned items based on configured column and direction
+	m.sortOrphanedItems()
+}
+
+// daysSinceTeamActivity calculates how many days since the last team activity on an item.
+func daysSinceTeamActivity(item triage.PrioritizedItem) int {
+	if item.Notification.Details == nil || item.Notification.Details.LastTeamActivityAt == nil {
+		return 0
+	}
+	return int(time.Since(*item.Notification.Details.LastTeamActivityAt).Hours() / 24)
+}
+
+// sortOrphanedItems sorts the orphaned items by the configured column and direction.
+func (m *ListModel) sortOrphanedItems() {
+	if len(m.orphanedItems) == 0 {
+		return
+	}
+
+	// Default to updated descending (newest first) if no sort specified
+	column := m.sortColumn
+	if column == "" {
+		column = "updated"
+	}
+	desc := m.sortDescending
+	if m.sortColumn == "" {
+		desc = true // default to descending for dates
+	}
+
 	sort.Slice(m.orphanedItems, func(i, j int) bool {
-		if m.orphanedOldestFirst {
-			return m.orphanedItems[i].Notification.UpdatedAt.Before(m.orphanedItems[j].Notification.UpdatedAt)
+		a, b := m.orphanedItems[i], m.orphanedItems[j]
+		var less bool
+
+		switch column {
+		case "updated":
+			less = a.Notification.UpdatedAt.Before(b.Notification.UpdatedAt)
+		case "created":
+			if a.Notification.Details != nil && b.Notification.Details != nil {
+				less = a.Notification.Details.CreatedAt.Before(b.Notification.Details.CreatedAt)
+			} else {
+				less = a.Notification.UpdatedAt.Before(b.Notification.UpdatedAt)
+			}
+		case "author":
+			authorA, authorB := "", ""
+			if a.Notification.Details != nil {
+				authorA = a.Notification.Details.Author
+			}
+			if b.Notification.Details != nil {
+				authorB = b.Notification.Details.Author
+			}
+			less = authorA < authorB
+		case "repo":
+			less = a.Notification.Repository.FullName < b.Notification.Repository.FullName
+		case "comments":
+			commentsA, commentsB := 0, 0
+			if a.Notification.Details != nil {
+				commentsA = a.Notification.Details.CommentCount
+			}
+			if b.Notification.Details != nil {
+				commentsB = b.Notification.Details.CommentCount
+			}
+			less = commentsA < commentsB
+		case "stale":
+			// Calculate days since last team activity
+			staleA := daysSinceTeamActivity(a)
+			staleB := daysSinceTeamActivity(b)
+			less = staleA < staleB
+		case "size":
+			sizeA, sizeB := 0, 0
+			if a.Notification.Details != nil {
+				sizeA = a.Notification.Details.Additions + a.Notification.Details.Deletions
+			}
+			if b.Notification.Details != nil {
+				sizeB = b.Notification.Details.Additions + b.Notification.Details.Deletions
+			}
+			less = sizeA < sizeB
+		default:
+			less = a.Notification.UpdatedAt.Before(b.Notification.UpdatedAt)
 		}
-		return m.orphanedItems[i].Notification.UpdatedAt.After(m.orphanedItems[j].Notification.UpdatedAt)
+
+		// Invert for descending order
+		if desc {
+			return !less
+		}
+		return less
 	})
 }
 
 // activeItems returns the items for the active pane
 func (m *ListModel) activeItems() []triage.PrioritizedItem {
-	if m.activePane == PaneOrphaned {
+	if m.activePane == paneOrphaned {
 		return m.orphanedItems
 	}
 	return m.priorityItems
@@ -126,7 +194,7 @@ func (m *ListModel) activeItems() []triage.PrioritizedItem {
 
 // activeCursor returns the cursor position for the active pane
 func (m *ListModel) activeCursor() int {
-	if m.activePane == PaneOrphaned {
+	if m.activePane == paneOrphaned {
 		return m.orphanedCursor
 	}
 	return m.priorityCursor
@@ -134,7 +202,7 @@ func (m *ListModel) activeCursor() int {
 
 // setActiveCursor sets the cursor position for the active pane
 func (m *ListModel) setActiveCursor(pos int) {
-	if m.activePane == PaneOrphaned {
+	if m.activePane == paneOrphaned {
 		m.orphanedCursor = pos
 	} else {
 		m.priorityCursor = pos
@@ -174,19 +242,19 @@ func (m ListModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "tab":
 		// Toggle between panes
-		if m.activePane == PanePriority {
-			m.activePane = PaneOrphaned
+		if m.activePane == panePriority {
+			m.activePane = paneOrphaned
 		} else {
-			m.activePane = PanePriority
+			m.activePane = panePriority
 		}
 		return m, nil
 
 	case "1":
-		m.activePane = PanePriority
+		m.activePane = panePriority
 		return m, nil
 
 	case "2":
-		m.activePane = PaneOrphaned
+		m.activePane = paneOrphaned
 		return m, nil
 
 	case "j", "down":
@@ -245,7 +313,7 @@ func (m ListModel) markDone() (tea.Model, tea.Cmd) {
 	}
 
 	// Remove from the active pane's list
-	if m.activePane == PaneOrphaned {
+	if m.activePane == paneOrphaned {
 		m.orphanedItems = append(m.orphanedItems[:cursor], m.orphanedItems[cursor+1:]...)
 		if m.orphanedCursor >= len(m.orphanedItems) && m.orphanedCursor > 0 {
 			m.orphanedCursor = len(m.orphanedItems) - 1

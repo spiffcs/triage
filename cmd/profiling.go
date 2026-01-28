@@ -8,8 +8,8 @@ import (
 	"runtime/trace"
 )
 
-// Profiler manages CPU, memory, and trace profiling.
-type Profiler struct {
+// profiler manages CPU, memory, and trace profiling.
+type profiler struct {
 	cpuFile   *os.File
 	traceFile *os.File
 
@@ -18,10 +18,10 @@ type Profiler struct {
 	tracePath  string
 }
 
-// NewProfiler creates a new profiler with the specified profile paths.
+// newProfiler creates a new profiler with the specified profile paths.
 // Empty paths disable the corresponding profile.
-func NewProfiler(cpuProfile, memProfile, tracePath string) *Profiler {
-	return &Profiler{
+func newProfiler(cpuProfile, memProfile, tracePath string) *profiler {
+	return &profiler{
 		cpuProfile: cpuProfile,
 		memProfile: memProfile,
 		tracePath:  tracePath,
@@ -29,7 +29,7 @@ func NewProfiler(cpuProfile, memProfile, tracePath string) *Profiler {
 }
 
 // Start begins CPU profiling and execution tracing if configured.
-func (p *Profiler) Start() error {
+func (p *profiler) Start() error {
 	if p.cpuProfile != "" {
 		f, err := os.Create(p.cpuProfile)
 		if err != nil {
@@ -62,7 +62,7 @@ func (p *Profiler) Start() error {
 }
 
 // Stop ends all profiling and writes memory profile if configured.
-func (p *Profiler) Stop() {
+func (p *profiler) Stop() {
 	// Stop trace first
 	if p.traceFile != nil {
 		trace.Stop()
@@ -94,7 +94,7 @@ func (p *Profiler) Stop() {
 	}
 }
 
-func (p *Profiler) stopCPU() {
+func (p *profiler) stopCPU() {
 	if p.cpuFile != nil {
 		pprof.StopCPUProfile()
 		if err := p.cpuFile.Close(); err != nil {

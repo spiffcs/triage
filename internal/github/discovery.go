@@ -210,8 +210,8 @@ func (c *Client) DiscoverMaintainableReposCached(username string, opts Discovery
 	return repos, false, nil
 }
 
-// RepoNamesToStrings extracts full names from DiscoveredRepo slice
-func RepoNamesToStrings(repos []DiscoveredRepo) []string {
+// repoNamesToStrings extracts full names from DiscoveredRepo slice
+func repoNamesToStrings(repos []DiscoveredRepo) []string {
 	names := make([]string, len(repos))
 	for i, r := range repos {
 		names[i] = r.FullName
@@ -219,8 +219,8 @@ func RepoNamesToStrings(repos []DiscoveredRepo) []string {
 	return names
 }
 
-// FormatDiscoveredRepos returns a human-readable summary of discovered repos
-func FormatDiscoveredRepos(repos []DiscoveredRepo) string {
+// formatDiscoveredRepos returns a human-readable summary of discovered repos
+func formatDiscoveredRepos(repos []DiscoveredRepo) string {
 	if len(repos) == 0 {
 		return "no repositories discovered"
 	}

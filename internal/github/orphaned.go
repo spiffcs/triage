@@ -10,6 +10,24 @@ import (
 	"github.com/spiffcs/triage/internal/log"
 )
 
+// Default values for orphaned contribution detection
+const (
+	// defaultStaleDays is the number of days without team response for a contribution
+	// to be considered orphaned.
+	defaultStaleDays = 7
+
+	// defaultConsecutiveAuthorComments is the threshold of unanswered consecutive
+	// comments from the author that indicates the contribution needs attention.
+	defaultConsecutiveAuthorComments = 2
+
+	// defaultMaxPerRepo limits the number of orphaned contributions fetched per repository.
+	defaultMaxPerRepo = 20
+
+	// maxConcurrentOrphanedFetches limits concurrent API requests when fetching orphaned
+	// contributions across multiple repositories.
+	maxConcurrentOrphanedFetches = 10
+)
+
 // OrphanedSearchOptions configures the search for orphaned contributions
 type OrphanedSearchOptions struct {
 	Repos                     []string
@@ -88,16 +106,14 @@ func (c *Client) ListOrphanedContributions(opts OrphanedSearchOptions) ([]Notifi
 
 	// Set defaults
 	if opts.StaleDays <= 0 {
-		opts.StaleDays = 7
+		opts.StaleDays = defaultStaleDays
 	}
 	if opts.ConsecutiveAuthorComments <= 0 {
-		opts.ConsecutiveAuthorComments = 2
+		opts.ConsecutiveAuthorComments = defaultConsecutiveAuthorComments
 	}
 	if opts.MaxPerRepo <= 0 {
-		opts.MaxPerRepo = 20
+		opts.MaxPerRepo = defaultMaxPerRepo
 	}
-
-	const maxConcurrentOrphanedFetches = 10
 
 	sem := make(chan struct{}, maxConcurrentOrphanedFetches)
 	results := make(chan orphanedRepoResult, len(opts.Repos))

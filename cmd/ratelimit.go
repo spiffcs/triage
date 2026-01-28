@@ -16,12 +16,12 @@ func NewCmdRateLimit() *cobra.Command {
 		Short: "Check GitHub API rate limit status",
 		Long:  `Display current GitHub API rate limit status including remaining quota and reset time.`,
 	}
-	cmd.AddCommand(NewCmdRateLimitStatus())
+	cmd.AddCommand(newCmdRateLimitStatus())
 	return cmd
 }
 
-// NewCmdRateLimitStatus creates the ratelimit status subcommand.
-func NewCmdRateLimitStatus() *cobra.Command {
+// newCmdRateLimitStatus creates the ratelimit status subcommand.
+func newCmdRateLimitStatus() *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
 		Short: "Show current rate limit status",

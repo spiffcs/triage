@@ -1,8 +1,12 @@
 package github
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
-// NotificationReason represents why the user received a notification
+// NotificationReason represents why the user received a notification.
+// See: https://docs.github.com/en/rest/activity/notifications
 type NotificationReason string
 
 const (
@@ -16,8 +20,44 @@ const (
 	ReasonStateChange     NotificationReason = "state_change"
 	ReasonCIActivity      NotificationReason = "ci_activity"
 	ReasonManual          NotificationReason = "manual"
-	ReasonOrphaned        NotificationReason = "orphaned"
+
+	// ReasonOrphaned is a synthetic reason created by triage to identify
+	// external contributions that appear to be waiting for maintainer response.
+	// This is not a GitHub API reason.
+	ReasonOrphaned NotificationReason = "orphaned"
 )
+
+// GitHub API reasons not yet implemented:
+//   - approval_requested: deployment review requests
+//   - invitation: repository contribution invitations
+//   - member_feature_requested: organization feature requests
+//   - security_advisory_credit: security advisory credits
+//   - security_alert: security vulnerability alerts
+
+// AllNotificationReasons contains all valid notification reasons.
+// This is the single source of truth for valid reason values.
+var AllNotificationReasons = []NotificationReason{
+	ReasonMention,
+	ReasonReviewRequested,
+	ReasonAuthor,
+	ReasonAssign,
+	ReasonComment,
+	ReasonSubscribed,
+	ReasonTeamMention,
+	ReasonStateChange,
+	ReasonCIActivity,
+	ReasonManual,
+	ReasonOrphaned,
+}
+
+// NotificationReasonsString returns a comma-separated string of all valid reasons.
+func NotificationReasonsString() string {
+	reasons := make([]string, len(AllNotificationReasons))
+	for i, r := range AllNotificationReasons {
+		reasons[i] = string(r)
+	}
+	return strings.Join(reasons, ", ")
+}
 
 // SubjectType represents the type of notification subject
 type SubjectType string

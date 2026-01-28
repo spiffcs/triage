@@ -42,7 +42,7 @@ func addListFlags(cmd *cobra.Command, opts *Options) {
 	cmd.Flags().IntVarP(&opts.Limit, "limit", "l", 0, "Limit number of results")
 	cmd.Flags().StringVarP(&opts.Since, "since", "s", "1w", "Show notifications since (e.g., 1w, 30d, 6mo)")
 	cmd.Flags().StringVarP(&opts.Priority, "priority", "p", "", "Filter by priority (urgent, important, quick-win, notable, fyi)")
-	cmd.Flags().StringVarP(&opts.Reason, "reason", "r", "", "Filter by reason (mention, review_requested, author, orphaned, etc.)")
+	cmd.Flags().StringVarP(&opts.Reason, "reason", "r", "", "Filter by reason ("+github.NotificationReasonsString()+")")
 	cmd.Flags().StringVar(&opts.Repo, "repo", "", "Filter to specific repo (owner/repo)")
 	cmd.Flags().CountVarP(&opts.Verbosity, "verbose", "v", "Increase verbosity (-v info, -vv debug, -vvv trace)")
 	cmd.Flags().IntVarP(&opts.Workers, "workers", "w", 20, "Number of concurrent workers for fetching details")
@@ -52,14 +52,14 @@ func addListFlags(cmd *cobra.Command, opts *Options) {
 	cmd.Flags().StringVarP(&opts.Type, "type", "t", "", "Filter by type (pr, issue)")
 
 	// TUI flag with tri-state: nil = auto, true = force, false = disable
-	cmd.Flags().Var(NewTUIFlag(opts), "tui", "Enable/disable TUI progress (default: auto-detect)")
+	cmd.Flags().Var(newTUIFlag(opts), "tui", "Enable/disable TUI progress (default: auto-detect)")
 
 	// Orphaned contribution flags
-	cmd.Flags().BoolVar(&opts.ExcludeOrphaned, "no-orphaned", false, "Disable fetching orphaned contributions (enabled by default)")
+	cmd.Flags().BoolVar(&opts.SkipOrphaned, "skip-orphaned", false, "Skip fetching orphaned contributions (included by default)")
 	cmd.Flags().StringSliceVar(&opts.OrphanedRepos, "orphaned-repos", nil, "Repositories to check for orphaned contributions (owner/repo)")
 	cmd.Flags().IntVar(&opts.StaleDays, "stale-days", 7, "Days without team response to be considered orphaned")
 	cmd.Flags().IntVar(&opts.ConsecutiveComments, "consecutive", 2, "Consecutive author comments without response to be considered orphaned")
-	cmd.Flags().BoolVar(&opts.OrphanedOldestFirst, "orphaned-oldest-first", false, "Sort orphaned items oldest first (default: newest first)")
+	cmd.Flags().StringVar(&opts.SortBy, "sort", "", "Sort orphaned by column (prefix '-' desc, '+' asc): updated, created, author, repo, comments, stale, size")
 
 	// Profiling flags
 	cmd.Flags().StringVar(&opts.CPUProfile, "cpuprofile", "", "Write CPU profile to file")
@@ -71,14 +71,14 @@ func runList(cmd *cobra.Command, _ []string, opts *Options) error {
 	ctx := cmd.Context()
 
 	// Set up profiling
-	profiler := NewProfiler(opts.CPUProfile, opts.MemProfile, opts.Trace)
+	profiler := newProfiler(opts.CPUProfile, opts.MemProfile, opts.Trace)
 	if err := profiler.Start(); err != nil {
 		return err
 	}
 	defer profiler.Stop()
 
 	// Determine if TUI should be used
-	useTUI := ShouldUseTUI(opts)
+	useTUI := shouldUseTUI(opts)
 
 	// Initialize logging - suppress logs during TUI to avoid interleaving with display
 	if useTUI {
@@ -146,8 +146,8 @@ func runList(cmd *cobra.Command, _ []string, opts *Options) error {
 		log.Warn("failed to initialize cache", "error", cacheErr)
 	}
 
-	// Determine orphaned settings - enabled by default unless explicitly disabled
-	orphanedEnabled := !opts.ExcludeOrphaned
+	// Determine orphaned settings - enabled by default unless explicitly skipped
+	orphanedEnabled := !opts.SkipOrphaned
 	orphanedRepos := opts.OrphanedRepos
 	staleDays := opts.StaleDays
 	consecutiveComments := opts.ConsecutiveComments
@@ -166,7 +166,7 @@ func runList(cmd *cobra.Command, _ []string, opts *Options) error {
 	}
 
 	// Fetch all data sources in parallel
-	fetchResult, err := FetchAll(ctx, ghClient, prCache, FetchOptions{
+	fetchResult, err := fetchAll(ctx, ghClient, prCache, fetchOptions{
 		Since:               since,
 		SinceLabel:          opts.Since,
 		CurrentUser:         currentUser,
@@ -205,7 +205,7 @@ func runList(cmd *cobra.Command, _ []string, opts *Options) error {
 	sendTaskEvent(events, tui.TaskEnrich, tui.StatusComplete, tui.WithMessage(enrichCompleteMsg))
 
 	// Merge all additional data sources into notifications
-	notifications, mergeResult := MergeAll(notifications, reviewPRs, authoredPRs, assignedIssues, orphaned)
+	notifications, mergeResult := mergeAll(notifications, reviewPRs, authoredPRs, assignedIssues, orphaned)
 	if mergeResult.ReviewPRsAdded > 0 {
 		log.Info("PRs awaiting your review", "count", mergeResult.ReviewPRsAdded)
 	}
@@ -263,10 +263,14 @@ func runList(cmd *cobra.Command, _ []string, opts *Options) error {
 
 	// If running in a TTY with table format, launch interactive UI
 	// Use shouldUseTUI to respect verbose mode and --tui flag
-	if ShouldUseTUI(opts) && (format == "" || format == output.FormatTable) {
+	if shouldUseTUI(opts) && (format == "" || format == output.FormatTable) {
 		var tuiOpts []tui.ListOption
-		if opts.OrphanedOldestFirst {
-			tuiOpts = append(tuiOpts, tui.WithOrphanedOldestFirst())
+		if opts.SortBy != "" {
+			sortCfg, err := parseSortFlag(opts.SortBy)
+			if err != nil {
+				return err
+			}
+			tuiOpts = append(tuiOpts, tui.WithSortBy(sortCfg.Column, sortCfg.Descending))
 		}
 		return tui.RunListUI(items, resolvedStore, weights, currentUser, tuiOpts...)
 	}
@@ -449,4 +453,52 @@ func closeTUI(events chan tui.Event, tuiDone chan error) {
 	if tuiDone != nil {
 		<-tuiDone
 	}
+}
+
+// sortConfig holds parsed sort flag configuration.
+type sortConfig struct {
+	Column     string
+	Descending bool
+}
+
+// validSortColumns lists the allowed sort column names.
+var validSortColumns = map[string]bool{
+	"updated":  true,
+	"created":  true,
+	"author":   true,
+	"repo":     true,
+	"comments": true,
+	"stale":    true,
+	"size":     true,
+}
+
+// parseSortFlag parses a sort flag value like "updated", "-author", or "+created".
+func parseSortFlag(s string) (sortConfig, error) {
+	if s == "" {
+		return sortConfig{Column: "updated", Descending: true}, nil
+	}
+
+	desc := true
+	col := s
+
+	if len(s) > 0 {
+		switch s[0] {
+		case '-':
+			desc = true
+			col = s[1:]
+		case '+':
+			desc = false
+			col = s[1:]
+		}
+	}
+
+	if col == "" {
+		return sortConfig{}, fmt.Errorf("invalid sort flag: missing column name")
+	}
+
+	if !validSortColumns[col] {
+		return sortConfig{}, fmt.Errorf("invalid sort column %q: valid columns are updated, created, author, repo, comments, stale, size", col)
+	}
+
+	return sortConfig{Column: col, Descending: desc}, nil
 }

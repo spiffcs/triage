@@ -17,23 +17,23 @@ const (
 	colSignal = 30
 )
 
-// TabBarLines is the number of lines used for the tab bar (including top padding)
-const TabBarLines = 3
+// tabBarLines is the number of lines used for the tab bar (including top padding)
+const tabBarLines = 3
 
 // renderListView renders the complete list view
 func renderListView(m ListModel) string {
 	var b strings.Builder
 
 	// Calculate available height for items (account for tab bar)
-	availableHeight := m.windowHeight - constants.HeaderLines - constants.FooterLines - TabBarLines
+	availableHeight := m.windowHeight - constants.HeaderLines - constants.FooterLines - tabBarLines
 
 	// Get active pane's items and cursor
 	items := m.activeItems()
 	cursor := m.activeCursor()
 
 	// Determine view flags based on active pane
-	hideAssignedCI := m.activePane == PaneOrphaned
-	hidePriority := m.activePane == PaneOrphaned
+	hideAssignedCI := m.activePane == paneOrphaned
+	hidePriority := m.activePane == paneOrphaned
 
 	// Render tab bar with top padding
 	b.WriteString("\n")
@@ -41,7 +41,7 @@ func renderListView(m ListModel) string {
 	b.WriteString("\n\n")
 
 	if len(items) == 0 {
-		if m.activePane == PaneOrphaned {
+		if m.activePane == paneOrphaned {
 			b.WriteString(renderOrphanedEmptyState())
 		} else {
 			b.WriteString(renderEmptyState())
@@ -87,12 +87,12 @@ func renderListView(m ListModel) string {
 }
 
 // renderTabBar renders the tab bar at the top of the view
-func renderTabBar(activePane Pane, priorityCount, orphanedCount int) string {
+func renderTabBar(activePane pane, priorityCount, orphanedCount int) string {
 	priority := fmt.Sprintf("[ 1: Priority (%d) ]", priorityCount)
 	orphaned := fmt.Sprintf("[ 2: Orphaned (%d) ]", orphanedCount)
 
 	var priorityStyled, orphanedStyled string
-	if activePane == PanePriority {
+	if activePane == panePriority {
 		priorityStyled = tabActiveStyle.Render(priority)
 		orphanedStyled = tabInactiveStyle.Render(orphaned)
 	} else {

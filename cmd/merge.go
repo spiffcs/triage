@@ -6,38 +6,38 @@ import (
 	"github.com/spiffcs/triage/internal/github"
 )
 
-// MergeResult contains the counts of items added during merge operations.
-type MergeResult struct {
+// mergeResult contains the counts of items added during merge operations.
+type mergeResult struct {
 	ReviewPRsAdded      int
 	AuthoredPRsAdded    int
 	AssignedIssuesAdded int
 	OrphanedAdded       int
 }
 
-// MergeAll merges all additional data sources into the notifications list.
+// mergeAll merges all additional data sources into the notifications list.
 // It returns the merged list and counts of items added from each source.
-func MergeAll(notifications []github.Notification, reviewPRs, authoredPRs, assignedIssues, orphaned []github.Notification) ([]github.Notification, MergeResult) {
-	result := MergeResult{}
+func mergeAll(notifications []github.Notification, reviewPRs, authoredPRs, assignedIssues, orphaned []github.Notification) ([]github.Notification, mergeResult) {
+	result := mergeResult{}
 
 	if len(reviewPRs) > 0 {
-		notifications, result.ReviewPRsAdded = MergeReviewRequests(notifications, reviewPRs)
+		notifications, result.ReviewPRsAdded = mergeReviewRequests(notifications, reviewPRs)
 	}
 	if len(authoredPRs) > 0 {
-		notifications, result.AuthoredPRsAdded = MergeAuthoredPRs(notifications, authoredPRs)
+		notifications, result.AuthoredPRsAdded = mergeAuthoredPRs(notifications, authoredPRs)
 	}
 	if len(assignedIssues) > 0 {
-		notifications, result.AssignedIssuesAdded = MergeAssignedIssues(notifications, assignedIssues)
+		notifications, result.AssignedIssuesAdded = mergeAssignedIssues(notifications, assignedIssues)
 	}
 	if len(orphaned) > 0 {
-		notifications, result.OrphanedAdded = MergeOrphaned(notifications, orphaned)
+		notifications, result.OrphanedAdded = mergeOrphaned(notifications, orphaned)
 	}
 
 	return notifications, result
 }
 
-// MergeOrphaned adds orphaned contributions that aren't already in notifications.
+// mergeOrphaned adds orphaned contributions that aren't already in notifications.
 // Returns the merged list and the count of newly added items.
-func MergeOrphaned(notifications []github.Notification, orphaned []github.Notification) ([]github.Notification, int) {
+func mergeOrphaned(notifications []github.Notification, orphaned []github.Notification) ([]github.Notification, int) {
 	// Orphaned items can be either PRs or issues, so we need to check both types
 	// Build sets of existing identifiers for all items
 	existing := make(map[string]bool)
@@ -117,20 +117,20 @@ func mergeNotifications(
 	return notifications, added
 }
 
-// MergeReviewRequests adds review-requested PRs that aren't already in notifications.
+// mergeReviewRequests adds review-requested PRs that aren't already in notifications.
 // Returns the merged list and the count of newly added items.
-func MergeReviewRequests(notifications []github.Notification, reviewPRs []github.Notification) ([]github.Notification, int) {
+func mergeReviewRequests(notifications []github.Notification, reviewPRs []github.Notification) ([]github.Notification, int) {
 	return mergeNotifications(notifications, reviewPRs, github.SubjectPullRequest)
 }
 
-// MergeAuthoredPRs adds user's open PRs that aren't already in notifications.
+// mergeAuthoredPRs adds user's open PRs that aren't already in notifications.
 // Returns the merged list and the count of newly added items.
-func MergeAuthoredPRs(notifications []github.Notification, authoredPRs []github.Notification) ([]github.Notification, int) {
+func mergeAuthoredPRs(notifications []github.Notification, authoredPRs []github.Notification) ([]github.Notification, int) {
 	return mergeNotifications(notifications, authoredPRs, github.SubjectPullRequest)
 }
 
-// MergeAssignedIssues adds user's assigned issues that aren't already in notifications.
+// mergeAssignedIssues adds user's assigned issues that aren't already in notifications.
 // Returns the merged list and the count of newly added items.
-func MergeAssignedIssues(notifications []github.Notification, assignedIssues []github.Notification) ([]github.Notification, int) {
+func mergeAssignedIssues(notifications []github.Notification, assignedIssues []github.Notification) ([]github.Notification, int) {
 	return mergeNotifications(notifications, assignedIssues, github.SubjectIssue)
 }

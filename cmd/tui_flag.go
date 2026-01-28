@@ -6,65 +6,58 @@ import (
 	"github.com/spiffcs/triage/internal/tui"
 )
 
-// TUIFlagProvider allows sharing TUI flag logic across commands.
-type TUIFlagProvider interface {
-	GetTUI() *bool
-	SetTUI(v *bool)
-	GetVerbosity() int
+// tuiFlag implements pflag.Value for tri-state TUI flag.
+type tuiFlag struct {
+	opts *Options
 }
 
-// TUIFlag implements pflag.Value for tri-state TUI flag.
-type TUIFlag struct {
-	provider TUIFlagProvider
+// newTUIFlag creates a new tuiFlag with the given options.
+func newTUIFlag(opts *Options) *tuiFlag {
+	return &tuiFlag{opts: opts}
 }
 
-// NewTUIFlag creates a new TUIFlag with the given provider.
-func NewTUIFlag(provider TUIFlagProvider) *TUIFlag {
-	return &TUIFlag{provider: provider}
-}
-
-func (f *TUIFlag) String() string {
-	if f.provider.GetTUI() == nil {
+func (f *tuiFlag) String() string {
+	if f.opts.TUI == nil {
 		return "auto"
 	}
-	if *f.provider.GetTUI() {
+	if *f.opts.TUI {
 		return "true"
 	}
 	return "false"
 }
 
-func (f *TUIFlag) Set(s string) error {
+func (f *tuiFlag) Set(s string) error {
 	switch s {
 	case "true", "1", "yes":
 		v := true
-		f.provider.SetTUI(&v)
+		f.opts.TUI = &v
 	case "false", "0", "no":
 		v := false
-		f.provider.SetTUI(&v)
+		f.opts.TUI = &v
 	case "auto":
-		f.provider.SetTUI(nil)
+		f.opts.TUI = nil
 	default:
 		return fmt.Errorf("invalid value %q: use true, false, or auto", s)
 	}
 	return nil
 }
 
-func (f *TUIFlag) Type() string {
+func (f *tuiFlag) Type() string {
 	return "bool"
 }
 
-func (f *TUIFlag) IsBoolFlag() bool {
+func (f *tuiFlag) IsBoolFlag() bool {
 	return true
 }
 
-// ShouldUseTUI determines whether to use TUI based on provider settings.
-func ShouldUseTUI(provider TUIFlagProvider) bool {
+// shouldUseTUI determines whether to use TUI based on options.
+func shouldUseTUI(opts *Options) bool {
 	// Disable TUI when verbose logging is requested so logs are visible
-	if provider.GetVerbosity() > 0 {
+	if opts.Verbosity > 0 {
 		return false
 	}
-	if t := provider.GetTUI(); t != nil {
-		return *t
+	if opts.TUI != nil {
+		return *opts.TUI
 	}
 	return tui.ShouldUseTUI()
 }

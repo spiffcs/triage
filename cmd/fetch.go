@@ -13,8 +13,8 @@ import (
 	"github.com/spiffcs/triage/internal/tui"
 )
 
-// FetchResult contains all data fetched from GitHub.
-type FetchResult struct {
+// fetchResult contains all data fetched from GitHub.
+type fetchResult struct {
 	Notifications  []github.Notification
 	ReviewPRs      []github.Notification
 	AuthoredPRs    []github.Notification
@@ -31,8 +31,8 @@ type FetchResult struct {
 	OrphanedCached bool
 }
 
-// FetchCacheStats returns a summary of cache usage.
-type FetchCacheStats struct {
+// fetchCacheStats returns a summary of cache usage.
+type fetchCacheStats struct {
 	NotifCached    bool
 	NotifNewCount  int
 	ReviewCached   bool
@@ -41,9 +41,9 @@ type FetchCacheStats struct {
 	OrphanedCached bool
 }
 
-// CacheStats returns the cache statistics from the fetch result.
-func (r *FetchResult) CacheStats() FetchCacheStats {
-	return FetchCacheStats{
+// cacheStats returns the cache statistics from the fetch result.
+func (r *fetchResult) cacheStats() fetchCacheStats {
+	return fetchCacheStats{
 		NotifCached:    r.NotifCached,
 		NotifNewCount:  r.NotifNewCount,
 		ReviewCached:   r.ReviewCached,
@@ -53,13 +53,13 @@ func (r *FetchResult) CacheStats() FetchCacheStats {
 	}
 }
 
-// TotalFetched returns the total number of items fetched.
-func (r *FetchResult) TotalFetched() int {
+// totalFetched returns the total number of items fetched.
+func (r *fetchResult) totalFetched() int {
 	return len(r.Notifications) + len(r.ReviewPRs) + len(r.AuthoredPRs) + len(r.AssignedIssues) + len(r.Orphaned)
 }
 
-// FetchOptions configures the fetch operation.
-type FetchOptions struct {
+// fetchOptions configures the fetch operation.
+type fetchOptions struct {
 	Since       time.Time
 	SinceLabel  string // Human-readable label like "1w"
 	CurrentUser string
@@ -72,8 +72,8 @@ type FetchOptions struct {
 	ConsecutiveComments int
 }
 
-// FetchAll fetches all data sources in parallel.
-func FetchAll(ctx context.Context, client *github.Client, cache *github.Cache, opts FetchOptions) (*FetchResult, error) {
+// fetchAll fetches all data sources in parallel.
+func fetchAll(ctx context.Context, client *github.Client, cache *github.Cache, opts fetchOptions) (*fetchResult, error) {
 	totalFetches := 4
 	if len(opts.OrphanedRepos) > 0 {
 		totalFetches = 5
@@ -96,7 +96,7 @@ func FetchAll(ctx context.Context, client *github.Client, cache *github.Cache, o
 		tui.WithMessage(fmt.Sprintf("for the past %s (0/%d sources)", opts.SinceLabel, totalFetches)))
 
 	var wg sync.WaitGroup
-	result := &FetchResult{}
+	result := &fetchResult{}
 
 	// Error tracking
 	var notifErr, reviewErr, authoredErr, assignedErr error
@@ -199,7 +199,7 @@ func FetchAll(ctx context.Context, client *github.Client, cache *github.Cache, o
 		}
 	}
 
-	totalFetched := result.TotalFetched()
+	totalFetched := result.totalFetched()
 	fetchMsg := fmt.Sprintf("for the past %s (%d items)", opts.SinceLabel, totalFetched)
 	if result.NotifCached && result.NotifNewCount > 0 {
 		fetchMsg = fmt.Sprintf("for the past %s (%d items, %d new)", opts.SinceLabel, totalFetched, result.NotifNewCount)

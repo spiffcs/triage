@@ -14,14 +14,14 @@ func NewCmdCache() *cobra.Command {
 		Short: "Manage the notification details cache",
 	}
 
-	cmd.AddCommand(NewCmdCacheClear())
-	cmd.AddCommand(NewCmdCacheStats())
+	cmd.AddCommand(newCmdCacheClear())
+	cmd.AddCommand(newCmdCacheStats())
 
 	return cmd
 }
 
-// NewCmdCacheClear creates the cache clear subcommand.
-func NewCmdCacheClear() *cobra.Command {
+// newCmdCacheClear creates the cache clear subcommand.
+func newCmdCacheClear() *cobra.Command {
 	return &cobra.Command{
 		Use:   "clear",
 		Short: "Clear the notification details cache",
@@ -29,8 +29,8 @@ func NewCmdCacheClear() *cobra.Command {
 	}
 }
 
-// NewCmdCacheStats creates the cache stats subcommand.
-func NewCmdCacheStats() *cobra.Command {
+// newCmdCacheStats creates the cache stats subcommand.
+func newCmdCacheStats() *cobra.Command {
 	return &cobra.Command{
 		Use:   "stats",
 		Short: "Show cache statistics",

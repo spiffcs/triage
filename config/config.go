@@ -342,8 +342,8 @@ func (c *Config) GetScoreWeights() ScoreWeights {
 	return weights
 }
 
-// DefaultConfigDir returns the default config directory
-func DefaultConfigDir() string {
+// defaultConfigDir returns the default config directory
+func defaultConfigDir() string {
 	configDir, err := os.UserConfigDir()
 	if err != nil {
 		return ".triage"
@@ -351,19 +351,19 @@ func DefaultConfigDir() string {
 	return filepath.Join(configDir, "triage")
 }
 
-// ConfigPath returns the path to the config file
-func ConfigPath() string {
-	return filepath.Join(DefaultConfigDir(), "config.yaml")
+// configPath returns the path to the config file
+func configPath() string {
+	return filepath.Join(defaultConfigDir(), "config.yaml")
 }
 
-// LocalConfigPath returns the path to the local config file in the current directory
-func LocalConfigPath() string {
+// localConfigPath returns the path to the local config file in the current directory
+func localConfigPath() string {
 	return ".triage.yaml"
 }
 
-// ConfigFileExists returns true if the config file exists on disk
-func ConfigFileExists() bool {
-	_, err := os.Stat(ConfigPath())
+// configFileExists returns true if the config file exists on disk
+func configFileExists() bool {
+	_, err := os.Stat(configPath())
 	return err == nil
 }
 
@@ -377,7 +377,7 @@ func Load() (*Config, error) {
 	}
 
 	// Load global config if it exists
-	globalPath := ConfigPath()
+	globalPath := configPath()
 	if _, err := os.Stat(globalPath); err == nil {
 		data, err := os.ReadFile(globalPath)
 		if err != nil {
@@ -390,7 +390,7 @@ func Load() (*Config, error) {
 	}
 
 	// Load local config if it exists and merge on top
-	localPath := LocalConfigPath()
+	localPath := localConfigPath()
 	if _, err := os.Stat(localPath); err == nil {
 		data, err := os.ReadFile(localPath)
 		if err != nil {
@@ -569,7 +569,7 @@ func mergeOrphanedConfig(global, local *OrphanedConfig) *OrphanedConfig {
 
 // Save saves the configuration to disk
 func (c *Config) Save() error {
-	configDir := DefaultConfigDir()
+	configDir := defaultConfigDir()
 
 	// Create config directory if it doesn't exist
 	if err := os.MkdirAll(configDir, 0700); err != nil {
@@ -581,7 +581,7 @@ func (c *Config) Save() error {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 
-	configPath := ConfigPath()
+	configPath := configPath()
 	if err := os.WriteFile(configPath, data, 0600); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
@@ -721,8 +721,8 @@ type ConfigPathInfo struct {
 
 // GetConfigPaths returns path info for both global and local configs
 func GetConfigPaths() ConfigPathInfo {
-	globalPath := ConfigPath()
-	localPath := LocalConfigPath()
+	globalPath := configPath()
+	localPath := localConfigPath()
 
 	// Get absolute path for local config
 	absLocalPath, err := filepath.Abs(localPath)

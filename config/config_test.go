@@ -263,11 +263,11 @@ func TestDefaultConfigDir_XDG(t *testing.T) {
 		customDir := "/tmp/custom-xdg-config"
 		os.Setenv("XDG_CONFIG_HOME", customDir)
 
-		got := DefaultConfigDir()
+		got := defaultConfigDir()
 		want := filepath.Join(customDir, "triage")
 
 		if got != want {
-			t.Errorf("DefaultConfigDir() = %q, want %q", got, want)
+			t.Errorf("defaultConfigDir() = %q, want %q", got, want)
 		}
 	})
 
@@ -278,36 +278,36 @@ func TestDefaultConfigDir_XDG(t *testing.T) {
 
 		os.Unsetenv("XDG_CONFIG_HOME")
 
-		got := DefaultConfigDir()
+		got := defaultConfigDir()
 		home, _ := os.UserHomeDir()
 		want := filepath.Join(home, ".config", "triage")
 
 		if got != want {
-			t.Errorf("DefaultConfigDir() = %q, want %q", got, want)
+			t.Errorf("defaultConfigDir() = %q, want %q", got, want)
 		}
 	})
 }
 
 func TestDefaultConfigDir_CrossPlatform(t *testing.T) {
-	got := DefaultConfigDir()
+	got := defaultConfigDir()
 
 	// Should always end with "triage"
 	if !strings.HasSuffix(got, "triage") {
-		t.Errorf("DefaultConfigDir() = %q, should end with 'triage'", got)
+		t.Errorf("defaultConfigDir() = %q, should end with 'triage'", got)
 	}
 
 	// Should be an absolute path (not the fallback)
 	if got == ".triage" {
-		t.Error("DefaultConfigDir() returned fallback '.triage', expected absolute path")
+		t.Error("defaultConfigDir() returned fallback '.triage', expected absolute path")
 	}
 }
 
 func TestLocalConfigPath(t *testing.T) {
-	got := LocalConfigPath()
+	got := localConfigPath()
 	want := ".triage.yaml"
 
 	if got != want {
-		t.Errorf("LocalConfigPath() = %q, want %q", got, want)
+		t.Errorf("localConfigPath() = %q, want %q", got, want)
 	}
 }
 
