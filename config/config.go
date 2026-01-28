@@ -878,6 +878,12 @@ func DefaultConfig() *Config {
 			ApprovedMergeablePR: &weights.ApprovedMergeablePRIsUrgent,
 			ChangesRequestedPR:  &weights.ChangesRequestedPRIsUrgent,
 		},
+		Orphaned: &OrphanedConfig{
+			Repos:                     []string{},
+			StaleDays:                 7,
+			ConsecutiveAuthorComments: 2,
+			MaxItemsPerRepo:           50,
+		},
 	}
 }
 
@@ -941,6 +947,15 @@ default_format: table
 # base_scores:
 #   review_requested: 100
 #   mention: 90
+
+# Orphaned contribution detection (for 'triage orphaned' command)
+# orphaned:
+#   repos:
+#     - myorg/repo1
+#     - myorg/repo2
+#   stale_days: 7                      # Days without team response
+#   consecutive_author_comments: 2     # Consecutive unanswered comments
+#   max_items_per_repo: 50             # Limit per repository
 
 # See README.md for full configuration options
 `
