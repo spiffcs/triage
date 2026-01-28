@@ -157,3 +157,96 @@ func TestFormatAge(t *testing.T) {
 		})
 	}
 }
+
+func TestIconPrecedenceAndAlignment(t *testing.T) {
+	tests := []struct {
+		name       string
+		isQuickWin bool
+		isHotTopic bool
+		expectFire bool
+		expectBolt bool
+	}{
+		{
+			name:       "quick win shows lightning bolt",
+			isQuickWin: true,
+			isHotTopic: false,
+			expectFire: false,
+			expectBolt: true,
+		},
+		{
+			name:       "hot topic shows fire",
+			isQuickWin: false,
+			isHotTopic: true,
+			expectFire: true,
+			expectBolt: false,
+		},
+		{
+			name:       "hot topic takes precedence over quick win",
+			isQuickWin: true,
+			isHotTopic: true,
+			expectFire: true,
+			expectBolt: false,
+		},
+		{
+			name:       "no icon when neither condition",
+			isQuickWin: false,
+			isHotTopic: false,
+			expectFire: false,
+			expectBolt: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			priority := triage.PriorityFYI
+			if tt.isQuickWin {
+				priority = triage.PriorityQuickWin
+			}
+
+			commentCount := 0
+			if tt.isHotTopic {
+				commentCount = 10
+			}
+
+			item := triage.PrioritizedItem{
+				Notification: github.Notification{
+					Subject: github.Subject{
+						Title: "Test title",
+						Type:  github.SubjectPullRequest,
+					},
+					Repository: github.Repository{
+						FullName: "owner/repo",
+					},
+					Details: &github.ItemDetails{
+						IsPR:          true,
+						CommentCount:  commentCount,
+						LastCommenter: "other-user",
+					},
+				},
+				Priority: priority,
+			}
+
+			formatter := &TableFormatter{
+				HotTopicThreshold: 5,
+				CurrentUser:       "me",
+			}
+
+			var buf strings.Builder
+			err := formatter.Format([]triage.PrioritizedItem{item}, &buf)
+			if err != nil {
+				t.Fatalf("Format() error = %v", err)
+			}
+
+			output := buf.String()
+			hasFire := strings.Contains(output, "🔥")
+			hasBolt := strings.Contains(output, "⚡")
+
+			if hasFire != tt.expectFire {
+				t.Errorf("fire icon: got %v, want %v", hasFire, tt.expectFire)
+			}
+			if hasBolt != tt.expectBolt {
+				t.Errorf("bolt icon: got %v, want %v", hasBolt, tt.expectBolt)
+			}
+		})
+	}
+}
