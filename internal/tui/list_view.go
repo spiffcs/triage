@@ -152,26 +152,40 @@ func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, pr
 	priority, priorityWidth := renderPriority(item.Priority)
 	priority = padRight(priority, priorityWidth, colPriority)
 
-	// Title with indicators
+	// Title with icon prefix
 	title := n.Subject.Title
-	var titlePrefix string
-	var titlePrefixWidth int
-	if item.Priority == triage.PriorityQuickWin {
-		titlePrefix = "⚡ "
-		titlePrefixWidth = 3 // emoji (2) + space (1)
-	}
+
+	// Icon column: always 3 display columns (emoji=2 + space=1, or 3 spaces if no icon)
+	const iconWidth = 3
+	var titleIcon string
+	var iconDisplayWidth int
+
+	// Check for hot topic first (fire takes precedence if both apply)
 	if n.Details != nil && hotTopicThreshold > 0 && n.Details.CommentCount > hotTopicThreshold {
-		// Suppress fire emoji for issues where current user was the last commenter
 		suppressForIssue := !n.Details.IsPR && n.Details.LastCommenter == currentUser
 		if !suppressForIssue {
-			titlePrefix = "🔥 "
-			titlePrefixWidth = 3 // emoji (2) + space (1)
+			titleIcon = "🔥 "
+			iconDisplayWidth = 3
 		}
 	}
-	// Truncate title to fit remaining space after prefix
-	title, titleWidth := truncateToWidth(title, colTitle-titlePrefixWidth)
-	title = titlePrefix + title
-	titleWidth += titlePrefixWidth
+
+	// Quick win indicator with yellow color (only if no fire icon)
+	// Using ⚡️ (U+26A1 + U+FE0F) to force emoji presentation for consistent 2-column width
+	if titleIcon == "" && item.Priority == triage.PriorityQuickWin {
+		titleIcon = listQuickWinIconStyle.Render("⚡\uFE0F") + " "
+		iconDisplayWidth = 3
+	}
+
+	// If no icon, use spaces to maintain alignment
+	if titleIcon == "" {
+		titleIcon = "   " // 3 spaces
+		iconDisplayWidth = 3
+	}
+
+	// Truncate title to fit remaining space after icon
+	title, titleWidth := truncateToWidth(title, colTitle-iconWidth)
+	title = titleIcon + title
+	titleWidth += iconDisplayWidth
 	title = padRight(title, titleWidth, colTitle)
 
 	// Repository
@@ -506,6 +520,9 @@ var (
 
 	listImportantStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#F59E0B"))
+
+	listQuickWinIconStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#FBBF24")) // Yellow for lightning bolt
 
 	listQuickWinStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#22C55E"))
