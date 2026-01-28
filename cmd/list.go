@@ -382,6 +382,9 @@ func applyFilters(items []triage.PrioritizedItem, opts *Options, cfg *config.Con
 		items = triage.FilterOutClosed(items)
 	}
 
+	// Filter out unenriched (inaccessible) items - always applied
+	items = triage.FilterOutUnenriched(items)
+
 	if opts.Priority != "" {
 		items = triage.FilterByPriority(items, triage.PriorityLevel(opts.Priority))
 	}
