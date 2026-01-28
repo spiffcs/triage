@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spiffcs/triage/config"
+	"github.com/spiffcs/triage/internal/duration"
 	"github.com/spiffcs/triage/internal/github"
 	"github.com/spiffcs/triage/internal/log"
 	"github.com/spiffcs/triage/internal/output"
@@ -58,7 +59,7 @@ Examples:
   # Customize detection thresholds
   triage orphaned --repos myorg/myrepo --stale-days 14 --consecutive 3`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runOrphaned(opts)
+			return runOrphaned(cmd, opts)
 		},
 	}
 
@@ -125,7 +126,8 @@ func (f *orphanedTUIFlag) IsBoolFlag() bool {
 	return true
 }
 
-func runOrphaned(opts *OrphanedOptions) error {
+func runOrphaned(cmd *cobra.Command, opts *OrphanedOptions) error {
+	ctx := cmd.Context()
 	// Determine if TUI should be used
 	useTUI := shouldUseOrphanedTUI(opts)
 
@@ -163,7 +165,7 @@ func runOrphaned(opts *OrphanedOptions) error {
 		return fmt.Errorf("GitHub token not configured. Set the GITHUB_TOKEN environment variable")
 	}
 
-	ghClient, err := github.NewClient(token)
+	ghClient, err := github.NewClient(ctx, token)
 	if err != nil {
 		return err
 	}
@@ -235,7 +237,7 @@ func runOrphaned(opts *OrphanedOptions) error {
 	}
 
 	// Parse since duration
-	sinceTime, err := parseDuration(opts.Since)
+	sinceTime, err := duration.Parse(opts.Since)
 	if err != nil {
 		closeTUI(events, tuiDone)
 		return fmt.Errorf("invalid since duration: %w", err)

@@ -3,6 +3,8 @@ package cmd
 import (
 	"testing"
 	"time"
+
+	"github.com/spiffcs/triage/internal/duration"
 )
 
 func TestNew(t *testing.T) {
@@ -74,6 +76,99 @@ func TestOptions(t *testing.T) {
 	}
 }
 
+func TestNewOptionsDefaults(t *testing.T) {
+	opts := NewOptions()
+	if opts.Since != "1w" {
+		t.Errorf("expected default Since '1w', got %q", opts.Since)
+	}
+	if opts.Workers != 20 {
+		t.Errorf("expected default Workers 20, got %d", opts.Workers)
+	}
+	if opts.Format != "" {
+		t.Errorf("expected default Format empty, got %q", opts.Format)
+	}
+}
+
+func TestNewOptionsWithOptions(t *testing.T) {
+	tui := true
+	opts := NewOptions(
+		WithFormat("json"),
+		WithSince("30d"),
+		WithPriority("urgent"),
+		WithReason("mention"),
+		WithRepo("owner/repo"),
+		WithType("pr"),
+		WithLimit(50),
+		WithVerbosity(2),
+		WithWorkers(10),
+		WithIncludeMerged(true),
+		WithIncludeClosed(true),
+		WithGreenCI(true),
+		WithTUI(&tui),
+		WithCPUProfile("cpu.prof"),
+		WithMemProfile("mem.prof"),
+		WithTrace("trace.out"),
+	)
+
+	if opts.Format != "json" {
+		t.Errorf("expected Format 'json', got %q", opts.Format)
+	}
+	if opts.Since != "30d" {
+		t.Errorf("expected Since '30d', got %q", opts.Since)
+	}
+	if opts.Priority != "urgent" {
+		t.Errorf("expected Priority 'urgent', got %q", opts.Priority)
+	}
+	if opts.Reason != "mention" {
+		t.Errorf("expected Reason 'mention', got %q", opts.Reason)
+	}
+	if opts.Repo != "owner/repo" {
+		t.Errorf("expected Repo 'owner/repo', got %q", opts.Repo)
+	}
+	if opts.Type != "pr" {
+		t.Errorf("expected Type 'pr', got %q", opts.Type)
+	}
+	if opts.Limit != 50 {
+		t.Errorf("expected Limit 50, got %d", opts.Limit)
+	}
+	if opts.Verbosity != 2 {
+		t.Errorf("expected Verbosity 2, got %d", opts.Verbosity)
+	}
+	if opts.Workers != 10 {
+		t.Errorf("expected Workers 10, got %d", opts.Workers)
+	}
+	if !opts.IncludeMerged {
+		t.Error("expected IncludeMerged true")
+	}
+	if !opts.IncludeClosed {
+		t.Error("expected IncludeClosed true")
+	}
+	if !opts.GreenCI {
+		t.Error("expected GreenCI true")
+	}
+	if opts.TUI == nil || !*opts.TUI {
+		t.Error("expected TUI true")
+	}
+	if opts.CPUProfile != "cpu.prof" {
+		t.Errorf("expected CPUProfile 'cpu.prof', got %q", opts.CPUProfile)
+	}
+	if opts.MemProfile != "mem.prof" {
+		t.Errorf("expected MemProfile 'mem.prof', got %q", opts.MemProfile)
+	}
+	if opts.Trace != "trace.out" {
+		t.Errorf("expected Trace 'trace.out', got %q", opts.Trace)
+	}
+}
+
+func TestNewWithOptions(t *testing.T) {
+	// Test that New() accepts options and passes them through
+	cmd := New(WithFormat("json"), WithWorkers(5))
+	if cmd == nil {
+		t.Fatal("New() returned nil")
+	}
+	// The options are applied internally, we can verify New() accepts them without panic
+}
+
 func TestParseDuration(t *testing.T) {
 	tests := []struct {
 		input    string
@@ -90,7 +185,7 @@ func TestParseDuration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			result, err := parseDuration(tt.input)
+			result, err := duration.Parse(tt.input)
 			if tt.wantErr {
 				if err == nil {
 					t.Error("expected error, got nil")

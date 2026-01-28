@@ -163,13 +163,18 @@ func (m Model) View() string {
 	for _, task := range m.tasks {
 		// Special handling for auth task to show username
 		if task.ID == TaskAuth {
-			if task.Status == StatusComplete && m.username != "" {
-				s += fmt.Sprintf("  %s Authenticated as %s\n", iconComplete, userStyle.Render(m.username))
-			} else if task.Status == StatusRunning {
+			switch task.Status {
+			case StatusComplete:
+				if m.username != "" {
+					s += fmt.Sprintf("  %s Authenticated as %s\n", iconComplete, userStyle.Render(m.username))
+					continue
+				}
+				fallthrough
+			case StatusRunning:
 				s += fmt.Sprintf("  %s Authenticating...\n", spinnerStyle.Render(m.spinner.View()))
-			} else if task.Status == StatusError {
+			case StatusError:
 				s += fmt.Sprintf("  %s Authenticating %s\n", iconError, errorStyle.Render(task.Error.Error()))
-			} else {
+			default:
 				s += task.View(m.spinner.View(), m.progress) + "\n"
 			}
 			continue

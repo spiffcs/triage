@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/go-github/v57/github"
+	"github.com/spiffcs/triage/internal/constants"
 	"github.com/spiffcs/triage/internal/log"
 	"golang.org/x/oauth2"
 )
@@ -37,7 +38,7 @@ func (t *rateLimitTransport) RoundTrip(req *http.Request) (*http.Response, error
 	}
 
 	// Log warning if rate limit is low
-	if remaining <= 100 && remaining > 0 {
+	if remaining <= constants.RateLimitLowWatermark && remaining > 0 {
 		log.Debug("rate limit low", "remaining", remaining, "resets_at", resetAt.Format(time.RFC3339))
 	}
 
@@ -87,8 +88,9 @@ type Client struct {
 	token  string
 }
 
-// NewClient creates a new GitHub client using a personal access token
-func NewClient(token string) (*Client, error) {
+// NewClient creates a new GitHub client using a personal access token.
+// The context is used for all API requests and enables graceful cancellation.
+func NewClient(ctx context.Context, token string) (*Client, error) {
 	if token == "" {
 		token = os.Getenv("GITHUB_TOKEN")
 	}
@@ -96,7 +98,6 @@ func NewClient(token string) (*Client, error) {
 		return nil, fmt.Errorf("GitHub token not provided. Set the GITHUB_TOKEN environment variable")
 	}
 
-	ctx := context.Background()
 	ts := oauth2.StaticTokenSource(
 		&oauth2.Token{AccessToken: token},
 	)

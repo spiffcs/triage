@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/spiffcs/triage/config"
+	"github.com/spiffcs/triage/internal/constants"
 	"github.com/spiffcs/triage/internal/github"
 )
 
@@ -260,7 +261,29 @@ func FilterByGreenCI(items []PrioritizedItem) []PrioritizedItem {
 			continue
 		}
 		// Keep PRs with successful CI
-		if item.Notification.Details.CIStatus == "success" {
+		if item.Notification.Details.CIStatus == constants.CIStatusSuccess {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
+}
+
+// FilterOutUnenriched removes PR and Issue notifications that couldn't be enriched.
+// This typically indicates the item is deleted, inaccessible, or the user lost access.
+// Non-PR/Issue types (Release, Discussion) are kept since they don't require enrichment.
+func FilterOutUnenriched(items []PrioritizedItem) []PrioritizedItem {
+	filtered := make([]PrioritizedItem, 0, len(items))
+	for _, item := range items {
+		subjectType := item.Notification.Subject.Type
+
+		// Keep non-PR/Issue types - they don't have enrichment
+		if subjectType != github.SubjectPullRequest && subjectType != github.SubjectIssue {
+			filtered = append(filtered, item)
+			continue
+		}
+
+		// Keep PR/Issue items that were successfully enriched
+		if item.Notification.Details != nil {
 			filtered = append(filtered, item)
 		}
 	}

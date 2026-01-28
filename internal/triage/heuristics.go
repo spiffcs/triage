@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/spiffcs/triage/config"
+	"github.com/spiffcs/triage/internal/constants"
 	"github.com/spiffcs/triage/internal/github"
 )
 
@@ -130,7 +131,7 @@ func (h *Heuristics) authoredPRModifiers(d *github.ItemDetails) int {
 	modifier := 0
 
 	// PR is approved and ready to merge - urgent action needed!
-	if d.ReviewState == "approved" {
+	if d.ReviewState == constants.ReviewStateApproved {
 		modifier += h.Weights.ApprovedPRBonus
 		if d.Mergeable {
 			modifier += h.Weights.MergeablePRBonus
@@ -138,7 +139,7 @@ func (h *Heuristics) authoredPRModifiers(d *github.ItemDetails) int {
 	}
 
 	// PR has changes requested - needs work
-	if d.ReviewState == "changes_requested" {
+	if d.ReviewState == constants.ReviewStateChangesRequested {
 		modifier += h.Weights.ChangesRequestedBonus
 	}
 
@@ -205,11 +206,11 @@ func (h *Heuristics) DeterminePriority(n *github.Notification, score int) Priori
 	// Authored PRs that are approved and mergeable are urgent (if enabled)
 	if reason == github.ReasonAuthor && n.Details != nil {
 		d := n.Details
-		if d.IsPR && d.ReviewState == "approved" && d.Mergeable && h.Weights.ApprovedMergeablePRIsUrgent {
+		if d.IsPR && d.ReviewState == constants.ReviewStateApproved && d.Mergeable && h.Weights.ApprovedMergeablePRIsUrgent {
 			return PriorityUrgent
 		}
 		// PRs with changes requested need attention (if enabled)
-		if d.IsPR && d.ReviewState == "changes_requested" && h.Weights.ChangesRequestedPRIsUrgent {
+		if d.IsPR && d.ReviewState == constants.ReviewStateChangesRequested && h.Weights.ChangesRequestedPRIsUrgent {
 			return PriorityUrgent
 		}
 	}
@@ -290,17 +291,17 @@ func (h *Heuristics) determineAuthoredPRAction(d *github.ItemDetails) string {
 	}
 
 	// Approved and mergeable - merge it!
-	if d.ReviewState == "approved" && d.Mergeable {
+	if d.ReviewState == constants.ReviewStateApproved && d.Mergeable {
 		return "Merge PR"
 	}
 
 	// Approved but not mergeable (conflicts?)
-	if d.ReviewState == "approved" && !d.Mergeable {
+	if d.ReviewState == constants.ReviewStateApproved && !d.Mergeable {
 		return "Resolve conflicts & merge"
 	}
 
 	// Changes requested
-	if d.ReviewState == "changes_requested" {
+	if d.ReviewState == constants.ReviewStateChangesRequested {
 		return "Address review feedback"
 	}
 
@@ -312,14 +313,14 @@ func (h *Heuristics) determineAuthoredPRAction(d *github.ItemDetails) string {
 	// Stale PR - needs attention
 	daysSinceUpdate := int(time.Since(d.UpdatedAt).Hours() / 24)
 	if daysSinceUpdate >= h.Weights.StalePRThresholdDays {
-		if d.ReviewState == "pending" {
+		if d.ReviewState == constants.ReviewStatePending {
 			return "Request review (stale)"
 		}
 		return "Follow up on PR"
 	}
 
 	// Pending review
-	if d.ReviewState == "pending" {
+	if d.ReviewState == constants.ReviewStatePending {
 		return "Awaiting review"
 	}
 

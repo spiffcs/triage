@@ -5,8 +5,9 @@ import (
 )
 
 // New creates the root command with all subcommands registered.
-func New() *cobra.Command {
-	opts := &Options{}
+// Optional Option arguments can be used to customize default settings.
+func New(options ...Option) *cobra.Command {
+	opts := NewOptions(options...)
 
 	rootCmd := &cobra.Command{
 		Use:   "triage",

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 
 	"gopkg.in/yaml.v3"
 )
@@ -463,251 +464,65 @@ func mergeConfig(global, local *Config) *Config {
 	return result
 }
 
-func mergeBaseScores(global, local *BaseScoreOverrides) *BaseScoreOverrides {
+// mergePointerStruct merges two structs with pointer fields, where local values
+// override global values. Both global and local must be pointers to structs of
+// the same type. Returns nil if both inputs are nil or if all fields are nil.
+func mergePointerStruct[T any](global, local *T) *T {
 	if global == nil && local == nil {
 		return nil
 	}
-	result := &BaseScoreOverrides{}
 
+	result := new(T)
+	resultVal := reflect.ValueOf(result).Elem()
+
+	// Copy global fields first
 	if global != nil {
-		result.ReviewRequested = global.ReviewRequested
-		result.Mention = global.Mention
-		result.TeamMention = global.TeamMention
-		result.Author = global.Author
-		result.Assign = global.Assign
-		result.Comment = global.Comment
-		result.StateChange = global.StateChange
-		result.Subscribed = global.Subscribed
-		result.CIActivity = global.CIActivity
-		result.Orphaned = global.Orphaned
+		globalVal := reflect.ValueOf(global).Elem()
+		for i := 0; i < resultVal.NumField(); i++ {
+			resultVal.Field(i).Set(globalVal.Field(i))
+		}
 	}
 
+	// Override with local fields if they're non-nil
 	if local != nil {
-		if local.ReviewRequested != nil {
-			result.ReviewRequested = local.ReviewRequested
-		}
-		if local.Mention != nil {
-			result.Mention = local.Mention
-		}
-		if local.TeamMention != nil {
-			result.TeamMention = local.TeamMention
-		}
-		if local.Author != nil {
-			result.Author = local.Author
-		}
-		if local.Assign != nil {
-			result.Assign = local.Assign
-		}
-		if local.Comment != nil {
-			result.Comment = local.Comment
-		}
-		if local.StateChange != nil {
-			result.StateChange = local.StateChange
-		}
-		if local.Subscribed != nil {
-			result.Subscribed = local.Subscribed
-		}
-		if local.CIActivity != nil {
-			result.CIActivity = local.CIActivity
-		}
-		if local.Orphaned != nil {
-			result.Orphaned = local.Orphaned
+		localVal := reflect.ValueOf(local).Elem()
+		for i := 0; i < resultVal.NumField(); i++ {
+			localField := localVal.Field(i)
+			if !localField.IsNil() {
+				resultVal.Field(i).Set(localField)
+			}
 		}
 	}
 
-	// Return nil if all fields are nil
-	if result.ReviewRequested == nil && result.Mention == nil && result.TeamMention == nil &&
-		result.Author == nil && result.Assign == nil && result.Comment == nil &&
-		result.StateChange == nil && result.Subscribed == nil && result.CIActivity == nil &&
-		result.Orphaned == nil {
+	// Check if all fields are nil
+	allNil := true
+	for i := 0; i < resultVal.NumField(); i++ {
+		if !resultVal.Field(i).IsNil() {
+			allNil = false
+			break
+		}
+	}
+	if allNil {
 		return nil
 	}
 
 	return result
+}
+
+func mergeBaseScores(global, local *BaseScoreOverrides) *BaseScoreOverrides {
+	return mergePointerStruct(global, local)
 }
 
 func mergeScoringOverrides(global, local *ScoringOverrides) *ScoringOverrides {
-	if global == nil && local == nil {
-		return nil
-	}
-	result := &ScoringOverrides{}
-
-	if global != nil {
-		result.OldUnreadBonus = global.OldUnreadBonus
-		result.MaxAgeBonus = global.MaxAgeBonus
-		result.HotTopicBonus = global.HotTopicBonus
-		result.HotTopicThreshold = global.HotTopicThreshold
-		result.FYIPromotionThreshold = global.FYIPromotionThreshold
-		result.NotablePromotionThreshold = global.NotablePromotionThreshold
-		result.ImportantPromotionThreshold = global.ImportantPromotionThreshold
-		result.OpenStateBonus = global.OpenStateBonus
-		result.ClosedStatePenalty = global.ClosedStatePenalty
-		result.LowHangingBonus = global.LowHangingBonus
-	}
-
-	if local != nil {
-		if local.OldUnreadBonus != nil {
-			result.OldUnreadBonus = local.OldUnreadBonus
-		}
-		if local.MaxAgeBonus != nil {
-			result.MaxAgeBonus = local.MaxAgeBonus
-		}
-		if local.HotTopicBonus != nil {
-			result.HotTopicBonus = local.HotTopicBonus
-		}
-		if local.HotTopicThreshold != nil {
-			result.HotTopicThreshold = local.HotTopicThreshold
-		}
-		if local.FYIPromotionThreshold != nil {
-			result.FYIPromotionThreshold = local.FYIPromotionThreshold
-		}
-		if local.NotablePromotionThreshold != nil {
-			result.NotablePromotionThreshold = local.NotablePromotionThreshold
-		}
-		if local.ImportantPromotionThreshold != nil {
-			result.ImportantPromotionThreshold = local.ImportantPromotionThreshold
-		}
-		if local.OpenStateBonus != nil {
-			result.OpenStateBonus = local.OpenStateBonus
-		}
-		if local.ClosedStatePenalty != nil {
-			result.ClosedStatePenalty = local.ClosedStatePenalty
-		}
-		if local.LowHangingBonus != nil {
-			result.LowHangingBonus = local.LowHangingBonus
-		}
-	}
-
-	// Return nil if all fields are nil
-	if result.OldUnreadBonus == nil && result.MaxAgeBonus == nil && result.HotTopicBonus == nil &&
-		result.HotTopicThreshold == nil && result.FYIPromotionThreshold == nil &&
-		result.NotablePromotionThreshold == nil && result.ImportantPromotionThreshold == nil &&
-		result.OpenStateBonus == nil && result.ClosedStatePenalty == nil && result.LowHangingBonus == nil {
-		return nil
-	}
-
-	return result
+	return mergePointerStruct(global, local)
 }
 
 func mergePROverrides(global, local *PROverrides) *PROverrides {
-	if global == nil && local == nil {
-		return nil
-	}
-	result := &PROverrides{}
-
-	if global != nil {
-		result.ApprovedBonus = global.ApprovedBonus
-		result.MergeableBonus = global.MergeableBonus
-		result.ChangesRequestedBonus = global.ChangesRequestedBonus
-		result.ReviewCommentBonus = global.ReviewCommentBonus
-		result.ReviewCommentMaxBonus = global.ReviewCommentMaxBonus
-		result.StaleThresholdDays = global.StaleThresholdDays
-		result.StaleBonusPerDay = global.StaleBonusPerDay
-		result.StaleMaxBonus = global.StaleMaxBonus
-		result.DraftPenalty = global.DraftPenalty
-		result.SmallMaxFiles = global.SmallMaxFiles
-		result.SmallMaxLines = global.SmallMaxLines
-		result.SizeXS = global.SizeXS
-		result.SizeS = global.SizeS
-		result.SizeM = global.SizeM
-		result.SizeL = global.SizeL
-	}
-
-	if local != nil {
-		if local.ApprovedBonus != nil {
-			result.ApprovedBonus = local.ApprovedBonus
-		}
-		if local.MergeableBonus != nil {
-			result.MergeableBonus = local.MergeableBonus
-		}
-		if local.ChangesRequestedBonus != nil {
-			result.ChangesRequestedBonus = local.ChangesRequestedBonus
-		}
-		if local.ReviewCommentBonus != nil {
-			result.ReviewCommentBonus = local.ReviewCommentBonus
-		}
-		if local.ReviewCommentMaxBonus != nil {
-			result.ReviewCommentMaxBonus = local.ReviewCommentMaxBonus
-		}
-		if local.StaleThresholdDays != nil {
-			result.StaleThresholdDays = local.StaleThresholdDays
-		}
-		if local.StaleBonusPerDay != nil {
-			result.StaleBonusPerDay = local.StaleBonusPerDay
-		}
-		if local.StaleMaxBonus != nil {
-			result.StaleMaxBonus = local.StaleMaxBonus
-		}
-		if local.DraftPenalty != nil {
-			result.DraftPenalty = local.DraftPenalty
-		}
-		if local.SmallMaxFiles != nil {
-			result.SmallMaxFiles = local.SmallMaxFiles
-		}
-		if local.SmallMaxLines != nil {
-			result.SmallMaxLines = local.SmallMaxLines
-		}
-		if local.SizeXS != nil {
-			result.SizeXS = local.SizeXS
-		}
-		if local.SizeS != nil {
-			result.SizeS = local.SizeS
-		}
-		if local.SizeM != nil {
-			result.SizeM = local.SizeM
-		}
-		if local.SizeL != nil {
-			result.SizeL = local.SizeL
-		}
-	}
-
-	// Return nil if all fields are nil
-	if result.ApprovedBonus == nil && result.MergeableBonus == nil && result.ChangesRequestedBonus == nil &&
-		result.ReviewCommentBonus == nil && result.ReviewCommentMaxBonus == nil &&
-		result.StaleThresholdDays == nil && result.StaleBonusPerDay == nil && result.StaleMaxBonus == nil &&
-		result.DraftPenalty == nil && result.SmallMaxFiles == nil && result.SmallMaxLines == nil &&
-		result.SizeXS == nil && result.SizeS == nil && result.SizeM == nil && result.SizeL == nil {
-		return nil
-	}
-
-	return result
+	return mergePointerStruct(global, local)
 }
 
 func mergeUrgencyOverrides(global, local *UrgencyOverrides) *UrgencyOverrides {
-	if global == nil && local == nil {
-		return nil
-	}
-	result := &UrgencyOverrides{}
-
-	if global != nil {
-		result.ReviewRequested = global.ReviewRequested
-		result.Mention = global.Mention
-		result.ApprovedMergeablePR = global.ApprovedMergeablePR
-		result.ChangesRequestedPR = global.ChangesRequestedPR
-	}
-
-	if local != nil {
-		if local.ReviewRequested != nil {
-			result.ReviewRequested = local.ReviewRequested
-		}
-		if local.Mention != nil {
-			result.Mention = local.Mention
-		}
-		if local.ApprovedMergeablePR != nil {
-			result.ApprovedMergeablePR = local.ApprovedMergeablePR
-		}
-		if local.ChangesRequestedPR != nil {
-			result.ChangesRequestedPR = local.ChangesRequestedPR
-		}
-	}
-
-	// Return nil if all fields are nil
-	if result.ReviewRequested == nil && result.Mention == nil &&
-		result.ApprovedMergeablePR == nil && result.ChangesRequestedPR == nil {
-		return nil
-	}
-
-	return result
+	return mergePointerStruct(global, local)
 }
 
 func mergeOrphanedConfig(global, local *OrphanedConfig) *OrphanedConfig {
