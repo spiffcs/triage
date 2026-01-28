@@ -165,25 +165,27 @@ func (f *TableFormatter) Format(items []triage.PrioritizedItem, w io.Writer) err
 
 	// Column widths
 	const (
-		colPriority = 10
-		colType     = 5
-		colRepo     = 26
-		colTitle    = 40
-		colStatus   = 20
-		colAge      = 5
+		colPriority  = 10
+		colType      = 5
+		colAssigned  = 12
+		colRepo      = 26
+		colTitle     = 40
+		colStatus    = 20
+		colAge       = 5
 	)
 
 	// Header (↗ indicates column is clickable)
-	if _, err := fmt.Fprintf(w, "%-*s  %-*s  %-*s  %-*s  %-*s  %s\n",
+	if _, err := fmt.Fprintf(w, "%-*s  %-*s  %-*s  %-*s  %-*s  %-*s  %s\n",
 		colPriority, "Priority",
 		colType, "Type",
+		colAssigned, "Assigned",
 		colRepo, "Repository ↗",
 		colTitle, "Title ↗",
 		colStatus, "Status",
 		"Age"); err != nil {
 		log.Trace("write error", "location", "header", "error", err)
 	}
-	if _, err := fmt.Fprintln(w, strings.Repeat("-", colPriority+colType+colRepo+colTitle+colStatus+colAge+12)); err != nil {
+	if _, err := fmt.Fprintln(w, strings.Repeat("-", colPriority+colType+colAssigned+colRepo+colTitle+colStatus+colAge+14)); err != nil {
 		log.Trace("write error", "location", "separator", "error", err)
 	}
 
@@ -259,6 +261,11 @@ func (f *TableFormatter) Format(items []triage.PrioritizedItem, w io.Writer) err
 		coloredPriority := colorPriority(item.Priority)
 		priorityStr := padRight(coloredPriority, displayWidth(coloredPriority), colPriority)
 
+		// Format assigned column
+		assigned := formatAssigned(n.Details, colAssigned)
+		assignedWidth := displayWidth(assigned)
+		assigned = padRight(assigned, assignedWidth, colAssigned)
+
 		// Build status column (review state, PR size, or comment count)
 		statusRes := f.formatStatus(n, item)
 		statusText := statusRes.text
@@ -272,9 +279,10 @@ func (f *TableFormatter) Format(items []triage.PrioritizedItem, w io.Writer) err
 		// Calculate age
 		age := formatAge(time.Since(n.UpdatedAt))
 
-		if _, err := fmt.Fprintf(w, "%s  %-*s  %s  %s  %s  %s\n",
+		if _, err := fmt.Fprintf(w, "%s  %-*s  %s  %s  %s  %s  %s\n",
 			priorityStr,
 			colType, typeStr,
+			assigned,
 			linkedRepo,
 			linkedTitle,
 			statusText,
@@ -389,6 +397,37 @@ func colorPriority(p triage.PriorityLevel) string {
 	default:
 		return color.WhiteString("FYI")
 	}
+}
+
+// formatAssigned returns the assigned user for display
+// Priority: assignee > latest reviewer > requested reviewer
+func formatAssigned(d *github.ItemDetails, maxWidth int) string {
+	if d == nil {
+		return "─"
+	}
+
+	var assigned string
+	// Prefer assignees first
+	if len(d.Assignees) > 0 {
+		assigned = d.Assignees[0]
+	} else if d.IsPR && d.LatestReviewer != "" {
+		// For PRs without assignee, show the most recent reviewer
+		assigned = d.LatestReviewer
+	} else if d.IsPR && len(d.RequestedReviewers) > 0 {
+		// Fall back to requested reviewers
+		assigned = d.RequestedReviewers[0]
+	}
+
+	if assigned == "" {
+		return "─"
+	}
+
+	// Truncate if needed
+	if len(assigned) > maxWidth {
+		assigned = assigned[:maxWidth-1] + "…"
+	}
+
+	return assigned
 }
 
 func formatAge(d time.Duration) string {

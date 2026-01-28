@@ -13,6 +13,7 @@ type Options struct {
 	Workers       int
 	IncludeMerged bool
 	IncludeClosed bool
+	GreenCI       bool  // Filter to only show PRs with passing CI
 	TUI           *bool // nil = auto-detect, true = force TUI, false = disable TUI
 
 	// Profiling options

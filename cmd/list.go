@@ -50,6 +50,7 @@ func addListFlags(cmd *cobra.Command, opts *Options) {
 	cmd.Flags().IntVarP(&opts.Workers, "workers", "w", 20, "Number of concurrent workers for fetching details")
 	cmd.Flags().BoolVar(&opts.IncludeMerged, "include-merged", false, "Include notifications for merged PRs")
 	cmd.Flags().BoolVar(&opts.IncludeClosed, "include-closed", false, "Include notifications for closed issues/PRs")
+	cmd.Flags().BoolVar(&opts.GreenCI, "green-ci", false, "Only show PRs with passing CI status")
 	cmd.Flags().StringVarP(&opts.Type, "type", "t", "", "Filter by type (pr, issue)")
 
 	// TUI flag with tri-state: nil = auto, true = force, false = disable
@@ -553,6 +554,11 @@ func runList(_ *cobra.Command, _ []string, opts *Options) error {
 	// Filter out excluded authors (bots like dependabot, renovate, etc.)
 	if len(cfg.ExcludeAuthors) > 0 {
 		items = triage.FilterByExcludedAuthors(items, cfg.ExcludeAuthors)
+	}
+
+	// Filter to only show PRs with green CI
+	if opts.GreenCI {
+		items = triage.FilterByGreenCI(items)
 	}
 
 	// Filter out resolved items (that haven't had new activity)

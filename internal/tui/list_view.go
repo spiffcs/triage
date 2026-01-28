@@ -15,13 +15,14 @@ import (
 
 // Column widths
 const (
-	colPriority = 10
-	colType     = 5
-	colCI       = 2
-	colRepo     = 26
-	colTitle    = 40
-	colStatus   = 20
-	colAge      = 5
+	colPriority  = 10
+	colType      = 5
+	colAssigned  = 12
+	colCI        = 2
+	colRepo      = 26
+	colTitle     = 40
+	colStatus    = 20
+	colAge       = 5
 )
 
 // ansiRegex matches ANSI escape sequences
@@ -104,9 +105,10 @@ func calculateScrollWindow(cursor, total, viewHeight int) (start, end int) {
 // renderHeader renders the table header
 func renderHeader() string {
 	return listHeaderStyle.Render(fmt.Sprintf(
-		"  %-*s  %-*s  %-*s  %-*s  %-*s  %-*s  %s",
+		"  %-*s  %-*s  %-*s  %-*s  %-*s  %-*s  %-*s  %s",
 		colPriority, "Priority",
 		colType, "Type",
+		colAssigned, "Assigned",
 		colCI, "CI",
 		colRepo, "Repository",
 		colTitle, "Title",
@@ -117,7 +119,7 @@ func renderHeader() string {
 
 // renderSeparator renders the header separator line
 func renderSeparator() string {
-	width := 2 + colPriority + 2 + colType + 2 + colCI + 2 + colRepo + 2 + colTitle + 2 + colStatus + 2 + colAge
+	width := 2 + colPriority + 2 + colType + 2 + colAssigned + 2 + colCI + 2 + colRepo + 2 + colTitle + 2 + colStatus + 2 + colAge
 	return listSeparatorStyle.Render(strings.Repeat("─", width))
 }
 
@@ -142,6 +144,10 @@ func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, pr
 		isPR = true
 	}
 	typeStr = padRight(typeStr, len(typeStr), colType)
+
+	// Assigned
+	assigned, assignedWidth := renderAssigned(n.Details)
+	assigned = padRight(assigned, assignedWidth, colAssigned)
 
 	// CI status
 	ci, ciWidth := renderCI(n.Details, isPR)
@@ -187,10 +193,11 @@ func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, pr
 	// Age
 	age := formatAge(time.Since(n.UpdatedAt))
 
-	row := fmt.Sprintf("%s%s  %s  %s  %s  %s  %s  %s",
+	row := fmt.Sprintf("%s%s  %s  %s  %s  %s  %s  %s  %s",
 		cursor,
 		priority,
 		typeStr,
+		assigned,
 		ci,
 		repo,
 		title,
@@ -240,6 +247,40 @@ func renderCI(d *github.ItemDetails, isPR bool) (string, int) {
 	default:
 		return "─", 1 // dash for no CI
 	}
+}
+
+// renderAssigned renders the Assigned column
+// For PRs: shows requested reviewer if available, otherwise assignee
+// For Issues: shows assignee
+// Returns the string and its visible width
+// Priority: assignee > latest reviewer > requested reviewer
+func renderAssigned(d *github.ItemDetails) (string, int) {
+	if d == nil {
+		return "─", 1
+	}
+
+	var assigned string
+	// Prefer assignees first
+	if len(d.Assignees) > 0 {
+		assigned = d.Assignees[0]
+	} else if d.IsPR && d.LatestReviewer != "" {
+		// For PRs without assignee, show the most recent reviewer
+		assigned = d.LatestReviewer
+	} else if d.IsPR && len(d.RequestedReviewers) > 0 {
+		// Fall back to requested reviewers
+		assigned = d.RequestedReviewers[0]
+	}
+
+	if assigned == "" {
+		return "─", 1
+	}
+
+	// Truncate if needed
+	if len(assigned) > colAssigned {
+		assigned = assigned[:colAssigned-1] + "…"
+	}
+
+	return assigned, len(assigned)
 }
 
 // renderStatus renders the status column with colors

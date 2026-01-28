@@ -339,3 +339,39 @@ func TestFilterByExcludedAuthors(t *testing.T) {
 		})
 	}
 }
+
+func TestFilterByGreenCI(t *testing.T) {
+	items := []PrioritizedItem{
+		makePrioritizedItem("1", github.ReasonReviewRequested, github.SubjectPullRequest, PriorityUrgent, &github.ItemDetails{CIStatus: "success"}),
+		makePrioritizedItem("2", github.ReasonReviewRequested, github.SubjectPullRequest, PriorityUrgent, &github.ItemDetails{CIStatus: "failure"}),
+		makePrioritizedItem("3", github.ReasonReviewRequested, github.SubjectPullRequest, PriorityUrgent, &github.ItemDetails{CIStatus: "pending"}),
+		makePrioritizedItem("4", github.ReasonReviewRequested, github.SubjectPullRequest, PriorityUrgent, &github.ItemDetails{CIStatus: ""}),
+		makePrioritizedItem("5", github.ReasonReviewRequested, github.SubjectPullRequest, PriorityUrgent, nil), // nil Details - should be kept (fail-open)
+		makePrioritizedItem("6", github.ReasonSubscribed, github.SubjectIssue, PriorityFYI, &github.ItemDetails{CIStatus: ""}), // Issue - should be kept
+	}
+
+	tests := []struct {
+		name    string
+		wantIDs []string
+	}{
+		{
+			name:    "keeps PRs with success CI, issues, and items without details",
+			wantIDs: []string{"1", "5", "6"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := FilterByGreenCI(items)
+			if len(got) != len(tt.wantIDs) {
+				t.Errorf("FilterByGreenCI() returned %d items, want %d", len(got), len(tt.wantIDs))
+				return
+			}
+			for i, item := range got {
+				if item.Notification.ID != tt.wantIDs[i] {
+					t.Errorf("FilterByGreenCI()[%d].ID = %s, want %s", i, item.Notification.ID, tt.wantIDs[i])
+				}
+			}
+		})
+	}
+}

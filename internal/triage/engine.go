@@ -191,3 +191,26 @@ func FilterByExcludedAuthors(items []PrioritizedItem, excludedAuthors []string) 
 	}
 	return filtered
 }
+
+// FilterByGreenCI keeps only PRs with passing CI status.
+// Issues and items without Details are kept (fail-open).
+func FilterByGreenCI(items []PrioritizedItem) []PrioritizedItem {
+	filtered := make([]PrioritizedItem, 0, len(items))
+	for _, item := range items {
+		// Keep issues (they don't have CI)
+		if item.Notification.Subject.Type != github.SubjectPullRequest {
+			filtered = append(filtered, item)
+			continue
+		}
+		// Keep items without details (can't determine CI status)
+		if item.Notification.Details == nil {
+			filtered = append(filtered, item)
+			continue
+		}
+		// Keep PRs with successful CI
+		if item.Notification.Details.CIStatus == "success" {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
+}

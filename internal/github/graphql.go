@@ -51,23 +51,25 @@ type graphqlError struct {
 
 // PRGraphQLResult contains the GraphQL response for a pull request.
 type PRGraphQLResult struct {
-	Number       int
-	State        string
-	Additions    int
-	Deletions    int
-	ChangedFiles int
-	IsDraft      bool
-	Mergeable    string
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
-	ClosedAt     *time.Time
-	MergedAt     *time.Time
-	Author       string
-	Assignees    []string
-	Labels       []string
-	ReviewState  string
-	CIStatus     string
-	CommentCount int
+	Number             int
+	State              string
+	Additions          int
+	Deletions          int
+	ChangedFiles       int
+	IsDraft            bool
+	Mergeable          string
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+	ClosedAt           *time.Time
+	MergedAt           *time.Time
+	Author             string
+	Assignees          []string
+	Labels             []string
+	ReviewState        string
+	CIStatus           string
+	CommentCount       int
+	RequestedReviewers []string
+	LatestReviewer     string
 }
 
 // IssueGraphQLResult contains the GraphQL response for an issue.
@@ -367,6 +369,20 @@ func buildPRQuery(items []enrichmentItem) string {
       assignees(first: 10) { nodes { login } }
       labels(first: 20) { nodes { name } }
       reviewDecision
+      reviewRequests(first: 10) {
+        nodes {
+          requestedReviewer {
+            ... on User { login }
+            ... on Team { name }
+          }
+        }
+      }
+      latestReviews(first: 10) {
+        nodes {
+          author { login }
+          submittedAt
+        }
+      }
       commits(last: 1) {
         nodes {
           commit {
@@ -488,6 +504,32 @@ func parsePRResponse(data json.RawMessage, items []enrichmentItem) (map[int]*PRG
 			}
 		}
 
+		// Parse requested reviewers
+		for _, rr := range pr.ReviewRequests.Nodes {
+			if rr.RequestedReviewer != nil {
+				// User has login, Team has name
+				if rr.RequestedReviewer.Login != "" {
+					result.RequestedReviewers = append(result.RequestedReviewers, rr.RequestedReviewer.Login)
+				} else if rr.RequestedReviewer.Name != "" {
+					result.RequestedReviewers = append(result.RequestedReviewers, rr.RequestedReviewer.Name)
+				}
+			}
+		}
+
+		// Get the most recent reviewer from latestReviews
+		// latestReviews returns reviews sorted by most recent first
+		if len(pr.LatestReviews.Nodes) > 0 {
+			var latestTime time.Time
+			for _, review := range pr.LatestReviews.Nodes {
+				if review.Author != nil && review.Author.Login != "" {
+					if review.SubmittedAt.After(latestTime) {
+						latestTime = review.SubmittedAt
+						result.LatestReviewer = review.Author.Login
+					}
+				}
+			}
+		}
+
 		// Map reviewDecision to our review state format
 		result.ReviewState = mapReviewDecision(pr.ReviewDecision)
 
@@ -527,7 +569,20 @@ type prGraphQLData struct {
 		} `json:"nodes"`
 	} `json:"labels"`
 	ReviewDecision string `json:"reviewDecision"`
-	Commits        struct {
+	ReviewRequests struct {
+		Nodes []struct {
+			RequestedReviewer *requestedReviewer `json:"requestedReviewer"`
+		} `json:"nodes"`
+	} `json:"reviewRequests"`
+	LatestReviews struct {
+		Nodes []struct {
+			Author *struct {
+				Login string `json:"login"`
+			} `json:"author"`
+			SubmittedAt time.Time `json:"submittedAt"`
+		} `json:"nodes"`
+	} `json:"latestReviews"`
+	Commits struct {
 		Nodes []struct {
 			Commit struct {
 				StatusCheckRollup *struct {
@@ -542,6 +597,12 @@ type prGraphQLData struct {
 	ReviewThreads struct {
 		TotalCount int `json:"totalCount"`
 	} `json:"reviewThreads"`
+}
+
+// requestedReviewer can be either a User or a Team
+type requestedReviewer struct {
+	Login string `json:"login"` // For User
+	Name  string `json:"name"`  // For Team
 }
 
 // parseIssueResponse parses the GraphQL response for Issues.
@@ -711,6 +772,8 @@ func applyPRResult(n *Notification, result *PRGraphQLResult) {
 	n.Details.ReviewState = result.ReviewState
 	n.Details.CIStatus = result.CIStatus
 	n.Details.CommentCount = result.CommentCount
+	n.Details.RequestedReviewers = result.RequestedReviewers
+	n.Details.LatestReviewer = result.LatestReviewer
 	n.Details.IsPR = true
 
 	// Set HTMLURL if not already set
