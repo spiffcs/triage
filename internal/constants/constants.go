@@ -87,3 +87,30 @@ const (
 	// StateMerged indicates a PR has been merged.
 	StateMerged = "merged"
 )
+
+// Column width constants for table/list display
+const (
+	// ColPriority is the width of the priority column.
+	ColPriority = 10
+
+	// ColType is the width of the type column (ISS/PR).
+	ColType = 5
+
+	// ColAssigned is the width of the assigned user column.
+	ColAssigned = 12
+
+	// ColCI is the width of the CI status column.
+	ColCI = 2
+
+	// ColRepo is the width of the repository column.
+	ColRepo = 26
+
+	// ColTitle is the width of the title column.
+	ColTitle = 40
+
+	// ColStatus is the width of the status column.
+	ColStatus = 20
+
+	// ColAge is the width of the age column.
+	ColAge = 5
+)
