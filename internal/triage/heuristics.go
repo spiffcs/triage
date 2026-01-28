@@ -52,8 +52,6 @@ func (h *Heuristics) baseScore(reason github.NotificationReason) int {
 		return h.Weights.Mention
 	case github.ReasonTeamMention:
 		return h.Weights.TeamMention
-	case github.ReasonOrphaned:
-		return h.Weights.Orphaned
 	case github.ReasonAuthor:
 		return h.Weights.Author
 	case github.ReasonAssign:
@@ -96,31 +94,6 @@ func (h *Heuristics) detailModifiers(n *github.Notification) int {
 	// Author-specific modifiers for their own PRs
 	if d.Author == h.CurrentUser && d.IsPR {
 		modifier += h.authoredPRModifiers(d)
-	}
-
-	// Orphaned contribution modifiers
-	if n.Reason == github.ReasonOrphaned {
-		modifier += h.orphanedModifiers(d)
-	}
-
-	return modifier
-}
-
-// orphanedModifiers calculates score modifiers for orphaned contributions
-func (h *Heuristics) orphanedModifiers(d *github.ItemDetails) int {
-	modifier := 0
-
-	// More urgent as time passes since last team activity
-	if d.LastTeamActivityAt != nil {
-		daysSinceTeam := int(time.Since(*d.LastTeamActivityAt).Hours() / 24)
-		modifier += min(daysSinceTeam*3, 30) // Cap at 30 bonus
-	}
-
-	// Author asking multiple times increases urgency
-	if d.ConsecutiveAuthorComments >= 3 {
-		modifier += 20
-	} else if d.ConsecutiveAuthorComments >= 2 {
-		modifier += 10
 	}
 
 	return modifier
@@ -193,11 +166,6 @@ func (h *Heuristics) isLowHangingFruit(d *github.ItemDetails) bool {
 func (h *Heuristics) DeterminePriority(n *github.Notification, score int) PriorityLevel {
 	reason := n.Reason
 
-	// Orphaned contributions get their own priority level
-	if reason == github.ReasonOrphaned {
-		return PriorityOrphaned
-	}
-
 	// Urgent: review requests (if enabled)
 	if reason == github.ReasonReviewRequested && h.Weights.ReviewRequestedIsUrgent {
 		return PriorityUrgent
@@ -261,8 +229,6 @@ func (h *Heuristics) DetermineAction(n *github.Notification) string {
 		return "Respond to mention"
 	case github.ReasonTeamMention:
 		return "Team mentioned - check if relevant"
-	case github.ReasonOrphaned:
-		return "Respond to external contributor"
 	case github.ReasonAuthor:
 		if details == nil {
 			return "Check activity on your item"

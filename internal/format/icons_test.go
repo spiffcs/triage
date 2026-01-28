@@ -99,31 +99,6 @@ func TestDetermineIcon(t *testing.T) {
 			},
 			expected: IconNone,
 		},
-		{
-			name: "orphaned icon",
-			input: IconInput{
-				IsOrphaned: true,
-			},
-			expected: IconOrphaned,
-		},
-		{
-			name: "orphaned takes precedence over hot topic",
-			input: IconInput{
-				IsOrphaned:        true,
-				CommentCount:      10,
-				HotTopicThreshold: 5,
-				IsPR:              true,
-			},
-			expected: IconOrphaned,
-		},
-		{
-			name: "orphaned takes precedence over quick win",
-			input: IconInput{
-				IsOrphaned: true,
-				IsQuickWin: true,
-			},
-			expected: IconOrphaned,
-		},
 	}
 
 	for _, tt := range tests {
@@ -144,10 +119,6 @@ func TestIconConstants(t *testing.T) {
 
 	if QuickWinIcon != "⚡\uFE0F" {
 		t.Errorf("QuickWinIcon = %q, want ⚡️", QuickWinIcon)
-	}
-
-	if OrphanedIcon != "🆘" {
-		t.Errorf("OrphanedIcon = %q, want 🆘", OrphanedIcon)
 	}
 
 	if IconWidth != 3 {
