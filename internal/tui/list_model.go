@@ -27,11 +27,22 @@ type ListModel struct {
 	prSizeM           int
 	prSizeL           int
 	currentUser       string
+	hideAssignedCI    bool // Hide Assigned and CI columns (for orphaned view)
+}
+
+// ListOption is a functional option for configuring ListModel
+type ListOption func(*ListModel)
+
+// WithHideAssignedCI hides the Assigned and CI columns
+func WithHideAssignedCI() ListOption {
+	return func(m *ListModel) {
+		m.hideAssignedCI = true
+	}
 }
 
 // NewListModel creates a new list model
-func NewListModel(items []triage.PrioritizedItem, store *resolved.Store, weights config.ScoreWeights, currentUser string) ListModel {
-	return ListModel{
+func NewListModel(items []triage.PrioritizedItem, store *resolved.Store, weights config.ScoreWeights, currentUser string, opts ...ListOption) ListModel {
+	m := ListModel{
 		items:             items,
 		cursor:            0,
 		resolved:          store,
@@ -44,6 +55,10 @@ func NewListModel(items []triage.PrioritizedItem, store *resolved.Store, weights
 		prSizeL:           weights.PRSizeL,
 		currentUser:       currentUser,
 	}
+	for _, opt := range opts {
+		opt(&m)
+	}
+	return m
 }
 
 // Init implements tea.Model

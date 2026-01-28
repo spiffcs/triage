@@ -16,6 +16,7 @@ const (
 	ReasonStateChange     NotificationReason = "state_change"
 	ReasonCIActivity      NotificationReason = "ci_activity"
 	ReasonManual          NotificationReason = "manual"
+	ReasonOrphaned        NotificationReason = "orphaned"
 )
 
 // SubjectType represents the type of notification subject
@@ -90,4 +91,9 @@ type ItemDetails struct {
 	Draft              bool       `json:"draft,omitempty"`
 	RequestedReviewers []string   `json:"requestedReviewers,omitempty"`
 	LatestReviewer     string     `json:"latestReviewer,omitempty"`
+
+	// Orphaned contribution detection
+	AuthorAssociation         string     `json:"authorAssociation,omitempty"` // MEMBER, COLLABORATOR, CONTRIBUTOR, etc.
+	LastTeamActivityAt        *time.Time `json:"lastTeamActivityAt,omitempty"`
+	ConsecutiveAuthorComments int        `json:"consecutiveAuthorComments,omitempty"`
 }

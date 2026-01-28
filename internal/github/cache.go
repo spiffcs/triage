@@ -239,6 +239,10 @@ type NotificationListCacheEntry struct {
 // NotificationListCacheTTL is the max age before a full refresh is required
 const NotificationListCacheTTL = 1 * time.Hour
 
+// OrphanedListCacheTTL is shorter than notifications since orphaned data changes less frequently
+// but we want relatively fresh results for proactive outreach
+const OrphanedListCacheTTL = 15 * time.Minute
+
 // prListCacheKey generates a cache key for a PR list
 func (c *Cache) prListCacheKey(username string, listType string) string {
 	return fmt.Sprintf("prlist_%s_%s.json", listType, username)

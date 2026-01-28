@@ -23,6 +23,7 @@ const (
 	colTitle    = 40
 	colStatus   = 20
 	colAge      = 5
+	colSignal   = 30
 )
 
 // ansiRegex matches ANSI escape sequences
@@ -45,9 +46,9 @@ func renderListView(m ListModel) string {
 	}
 
 	// Render header
-	b.WriteString(renderHeader())
+	b.WriteString(renderHeader(m.hideAssignedCI))
 	b.WriteString("\n")
-	b.WriteString(renderSeparator())
+	b.WriteString(renderSeparator(m.hideAssignedCI))
 	b.WriteString("\n")
 
 	// Calculate scroll window
@@ -56,7 +57,7 @@ func renderListView(m ListModel) string {
 	// Render visible items
 	for i := start; i < end; i++ {
 		selected := i == m.cursor
-		b.WriteString(renderRow(m.items[i], selected, m.hotTopicThreshold, m.prSizeXS, m.prSizeS, m.prSizeM, m.prSizeL, m.currentUser))
+		b.WriteString(renderRow(m.items[i], selected, m.hotTopicThreshold, m.prSizeXS, m.prSizeS, m.prSizeM, m.prSizeL, m.currentUser, m.hideAssignedCI))
 		b.WriteString("\n")
 	}
 
@@ -103,7 +104,19 @@ func calculateScrollWindow(cursor, total, viewHeight int) (start, end int) {
 }
 
 // renderHeader renders the table header
-func renderHeader() string {
+func renderHeader(hideAssignedCI bool) string {
+	if hideAssignedCI {
+		return listHeaderStyle.Render(fmt.Sprintf(
+			"  %-*s  %-*s  %-*s  %-*s  %-*s  %-*s  %s",
+			colPriority, "Priority",
+			colType, "Type",
+			colRepo, "Repository",
+			colTitle, "Title",
+			colStatus, "Status",
+			colSignal, "Signal",
+			"Age",
+		))
+	}
 	return listHeaderStyle.Render(fmt.Sprintf(
 		"  %-*s  %-*s  %-*s  %-*s  %-*s  %-*s  %-*s  %s",
 		colPriority, "Priority",
@@ -118,13 +131,18 @@ func renderHeader() string {
 }
 
 // renderSeparator renders the header separator line
-func renderSeparator() string {
-	width := 2 + colPriority + 2 + colType + 2 + colAssigned + 2 + colCI + 2 + colRepo + 2 + colTitle + 2 + colStatus + 2 + colAge
+func renderSeparator(hideAssignedCI bool) string {
+	var width int
+	if hideAssignedCI {
+		width = 2 + colPriority + 2 + colType + 2 + colRepo + 2 + colTitle + 2 + colStatus + 2 + colSignal + 2 + colAge
+	} else {
+		width = 2 + colPriority + 2 + colType + 2 + colAssigned + 2 + colCI + 2 + colRepo + 2 + colTitle + 2 + colStatus + 2 + colAge
+	}
 	return listSeparatorStyle.Render(strings.Repeat("─", width))
 }
 
 // renderRow renders a single item row
-func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, prSizeXS, prSizeS, prSizeM, prSizeL int, currentUser string) string {
+func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, prSizeXS, prSizeS, prSizeM, prSizeL int, currentUser string, hideAssignedCI bool) string {
 	n := item.Notification
 
 	// Cursor indicator
@@ -144,14 +162,6 @@ func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, pr
 		isPR = true
 	}
 	typeStr = padRight(typeStr, len(typeStr), colType)
-
-	// Assigned
-	assigned, assignedWidth := renderAssigned(n.Details)
-	assigned = padRight(assigned, assignedWidth, colAssigned)
-
-	// CI status
-	ci, ciWidth := renderCI(n.Details, isPR)
-	ci = padRight(ci, ciWidth, colCI)
 
 	// Priority with color - need to pad based on visible width
 	priority, priorityWidth := renderPriority(item.Priority)
@@ -193,22 +203,82 @@ func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, pr
 	// Age
 	age := formatAge(time.Since(n.UpdatedAt))
 
-	row := fmt.Sprintf("%s%s  %s  %s  %s  %s  %s  %s  %s",
-		cursor,
-		priority,
-		typeStr,
-		assigned,
-		ci,
-		repo,
-		title,
-		status,
-		age,
-	)
+	var row string
+	if hideAssignedCI {
+		// Orphaned view: no Assigned/CI, but add Signal column
+		signal, signalWidth := renderSignal(n.Details)
+		signal = padRight(signal, signalWidth, colSignal)
+
+		row = fmt.Sprintf("%s%s  %s  %s  %s  %s  %s  %s",
+			cursor,
+			priority,
+			typeStr,
+			repo,
+			title,
+			status,
+			signal,
+			age,
+		)
+	} else {
+		// Standard view with Assigned and CI columns
+		assigned, assignedWidth := renderAssigned(n.Details)
+		assigned = padRight(assigned, assignedWidth, colAssigned)
+
+		ci, ciWidth := renderCI(n.Details, isPR)
+		ci = padRight(ci, ciWidth, colCI)
+
+		row = fmt.Sprintf("%s%s  %s  %s  %s  %s  %s  %s  %s",
+			cursor,
+			priority,
+			typeStr,
+			assigned,
+			ci,
+			repo,
+			title,
+			status,
+			age,
+		)
+	}
 
 	if selected {
 		return listSelectedStyle.Render(row)
 	}
 	return row
+}
+
+// renderSignal renders the signal column showing why an item needs attention
+func renderSignal(d *github.ItemDetails) (string, int) {
+	if d == nil {
+		return "─", 1
+	}
+
+	var signals []string
+
+	// Consecutive unanswered comments
+	if d.ConsecutiveAuthorComments >= 2 {
+		signals = append(signals, fmt.Sprintf("%d unanswered", d.ConsecutiveAuthorComments))
+	}
+
+	// Days since team activity
+	if d.LastTeamActivityAt != nil {
+		days := int(time.Since(*d.LastTeamActivityAt).Hours() / 24)
+		if days > 0 {
+			signals = append(signals, fmt.Sprintf("No response %dd", days))
+		}
+	} else if !d.CreatedAt.IsZero() {
+		// No team activity at all
+		days := int(time.Since(d.CreatedAt).Hours() / 24)
+		if days > 0 {
+			signals = append(signals, fmt.Sprintf("No response %dd", days))
+		}
+	}
+
+	if len(signals) == 0 {
+		return "Needs attention", 15
+	}
+
+	result := strings.Join(signals, ", ")
+	return result, len(result)
 }
 
 // renderPriority renders the priority with appropriate styling

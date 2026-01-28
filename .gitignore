@@ -45,6 +45,7 @@ dist/
 *.swp
 *.swo
 *~
+.triage.yaml
 
 # OS files
 .DS_Store

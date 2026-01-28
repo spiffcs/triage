@@ -20,6 +20,16 @@ type Config struct {
 	Scoring    *ScoringOverrides   `yaml:"scoring,omitempty"`
 	PR         *PROverrides        `yaml:"pr,omitempty"`
 	Urgency    *UrgencyOverrides   `yaml:"urgency,omitempty"`
+	Orphaned   *OrphanedConfig     `yaml:"orphaned,omitempty"`
+}
+
+// OrphanedConfig configures orphaned contribution detection
+type OrphanedConfig struct {
+	Enabled                   bool     `yaml:"enabled,omitempty"`
+	Repos                     []string `yaml:"repos,omitempty"`
+	StaleDays                 int      `yaml:"stale_days,omitempty"`                   // Default: 7
+	ConsecutiveAuthorComments int      `yaml:"consecutive_author_comments,omitempty"` // Default: 2
+	MaxItemsPerRepo           int      `yaml:"max_items_per_repo,omitempty"`           // Default: 20
 }
 
 // BaseScoreOverrides allows customizing base scores for notification reasons
@@ -33,6 +43,7 @@ type BaseScoreOverrides struct {
 	StateChange     *int `yaml:"state_change,omitempty"`
 	Subscribed      *int `yaml:"subscribed,omitempty"`
 	CIActivity      *int `yaml:"ci_activity,omitempty"`
+	Orphaned        *int `yaml:"orphaned,omitempty"`
 }
 
 // ScoringOverrides - general scoring modifiers
@@ -87,6 +98,7 @@ type ScoreWeights struct {
 	Subscribed      int
 	StateChange     int
 	CIActivity      int
+	Orphaned        int
 
 	OldUnreadBonus              int
 	HotTopicBonus               int
@@ -135,6 +147,7 @@ func DefaultScoreWeights() ScoreWeights {
 		ReviewRequested: 100,
 		Mention:         90,
 		TeamMention:     85,
+		Orphaned:        80,
 		Author:          70,
 		Assign:          60,
 		Comment:         30,
@@ -217,6 +230,9 @@ func (c *Config) GetScoreWeights() ScoreWeights {
 		}
 		if bs.CIActivity != nil {
 			weights.CIActivity = *bs.CIActivity
+		}
+		if bs.Orphaned != nil {
+			weights.Orphaned = *bs.Orphaned
 		}
 	}
 
@@ -439,6 +455,9 @@ func mergeConfig(global, local *Config) *Config {
 	// Merge Urgency
 	result.Urgency = mergeUrgencyOverrides(global.Urgency, local.Urgency)
 
+	// Merge Orphaned
+	result.Orphaned = mergeOrphanedConfig(global.Orphaned, local.Orphaned)
+
 	return result
 }
 
@@ -458,6 +477,7 @@ func mergeBaseScores(global, local *BaseScoreOverrides) *BaseScoreOverrides {
 		result.StateChange = global.StateChange
 		result.Subscribed = global.Subscribed
 		result.CIActivity = global.CIActivity
+		result.Orphaned = global.Orphaned
 	}
 
 	if local != nil {
@@ -488,12 +508,16 @@ func mergeBaseScores(global, local *BaseScoreOverrides) *BaseScoreOverrides {
 		if local.CIActivity != nil {
 			result.CIActivity = local.CIActivity
 		}
+		if local.Orphaned != nil {
+			result.Orphaned = local.Orphaned
+		}
 	}
 
 	// Return nil if all fields are nil
 	if result.ReviewRequested == nil && result.Mention == nil && result.TeamMention == nil &&
 		result.Author == nil && result.Assign == nil && result.Comment == nil &&
-		result.StateChange == nil && result.Subscribed == nil && result.CIActivity == nil {
+		result.StateChange == nil && result.Subscribed == nil && result.CIActivity == nil &&
+		result.Orphaned == nil {
 		return nil
 	}
 
@@ -684,6 +708,50 @@ func mergeUrgencyOverrides(global, local *UrgencyOverrides) *UrgencyOverrides {
 	return result
 }
 
+func mergeOrphanedConfig(global, local *OrphanedConfig) *OrphanedConfig {
+	if global == nil && local == nil {
+		return nil
+	}
+	result := &OrphanedConfig{}
+
+	if global != nil {
+		result.Enabled = global.Enabled
+		result.Repos = global.Repos
+		result.StaleDays = global.StaleDays
+		result.ConsecutiveAuthorComments = global.ConsecutiveAuthorComments
+		result.MaxItemsPerRepo = global.MaxItemsPerRepo
+	}
+
+	if local != nil {
+		// Local enabled overrides global
+		if local.Enabled {
+			result.Enabled = local.Enabled
+		}
+		// Local repos replace global if non-empty
+		if len(local.Repos) > 0 {
+			result.Repos = local.Repos
+		}
+		// Local numeric values override if non-zero
+		if local.StaleDays > 0 {
+			result.StaleDays = local.StaleDays
+		}
+		if local.ConsecutiveAuthorComments > 0 {
+			result.ConsecutiveAuthorComments = local.ConsecutiveAuthorComments
+		}
+		if local.MaxItemsPerRepo > 0 {
+			result.MaxItemsPerRepo = local.MaxItemsPerRepo
+		}
+	}
+
+	// Return nil if effectively empty
+	if !result.Enabled && len(result.Repos) == 0 && result.StaleDays == 0 &&
+		result.ConsecutiveAuthorComments == 0 && result.MaxItemsPerRepo == 0 {
+		return nil
+	}
+
+	return result
+}
+
 // Save saves the configuration to disk
 func (c *Config) Save() error {
 	configDir := DefaultConfigDir()
@@ -773,6 +841,7 @@ func DefaultConfig() *Config {
 			StateChange:     &weights.StateChange,
 			Subscribed:      &weights.Subscribed,
 			CIActivity:      &weights.CIActivity,
+			Orphaned:        &weights.Orphaned,
 		},
 		Scoring: &ScoringOverrides{
 			OldUnreadBonus:              &weights.OldUnreadBonus,
