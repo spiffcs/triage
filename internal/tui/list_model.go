@@ -3,6 +3,7 @@ package tui
 import (
 	"os/exec"
 	"runtime"
+	"sort"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -11,24 +12,39 @@ import (
 	"github.com/spiffcs/triage/internal/triage"
 )
 
+// Pane represents which pane is active in the dual-pane TUI
+type Pane int
+
+const (
+	// PanePriority is the priority list pane (non-orphaned items)
+	PanePriority Pane = iota
+	// PaneOrphaned is the orphaned list pane
+	PaneOrphaned
+)
+
 // ListModel is the Bubble Tea model for the interactive notification list
 type ListModel struct {
-	items             []triage.PrioritizedItem
-	cursor            int
-	resolved          *resolved.Store
-	windowWidth       int
-	windowHeight      int
-	statusMsg         string
-	statusTime        time.Time
-	quitting          bool
-	hotTopicThreshold int
-	prSizeXS          int
-	prSizeS           int
-	prSizeM           int
-	prSizeL           int
-	currentUser       string
-	hideAssignedCI    bool // Hide Assigned and CI columns (for orphaned view)
-	hidePriority      bool // Hide Priority column (for orphaned view)
+	items               []triage.PrioritizedItem
+	priorityItems       []triage.PrioritizedItem // Items excluding orphaned
+	orphanedItems       []triage.PrioritizedItem // Only orphaned items
+	activePane          Pane                     // Which pane is focused
+	priorityCursor      int                      // Cursor for priority pane
+	orphanedCursor      int                      // Cursor for orphaned pane
+	resolved            *resolved.Store
+	windowWidth         int
+	windowHeight        int
+	statusMsg           string
+	statusTime          time.Time
+	quitting            bool
+	hotTopicThreshold   int
+	prSizeXS            int
+	prSizeS             int
+	prSizeM             int
+	prSizeL             int
+	currentUser         string
+	hideAssignedCI      bool // Hide Assigned and CI columns (for orphaned view)
+	hidePriority        bool // Hide Priority column (for orphaned view)
+	orphanedOldestFirst bool // Sort orphaned by oldest first instead of newest
 }
 
 // ListOption is a functional option for configuring ListModel
@@ -48,11 +64,17 @@ func WithHidePriority() ListOption {
 	}
 }
 
+// WithOrphanedOldestFirst sorts orphaned items oldest first instead of newest
+func WithOrphanedOldestFirst() ListOption {
+	return func(m *ListModel) {
+		m.orphanedOldestFirst = true
+	}
+}
+
 // NewListModel creates a new list model
 func NewListModel(items []triage.PrioritizedItem, store *resolved.Store, weights config.ScoreWeights, currentUser string, opts ...ListOption) ListModel {
 	m := ListModel{
 		items:             items,
-		cursor:            0,
 		resolved:          store,
 		windowWidth:       80,
 		windowHeight:      24,
@@ -62,11 +84,61 @@ func NewListModel(items []triage.PrioritizedItem, store *resolved.Store, weights
 		prSizeM:           weights.PRSizeM,
 		prSizeL:           weights.PRSizeL,
 		currentUser:       currentUser,
+		activePane:        PanePriority,
+		priorityCursor:    0,
+		orphanedCursor:    0,
 	}
 	for _, opt := range opts {
 		opt(&m)
 	}
+	// Split items into priority and orphaned lists
+	m.splitItems()
 	return m
+}
+
+// splitItems separates items into priority (non-orphaned) and orphaned lists
+func (m *ListModel) splitItems() {
+	m.priorityItems = nil
+	m.orphanedItems = nil
+	for _, item := range m.items {
+		if item.Priority == triage.PriorityOrphaned {
+			m.orphanedItems = append(m.orphanedItems, item)
+		} else {
+			m.priorityItems = append(m.priorityItems, item)
+		}
+	}
+	// Sort orphaned items by age (newest first by default)
+	sort.Slice(m.orphanedItems, func(i, j int) bool {
+		if m.orphanedOldestFirst {
+			return m.orphanedItems[i].Notification.UpdatedAt.Before(m.orphanedItems[j].Notification.UpdatedAt)
+		}
+		return m.orphanedItems[i].Notification.UpdatedAt.After(m.orphanedItems[j].Notification.UpdatedAt)
+	})
+}
+
+// activeItems returns the items for the active pane
+func (m *ListModel) activeItems() []triage.PrioritizedItem {
+	if m.activePane == PaneOrphaned {
+		return m.orphanedItems
+	}
+	return m.priorityItems
+}
+
+// activeCursor returns the cursor position for the active pane
+func (m *ListModel) activeCursor() int {
+	if m.activePane == PaneOrphaned {
+		return m.orphanedCursor
+	}
+	return m.priorityCursor
+}
+
+// setActiveCursor sets the cursor position for the active pane
+func (m *ListModel) setActiveCursor(pos int) {
+	if m.activePane == PaneOrphaned {
+		m.orphanedCursor = pos
+	} else {
+		m.priorityCursor = pos
+	}
 }
 
 // Init implements tea.Model
@@ -100,25 +172,46 @@ func (m ListModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.quitting = true
 		return m, tea.Quit
 
+	case "tab":
+		// Toggle between panes
+		if m.activePane == PanePriority {
+			m.activePane = PaneOrphaned
+		} else {
+			m.activePane = PanePriority
+		}
+		return m, nil
+
+	case "1":
+		m.activePane = PanePriority
+		return m, nil
+
+	case "2":
+		m.activePane = PaneOrphaned
+		return m, nil
+
 	case "j", "down":
-		if m.cursor < len(m.items)-1 {
-			m.cursor++
+		items := m.activeItems()
+		cursor := m.activeCursor()
+		if cursor < len(items)-1 {
+			m.setActiveCursor(cursor + 1)
 		}
 		return m, nil
 
 	case "k", "up":
-		if m.cursor > 0 {
-			m.cursor--
+		cursor := m.activeCursor()
+		if cursor > 0 {
+			m.setActiveCursor(cursor - 1)
 		}
 		return m, nil
 
 	case "g", "home":
-		m.cursor = 0
+		m.setActiveCursor(0)
 		return m, nil
 
 	case "G", "end":
-		if len(m.items) > 0 {
-			m.cursor = len(m.items) - 1
+		items := m.activeItems()
+		if len(items) > 0 {
+			m.setActiveCursor(len(items) - 1)
 		}
 		return m, nil
 
@@ -134,11 +227,14 @@ func (m ListModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 // markDone marks the current item as done
 func (m ListModel) markDone() (tea.Model, tea.Cmd) {
-	if len(m.items) == 0 {
+	items := m.activeItems()
+	cursor := m.activeCursor()
+
+	if len(items) == 0 {
 		return m, nil
 	}
 
-	item := m.items[m.cursor]
+	item := items[cursor]
 	n := item.Notification
 
 	// Resolve using the notification's UpdatedAt time
@@ -148,12 +244,17 @@ func (m ListModel) markDone() (tea.Model, tea.Cmd) {
 		return m, clearStatusAfter(2 * time.Second)
 	}
 
-	// Remove from current list
-	m.items = append(m.items[:m.cursor], m.items[m.cursor+1:]...)
-
-	// Adjust cursor if needed
-	if m.cursor >= len(m.items) && m.cursor > 0 {
-		m.cursor = len(m.items) - 1
+	// Remove from the active pane's list
+	if m.activePane == PaneOrphaned {
+		m.orphanedItems = append(m.orphanedItems[:cursor], m.orphanedItems[cursor+1:]...)
+		if m.orphanedCursor >= len(m.orphanedItems) && m.orphanedCursor > 0 {
+			m.orphanedCursor = len(m.orphanedItems) - 1
+		}
+	} else {
+		m.priorityItems = append(m.priorityItems[:cursor], m.priorityItems[cursor+1:]...)
+		if m.priorityCursor >= len(m.priorityItems) && m.priorityCursor > 0 {
+			m.priorityCursor = len(m.priorityItems) - 1
+		}
 	}
 
 	m.statusMsg = "Marked as done"
@@ -164,11 +265,14 @@ func (m ListModel) markDone() (tea.Model, tea.Cmd) {
 
 // openInBrowser opens the current item in the default browser
 func (m ListModel) openInBrowser() (tea.Model, tea.Cmd) {
-	if len(m.items) == 0 {
+	items := m.activeItems()
+	cursor := m.activeCursor()
+
+	if len(items) == 0 {
 		return m, nil
 	}
 
-	item := m.items[m.cursor]
+	item := items[cursor]
 	url := ""
 
 	if item.Notification.Details != nil && item.Notification.Details.HTMLURL != "" {

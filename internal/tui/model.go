@@ -107,9 +107,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd
 
+	case progress.FrameMsg:
+		progressModel, cmd := m.progress.Update(msg)
+		m.progress = progressModel.(progress.Model)
+		return m, cmd
+
 	case TaskEvent:
-		m = m.updateTask(msg)
-		return m, waitForEvent(m.events)
+		var cmd tea.Cmd
+		m, cmd = m.updateTask(msg)
+		return m, tea.Batch(cmd, waitForEvent(m.events))
 
 	case DoneEvent:
 		m.done = true
@@ -129,7 +135,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // updateTask updates a task based on a TaskEvent.
-func (m Model) updateTask(e TaskEvent) Model {
+func (m Model) updateTask(e TaskEvent) (Model, tea.Cmd) {
+	var cmd tea.Cmd
 	for i := range m.tasks {
 		if m.tasks[i].ID == e.Task {
 			m.tasks[i].Status = e.Status
@@ -141,6 +148,7 @@ func (m Model) updateTask(e TaskEvent) Model {
 			}
 			if e.Progress > 0 {
 				m.tasks[i].Progress = e.Progress
+				cmd = m.progress.SetPercent(e.Progress)
 			}
 			if e.Error != nil {
 				m.tasks[i].Error = e.Error
@@ -152,7 +160,7 @@ func (m Model) updateTask(e TaskEvent) Model {
 			break
 		}
 	}
-	return m
+	return m, cmd
 }
 
 // View renders the model.

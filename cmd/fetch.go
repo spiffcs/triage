@@ -32,6 +32,7 @@ type FetchResult struct {
 	ReviewPRs      []github.Notification
 	AuthoredPRs    []github.Notification
 	AssignedIssues []github.Notification
+	Orphaned       []github.Notification
 	RateLimited    bool
 
 	// Cache statistics
@@ -40,6 +41,7 @@ type FetchResult struct {
 	ReviewCached   bool
 	AuthoredCached bool
 	AssignedCached bool
+	OrphanedCached bool
 }
 
 // FetchCacheStats returns a summary of cache usage.
@@ -49,6 +51,7 @@ type FetchCacheStats struct {
 	ReviewCached   bool
 	AuthoredCached bool
 	AssignedCached bool
+	OrphanedCached bool
 }
 
 // CacheStats returns the cache statistics from the fetch result.
@@ -59,12 +62,13 @@ func (r *FetchResult) CacheStats() FetchCacheStats {
 		ReviewCached:   r.ReviewCached,
 		AuthoredCached: r.AuthoredCached,
 		AssignedCached: r.AssignedCached,
+		OrphanedCached: r.OrphanedCached,
 	}
 }
 
 // TotalFetched returns the total number of items fetched.
 func (r *FetchResult) TotalFetched() int {
-	return len(r.Notifications) + len(r.ReviewPRs) + len(r.AuthoredPRs) + len(r.AssignedIssues)
+	return len(r.Notifications) + len(r.ReviewPRs) + len(r.AuthoredPRs) + len(r.AssignedIssues) + len(r.Orphaned)
 }
 
 // FetchOptions configures the fetch operation.
@@ -73,11 +77,20 @@ type FetchOptions struct {
 	SinceLabel  string // Human-readable label like "1w"
 	CurrentUser string
 	Events      chan tui.Event
+
+	// Orphaned contribution options
+	IncludeOrphaned     bool
+	OrphanedRepos       []string
+	StaleDays           int
+	ConsecutiveComments int
 }
 
 // FetchAll fetches all data sources in parallel.
 func FetchAll(ctx context.Context, client *github.Client, cache *github.Cache, opts FetchOptions) (*FetchResult, error) {
-	const totalFetches = 4
+	totalFetches := 4
+	if opts.IncludeOrphaned {
+		totalFetches = 5
+	}
 
 	// Track progress of parallel fetches
 	var completedFetches int32
@@ -141,6 +154,24 @@ func FetchAll(ctx context.Context, client *github.Client, cache *github.Cache, o
 		updateFetchProgress()
 	}()
 
+	// Fetch orphaned contributions (if enabled)
+	var orphanedErr error
+	if opts.IncludeOrphaned && len(opts.OrphanedRepos) > 0 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			searchOpts := github.OrphanedSearchOptions{
+				Repos:                     opts.OrphanedRepos,
+				Since:                     opts.Since,
+				StaleDays:                 opts.StaleDays,
+				ConsecutiveAuthorComments: opts.ConsecutiveComments,
+				MaxPerRepo:                50,
+			}
+			result.Orphaned, result.OrphanedCached, orphanedErr = client.ListOrphanedContributionsCached(searchOpts, opts.CurrentUser, cache)
+			updateFetchProgress()
+		}()
+	}
+
 	wg.Wait()
 
 	// Handle fetch errors - check for rate limiting
@@ -155,6 +186,7 @@ func FetchAll(ctx context.Context, client *github.Client, cache *github.Cache, o
 	handleFetchError(reviewErr, "failed to fetch review-requested PRs", &result.RateLimited)
 	handleFetchError(authoredErr, "failed to fetch authored PRs", &result.RateLimited)
 	handleFetchError(assignedErr, "failed to fetch assigned issues", &result.RateLimited)
+	handleFetchError(orphanedErr, "failed to fetch orphaned contributions", &result.RateLimited)
 
 	// Send rate limit event to TUI if rate limited
 	if result.RateLimited && opts.Events != nil {
@@ -179,11 +211,13 @@ func FetchAll(ctx context.Context, client *github.Client, cache *github.Cache, o
 		"reviewPRs", len(result.ReviewPRs),
 		"authoredPRs", len(result.AuthoredPRs),
 		"assignedIssues", len(result.AssignedIssues),
+		"orphaned", len(result.Orphaned),
 		"notifCached", result.NotifCached,
 		"notifNewCount", result.NotifNewCount,
 		"reviewCached", result.ReviewCached,
 		"authoredCached", result.AuthoredCached,
-		"assignedCached", result.AssignedCached)
+		"assignedCached", result.AssignedCached,
+		"orphanedCached", result.OrphanedCached)
 
 	return result, nil
 }

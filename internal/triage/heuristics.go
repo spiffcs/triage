@@ -193,6 +193,11 @@ func (h *Heuristics) isLowHangingFruit(d *github.ItemDetails) bool {
 func (h *Heuristics) DeterminePriority(n *github.Notification, score int) PriorityLevel {
 	reason := n.Reason
 
+	// Orphaned contributions get their own priority level
+	if reason == github.ReasonOrphaned {
+		return PriorityOrphaned
+	}
+
 	// Urgent: review requests (if enabled)
 	if reason == github.ReasonReviewRequested && h.Weights.ReviewRequestedIsUrgent {
 		return PriorityUrgent

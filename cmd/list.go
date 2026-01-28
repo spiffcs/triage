@@ -42,7 +42,7 @@ func addListFlags(cmd *cobra.Command, opts *Options) {
 	cmd.Flags().IntVarP(&opts.Limit, "limit", "l", 0, "Limit number of results")
 	cmd.Flags().StringVarP(&opts.Since, "since", "s", "1w", "Show notifications since (e.g., 1w, 30d, 6mo)")
 	cmd.Flags().StringVarP(&opts.Priority, "priority", "p", "", "Filter by priority (urgent, important, quick-win, notable, fyi)")
-	cmd.Flags().StringVarP(&opts.Reason, "reason", "r", "", "Filter by reason (mention, review_requested, author, etc.)")
+	cmd.Flags().StringVarP(&opts.Reason, "reason", "r", "", "Filter by reason (mention, review_requested, author, orphaned, etc.)")
 	cmd.Flags().StringVar(&opts.Repo, "repo", "", "Filter to specific repo (owner/repo)")
 	cmd.Flags().CountVarP(&opts.Verbosity, "verbose", "v", "Increase verbosity (-v info, -vv debug, -vvv trace)")
 	cmd.Flags().IntVarP(&opts.Workers, "workers", "w", 20, "Number of concurrent workers for fetching details")
@@ -52,51 +52,19 @@ func addListFlags(cmd *cobra.Command, opts *Options) {
 	cmd.Flags().StringVarP(&opts.Type, "type", "t", "", "Filter by type (pr, issue)")
 
 	// TUI flag with tri-state: nil = auto, true = force, false = disable
-	cmd.Flags().Var(&tuiFlag{opts: opts}, "tui", "Enable/disable TUI progress (default: auto-detect)")
+	cmd.Flags().Var(NewTUIFlag(opts), "tui", "Enable/disable TUI progress (default: auto-detect)")
+
+	// Orphaned contribution flags
+	cmd.Flags().BoolVar(&opts.ExcludeOrphaned, "no-orphaned", false, "Disable fetching orphaned contributions (enabled by default)")
+	cmd.Flags().StringSliceVar(&opts.OrphanedRepos, "orphaned-repos", nil, "Repositories to check for orphaned contributions (owner/repo)")
+	cmd.Flags().IntVar(&opts.StaleDays, "stale-days", 7, "Days without team response to be considered orphaned")
+	cmd.Flags().IntVar(&opts.ConsecutiveComments, "consecutive", 2, "Consecutive author comments without response to be considered orphaned")
+	cmd.Flags().BoolVar(&opts.OrphanedOldestFirst, "orphaned-oldest-first", false, "Sort orphaned items oldest first (default: newest first)")
 
 	// Profiling flags
 	cmd.Flags().StringVar(&opts.CPUProfile, "cpuprofile", "", "Write CPU profile to file")
 	cmd.Flags().StringVar(&opts.MemProfile, "memprofile", "", "Write memory profile to file")
 	cmd.Flags().StringVar(&opts.Trace, "trace", "", "Write execution trace to file")
-}
-
-// tuiFlag implements pflag.Value for the tri-state TUI flag.
-type tuiFlag struct {
-	opts *Options
-}
-
-func (f *tuiFlag) String() string {
-	if f.opts.TUI == nil {
-		return "auto"
-	}
-	if *f.opts.TUI {
-		return "true"
-	}
-	return "false"
-}
-
-func (f *tuiFlag) Set(s string) error {
-	switch s {
-	case "true", "1", "yes":
-		v := true
-		f.opts.TUI = &v
-	case "false", "0", "no":
-		v := false
-		f.opts.TUI = &v
-	case "auto":
-		f.opts.TUI = nil
-	default:
-		return fmt.Errorf("invalid value %q: use true, false, or auto", s)
-	}
-	return nil
-}
-
-func (f *tuiFlag) Type() string {
-	return "bool"
-}
-
-func (f *tuiFlag) IsBoolFlag() bool {
-	return true
 }
 
 func runList(cmd *cobra.Command, _ []string, opts *Options) error {
@@ -110,7 +78,7 @@ func runList(cmd *cobra.Command, _ []string, opts *Options) error {
 	defer profiler.Stop()
 
 	// Determine if TUI should be used
-	useTUI := shouldUseTUI(opts)
+	useTUI := ShouldUseTUI(opts)
 
 	// Initialize logging - suppress logs during TUI to avoid interleaving with display
 	if useTUI {
@@ -178,12 +146,35 @@ func runList(cmd *cobra.Command, _ []string, opts *Options) error {
 		log.Warn("failed to initialize cache", "error", cacheErr)
 	}
 
+	// Determine orphaned settings - enabled by default unless explicitly disabled
+	orphanedEnabled := !opts.ExcludeOrphaned
+	orphanedRepos := opts.OrphanedRepos
+	staleDays := opts.StaleDays
+	consecutiveComments := opts.ConsecutiveComments
+
+	// Apply config defaults for orphaned if not set via flags
+	if cfg.Orphaned != nil {
+		if len(orphanedRepos) == 0 {
+			orphanedRepos = cfg.Orphaned.Repos
+		}
+		if staleDays == 7 && cfg.Orphaned.StaleDays > 0 {
+			staleDays = cfg.Orphaned.StaleDays
+		}
+		if consecutiveComments == 2 && cfg.Orphaned.ConsecutiveAuthorComments > 0 {
+			consecutiveComments = cfg.Orphaned.ConsecutiveAuthorComments
+		}
+	}
+
 	// Fetch all data sources in parallel
 	fetchResult, err := FetchAll(ctx, ghClient, prCache, FetchOptions{
-		Since:       since,
-		SinceLabel:  opts.Since,
-		CurrentUser: currentUser,
-		Events:      events,
+		Since:               since,
+		SinceLabel:          opts.Since,
+		CurrentUser:         currentUser,
+		Events:              events,
+		IncludeOrphaned:     orphanedEnabled && len(orphanedRepos) > 0,
+		OrphanedRepos:       orphanedRepos,
+		StaleDays:           staleDays,
+		ConsecutiveComments: consecutiveComments,
 	})
 	if err != nil {
 		closeTUI(events, tuiDone)
@@ -194,6 +185,7 @@ func runList(cmd *cobra.Command, _ []string, opts *Options) error {
 	reviewPRs := fetchResult.ReviewPRs
 	authoredPRs := fetchResult.AuthoredPRs
 	assignedIssues := fetchResult.AssignedIssues
+	orphaned := fetchResult.Orphaned
 
 	// Enrich all items concurrently
 	sendTaskEvent(events, tui.TaskEnrich, tui.StatusRunning)
@@ -213,7 +205,7 @@ func runList(cmd *cobra.Command, _ []string, opts *Options) error {
 	sendTaskEvent(events, tui.TaskEnrich, tui.StatusComplete, tui.WithMessage(enrichCompleteMsg))
 
 	// Merge all additional data sources into notifications
-	notifications, mergeResult := MergeAll(notifications, reviewPRs, authoredPRs, assignedIssues)
+	notifications, mergeResult := MergeAll(notifications, reviewPRs, authoredPRs, assignedIssues, orphaned)
 	if mergeResult.ReviewPRsAdded > 0 {
 		log.Info("PRs awaiting your review", "count", mergeResult.ReviewPRsAdded)
 	}
@@ -222,6 +214,9 @@ func runList(cmd *cobra.Command, _ []string, opts *Options) error {
 	}
 	if mergeResult.AssignedIssuesAdded > 0 {
 		log.Info("issues assigned to you", "count", mergeResult.AssignedIssuesAdded)
+	}
+	if mergeResult.OrphanedAdded > 0 {
+		log.Info("orphaned contributions", "count", mergeResult.OrphanedAdded)
 	}
 
 	if len(notifications) == 0 {
@@ -268,8 +263,12 @@ func runList(cmd *cobra.Command, _ []string, opts *Options) error {
 
 	// If running in a TTY with table format, launch interactive UI
 	// Use shouldUseTUI to respect verbose mode and --tui flag
-	if shouldUseTUI(opts) && (format == "" || format == output.FormatTable) {
-		return tui.RunListUI(items, resolvedStore, weights, currentUser)
+	if ShouldUseTUI(opts) && (format == "" || format == output.FormatTable) {
+		var tuiOpts []tui.ListOption
+		if opts.OrphanedOldestFirst {
+			tuiOpts = append(tuiOpts, tui.WithOrphanedOldestFirst())
+		}
+		return tui.RunListUI(items, resolvedStore, weights, currentUser, tuiOpts...)
 	}
 
 	// Output
@@ -431,18 +430,6 @@ func applyFilters(items []triage.PrioritizedItem, opts *Options, cfg *config.Con
 	}
 
 	return items
-}
-
-// shouldUseTUI determines whether to use the TUI based on options and environment.
-func shouldUseTUI(opts *Options) bool {
-	// Disable TUI when verbose logging is requested so logs are visible
-	if opts.Verbosity > 0 {
-		return false
-	}
-	if opts.TUI != nil {
-		return *opts.TUI
-	}
-	return tui.ShouldUseTUI()
 }
 
 // sendTaskEvent sends a task event to the TUI channel if it exists.

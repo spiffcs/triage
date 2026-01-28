@@ -17,8 +17,15 @@ type Options struct {
 	TUI           *bool // nil = auto-detect, true = force TUI, false = disable TUI
 
 	// Sorting options
-	SortByAge   bool // Sort by age instead of priority
-	OldestFirst bool // When sorting by age, show oldest items first
+	SortByAge           bool // Sort by age instead of priority
+	OldestFirst         bool // When sorting by age, show oldest items first
+	OrphanedOldestFirst bool // Sort orphaned items oldest first (default: newest first)
+
+	// Orphaned contribution options
+	ExcludeOrphaned     bool     // Disable orphaned contribution fetching (enabled by default)
+	OrphanedRepos       []string // Explicit repos for orphaned (overrides config)
+	StaleDays           int      // Days without team response to be considered orphaned
+	ConsecutiveComments int      // Consecutive author comments without response
 
 	// Profiling options
 	CPUProfile string // Write CPU profile to file
@@ -152,3 +159,12 @@ func WithTrace(path string) Option {
 		o.Trace = path
 	}
 }
+
+// GetTUI returns the TUI setting.
+func (o *Options) GetTUI() *bool { return o.TUI }
+
+// SetTUI sets the TUI setting.
+func (o *Options) SetTUI(v *bool) { o.TUI = v }
+
+// GetVerbosity returns the verbosity level.
+func (o *Options) GetVerbosity() int { return o.Verbosity }

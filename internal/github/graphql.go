@@ -188,6 +188,8 @@ func (c *Client) EnrichNotificationsGraphQL(notifications []Notification, token 
 
 	// Collect results and apply to notifications
 	for result := range results {
+		itemsProcessed := 0
+
 		// Apply PR results
 		if result.prErr != nil {
 			log.Debug("GraphQL PR enrichment failed", "batch", result.batchIdx, "error", result.prErr)
@@ -201,6 +203,11 @@ func (c *Client) EnrichNotificationsGraphQL(notifications []Notification, token 
 					"ciStatus", prResult.CIStatus)
 				applyPRResult(&notifications[idx], prResult)
 				enriched++
+				itemsProcessed++
+				// Report progress per item for smooth UI updates
+				if onProgress != nil {
+					onProgress(1, total)
+				}
 			}
 		}
 
@@ -211,12 +218,18 @@ func (c *Client) EnrichNotificationsGraphQL(notifications []Notification, token 
 			for idx, issueResult := range result.issueResults {
 				applyIssueResult(&notifications[idx], issueResult)
 				enriched++
+				itemsProcessed++
+				// Report progress per item for smooth UI updates
+				if onProgress != nil {
+					onProgress(1, total)
+				}
 			}
 		}
 
-		// Report batch progress
-		if onProgress != nil {
-			onProgress(result.batchSize, total)
+		// Report remaining items (failed or skipped) so progress reaches 100%
+		remaining := result.batchSize - itemsProcessed
+		if remaining > 0 && onProgress != nil {
+			onProgress(remaining, total)
 		}
 	}
 

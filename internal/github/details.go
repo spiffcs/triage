@@ -87,16 +87,15 @@ func (c *Client) EnrichNotificationsConcurrent(notifications []Notification, wor
 			if details, ok := cache.Get(&notifications[i]); ok {
 				notifications[i].Details = details
 				cacheHits++
+				// Report each cache hit individually for smooth progress
+				if onProgress != nil {
+					onProgress(1, total)
+				}
 				continue
 			}
 		}
 		uncachedNotifications = append(uncachedNotifications, notifications[i])
 		uncachedIndices = append(uncachedIndices, i)
-	}
-
-	// Report cache hits as a single progress update (delta = cacheHits)
-	if cacheHits > 0 && onProgress != nil {
-		onProgress(int(cacheHits), total)
 	}
 
 	if cacheHits > 0 {

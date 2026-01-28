@@ -9,8 +9,9 @@ type PriorityLevel string
 
 const (
 	PriorityUrgent    PriorityLevel = "urgent"
-	PriorityImportant PriorityLevel = "important"
 	PriorityQuickWin  PriorityLevel = "quick-win"
+	PriorityImportant PriorityLevel = "important"
+	PriorityOrphaned  PriorityLevel = "orphaned"
 	PriorityNotable   PriorityLevel = "notable"
 	PriorityFYI       PriorityLevel = "fyi"
 )
@@ -20,10 +21,12 @@ func (p PriorityLevel) Display() string {
 	switch p {
 	case PriorityUrgent:
 		return "Urgent"
-	case PriorityImportant:
-		return "Important"
 	case PriorityQuickWin:
 		return "Quick Win"
+	case PriorityImportant:
+		return "Important"
+	case PriorityOrphaned:
+		return "Orphaned"
 	case PriorityNotable:
 		return "Notable"
 	case PriorityFYI:

@@ -17,39 +17,59 @@ const (
 	colSignal = 30
 )
 
+// TabBarLines is the number of lines used for the tab bar (including top padding)
+const TabBarLines = 3
+
 // renderListView renders the complete list view
 func renderListView(m ListModel) string {
 	var b strings.Builder
 
-	// Calculate available height for items
-	availableHeight := m.windowHeight - constants.HeaderLines - constants.FooterLines
+	// Calculate available height for items (account for tab bar)
+	availableHeight := m.windowHeight - constants.HeaderLines - constants.FooterLines - TabBarLines
 
-	if len(m.items) == 0 {
-		b.WriteString(renderEmptyState())
+	// Get active pane's items and cursor
+	items := m.activeItems()
+	cursor := m.activeCursor()
+
+	// Determine view flags based on active pane
+	hideAssignedCI := m.activePane == PaneOrphaned
+	hidePriority := m.activePane == PaneOrphaned
+
+	// Render tab bar with top padding
+	b.WriteString("\n")
+	b.WriteString(renderTabBar(m.activePane, len(m.priorityItems), len(m.orphanedItems)))
+	b.WriteString("\n\n")
+
+	if len(items) == 0 {
+		if m.activePane == PaneOrphaned {
+			b.WriteString(renderOrphanedEmptyState())
+		} else {
+			b.WriteString(renderEmptyState())
+		}
 		b.WriteString("\n\n")
 		b.WriteString(renderHelp())
 		return b.String()
 	}
 
 	// Render header
-	b.WriteString(renderHeader(m.hideAssignedCI, m.hidePriority))
+	b.WriteString(renderHeader(hideAssignedCI, hidePriority))
 	b.WriteString("\n")
-	b.WriteString(renderSeparator(m.hideAssignedCI, m.hidePriority))
+	b.WriteString(renderSeparator(hideAssignedCI, hidePriority))
 	b.WriteString("\n")
 
 	// Calculate scroll window
-	start, end := calculateScrollWindow(m.cursor, len(m.items), availableHeight)
+	start, end := calculateScrollWindow(cursor, len(items), availableHeight)
 
 	// Render visible items
 	for i := start; i < end; i++ {
-		selected := i == m.cursor
-		b.WriteString(renderRow(m.items[i], selected, m.hotTopicThreshold, m.prSizeXS, m.prSizeS, m.prSizeM, m.prSizeL, m.currentUser, m.hideAssignedCI, m.hidePriority))
+		selected := i == cursor
+		b.WriteString(renderRow(items[i], selected, m.hotTopicThreshold, m.prSizeXS, m.prSizeS, m.prSizeM, m.prSizeL, m.currentUser, hideAssignedCI, hidePriority))
 		b.WriteString("\n")
 	}
 
 	// Pad remaining space
 	renderedRows := end - start
-	for i := renderedRows; i < availableHeight && i < len(m.items); i++ {
+	for i := renderedRows; i < availableHeight && i < len(items); i++ {
 		b.WriteString("\n")
 	}
 
@@ -64,6 +84,28 @@ func renderListView(m ListModel) string {
 	}
 
 	return b.String()
+}
+
+// renderTabBar renders the tab bar at the top of the view
+func renderTabBar(activePane Pane, priorityCount, orphanedCount int) string {
+	priority := fmt.Sprintf("[ 1: Priority (%d) ]", priorityCount)
+	orphaned := fmt.Sprintf("[ 2: Orphaned (%d) ]", orphanedCount)
+
+	var priorityStyled, orphanedStyled string
+	if activePane == PanePriority {
+		priorityStyled = tabActiveStyle.Render(priority)
+		orphanedStyled = tabInactiveStyle.Render(orphaned)
+	} else {
+		priorityStyled = tabInactiveStyle.Render(priority)
+		orphanedStyled = tabActiveStyle.Render(orphaned)
+	}
+
+	return fmt.Sprintf("%s    %s", priorityStyled, orphanedStyled)
+}
+
+// renderOrphanedEmptyState renders the empty state message for the orphaned pane
+func renderOrphanedEmptyState() string {
+	return listEmptyStyle.Render("No orphaned contributions.\nOrphaned items are external PRs/issues that need team attention.")
 }
 
 // calculateScrollWindow determines which items to show based on cursor position
@@ -100,7 +142,7 @@ func renderHeader(hideAssignedCI, hidePriority bool) string {
 				constants.ColTitle, "Title",
 				constants.ColStatus, "Status",
 				colSignal, "Signal",
-				"Age",
+				"Updated",
 			))
 		}
 		return listHeaderStyle.Render(fmt.Sprintf(
@@ -165,12 +207,15 @@ func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, pr
 	}
 
 	// Type with color
-	typeStr := "ISS"
 	isPR := (n.Details != nil && n.Details.IsPR) || n.Subject.Type == "PullRequest"
+	var typeStr string
 	if isPR {
-		typeStr = "PR"
+		typeStr = listTypePRStyle.Render("PR")
+		typeStr = format.PadRight(typeStr, 2, constants.ColType)
+	} else {
+		typeStr = listTypeISSStyle.Render("ISS")
+		typeStr = format.PadRight(typeStr, 3, constants.ColType)
 	}
-	typeStr = format.PadRight(typeStr, len(typeStr), constants.ColType)
 
 	// Priority with color - need to pad based on visible width
 	priority := ""
@@ -228,8 +273,8 @@ func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, pr
 	}
 	status = format.PadRight(status, statusWidth, constants.ColStatus)
 
-	// Age using shared logic
-	age := format.FormatAge(time.Since(n.UpdatedAt))
+	// Age using shared logic with color coding
+	age := renderAge(time.Since(n.UpdatedAt))
 
 	var row string
 	if hideAssignedCI {
@@ -284,19 +329,6 @@ func renderSignal(d *github.ItemDetails) (string, int) {
 	var coloredParts []string
 	var plainWidth int
 
-	// Consecutive unanswered comments - color based on count
-	if d.ConsecutiveAuthorComments >= 2 {
-		text := fmt.Sprintf("%d unanswered", d.ConsecutiveAuthorComments)
-		if d.ConsecutiveAuthorComments >= 4 {
-			coloredParts = append(coloredParts, listSignalCriticalStyle.Render(text))
-		} else if d.ConsecutiveAuthorComments >= 3 {
-			coloredParts = append(coloredParts, listSignalWarningStyle.Render(text))
-		} else {
-			coloredParts = append(coloredParts, listSignalInfoStyle.Render(text))
-		}
-		plainWidth += len(text)
-	}
-
 	// Days since team activity - color based on age
 	var days int
 	if d.LastTeamActivityAt != nil {
@@ -306,11 +338,26 @@ func renderSignal(d *github.ItemDetails) (string, int) {
 	}
 
 	if days > 0 {
-		text := fmt.Sprintf("No response %dd", days)
+		text := fmt.Sprintf("Last Team Response: %dd ago", days)
 		var coloredText string
 		if days >= 30 {
 			coloredText = listSignalCriticalStyle.Render(text)
 		} else if days >= 14 {
+			coloredText = listSignalWarningStyle.Render(text)
+		} else {
+			coloredText = listSignalInfoStyle.Render(text)
+		}
+		coloredParts = append(coloredParts, coloredText)
+		plainWidth += len(text)
+	}
+
+	// Consecutive unanswered comments - color based on count
+	if d.ConsecutiveAuthorComments >= 2 {
+		text := fmt.Sprintf("%d unanswered", d.ConsecutiveAuthorComments)
+		var coloredText string
+		if d.ConsecutiveAuthorComments >= 4 {
+			coloredText = listSignalCriticalStyle.Render(text)
+		} else if d.ConsecutiveAuthorComments >= 3 {
 			coloredText = listSignalWarningStyle.Render(text)
 		} else {
 			coloredText = listSignalInfoStyle.Render(text)
@@ -465,9 +512,26 @@ func colorPRSizeTUI(size format.PRSize) string {
 	}
 }
 
+// renderAge renders the age with appropriate color coding
+func renderAge(d time.Duration) string {
+	ageStr := format.FormatAge(d)
+	days := int(d.Hours() / 24)
+
+	switch {
+	case days >= 30:
+		return listAgeCriticalStyle.Render(ageStr)
+	case days >= 14:
+		return listAgeWarningStyle.Render(ageStr)
+	case days >= 7:
+		return listAgeModerateStyle.Render(ageStr)
+	default:
+		return listAgeRecentStyle.Render(ageStr)
+	}
+}
+
 // renderHelp renders the help text
 func renderHelp() string {
-	return listHelpStyle.Render("j/k: navigate   d: mark done   enter: open in browser   q: quit")
+	return listHelpStyle.Render("Tab/1/2: switch panes   j/k: navigate   d: mark done   enter: open   q: quit")
 }
 
 // renderEmptyState renders the empty state message
@@ -552,12 +616,33 @@ var (
 			Foreground(lipgloss.Color("#6B7280")).
 			Italic(true)
 
+	// Tab bar styles
+	tabActiveStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#60A5FA")).
+			Bold(true)
+
+	tabInactiveStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#6B7280"))
+
 	// Type column styles
 	listTypePRStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#60A5FA")) // Blue for PRs
 
-	listTypeIssueStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#A78BFA")) // Purple for issues
+	listTypeISSStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#FBBF24")) // Yellow/amber for issues
+
+	// Age column styles
+	listAgeRecentStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#22C55E")) // Green for < 7 days
+
+	listAgeModerateStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#FBBF24")) // Yellow for 7-13 days
+
+	listAgeWarningStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#F59E0B")) // Orange for 14-29 days
+
+	listAgeCriticalStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#EF4444")) // Red for 30+ days
 
 	// Signal severity styles
 	listSignalCriticalStyle = lipgloss.NewStyle().
@@ -568,17 +653,4 @@ var (
 
 	listSignalInfoStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#FBBF24")) // Yellow - info
-
-	// Age styles based on staleness
-	listAgeCriticalStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#EF4444")) // Red - very old
-
-	listAgeWarningStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#F59E0B")) // Orange - getting old
-
-	listAgeModerateStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#FBBF24")) // Yellow - moderate
-
-	listAgeFreshStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("#22C55E")) // Green - fresh
 )

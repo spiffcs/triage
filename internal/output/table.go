@@ -81,6 +81,7 @@ func (f *TableFormatter) Format(items []triage.PrioritizedItem, w io.Writer) err
 			HotTopicThreshold: f.HotTopicThreshold,
 			IsQuickWin:        item.Priority == triage.PriorityQuickWin,
 			CurrentUser:       f.CurrentUser,
+			IsOrphaned:        n.Reason == github.ReasonOrphaned,
 		}
 		if n.Details != nil {
 			iconInput.CommentCount = n.Details.CommentCount
@@ -90,6 +91,9 @@ func (f *TableFormatter) Format(items []triage.PrioritizedItem, w io.Writer) err
 
 		iconType := format.DetermineIcon(iconInput)
 		switch iconType {
+		case format.IconOrphaned:
+			titleIcon = format.OrphanedIcon + " "
+			iconDisplayWidth = format.IconWidth
 		case format.IconHotTopic:
 			titleIcon = format.HotTopicIcon + " "
 			iconDisplayWidth = format.IconWidth

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/spiffcs/triage/internal/log"
@@ -42,6 +43,43 @@ type OrphanedContribution struct {
 	ReviewState    string
 }
 
+// orphanedRepoResult holds the result of fetching orphaned contributions for a single repo
+type orphanedRepoResult struct {
+	repoFullName  string
+	contributions []OrphanedContribution
+	err           error
+}
+
+// ListOrphanedContributionsCached finds external PRs/issues needing attention, using cache if available.
+// Returns: notifications, fromCache, error
+func (c *Client) ListOrphanedContributionsCached(opts OrphanedSearchOptions, username string, cache *Cache) ([]Notification, bool, error) {
+	if len(opts.Repos) == 0 {
+		return nil, false, nil
+	}
+
+	// Try cache first
+	if cache != nil {
+		if cached, ok := cache.GetOrphanedList(username, opts.Repos, opts.Since); ok {
+			return cached, true, nil
+		}
+	}
+
+	// Fetch fresh data
+	orphaned, err := c.ListOrphanedContributions(opts)
+	if err != nil {
+		return nil, false, err
+	}
+
+	// Cache the result
+	if cache != nil {
+		if cacheErr := cache.SetOrphanedList(username, orphaned, opts.Repos, opts.Since); cacheErr != nil {
+			log.Debug("failed to cache orphaned list", "error", cacheErr)
+		}
+	}
+
+	return orphaned, false, nil
+}
+
 // ListOrphanedContributions finds external PRs/issues needing attention
 func (c *Client) ListOrphanedContributions(opts OrphanedSearchOptions) ([]Notification, error) {
 	if len(opts.Repos) == 0 {
@@ -59,7 +97,11 @@ func (c *Client) ListOrphanedContributions(opts OrphanedSearchOptions) ([]Notifi
 		opts.MaxPerRepo = 20
 	}
 
-	var allNotifications []Notification
+	const maxConcurrentOrphanedFetches = 10
+
+	sem := make(chan struct{}, maxConcurrentOrphanedFetches)
+	results := make(chan orphanedRepoResult, len(opts.Repos))
+	var wg sync.WaitGroup
 
 	for _, repoFullName := range opts.Repos {
 		parts := strings.Split(repoFullName, "/")
@@ -69,17 +111,36 @@ func (c *Client) ListOrphanedContributions(opts OrphanedSearchOptions) ([]Notifi
 		}
 		owner, repo := parts[0], parts[1]
 
-		contributions, err := c.fetchOrphanedForRepo(owner, repo, opts)
-		if err != nil {
-			log.Debug("failed to fetch orphaned contributions", "repo", repoFullName, "error", err)
+		wg.Add(1)
+		go func(owner, repo, fullName string) {
+			defer wg.Done()
+			sem <- struct{}{}        // Acquire
+			defer func() { <-sem }() // Release
+
+			contributions, err := c.fetchOrphanedForRepo(owner, repo, opts)
+			results <- orphanedRepoResult{
+				repoFullName:  fullName,
+				contributions: contributions,
+				err:           err,
+			}
+		}(owner, repo, repoFullName)
+	}
+
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	var allNotifications []Notification
+	for result := range results {
+		if result.err != nil {
+			log.Debug("failed to fetch orphaned contributions", "repo", result.repoFullName, "error", result.err)
 			continue
 		}
-
-		// Limit total results per repo
+		contributions := result.contributions
 		if len(contributions) > opts.MaxPerRepo {
 			contributions = contributions[:opts.MaxPerRepo]
 		}
-
 		for _, contrib := range contributions {
 			notification := orphanedToNotification(contrib)
 			allNotifications = append(allNotifications, notification)

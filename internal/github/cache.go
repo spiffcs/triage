@@ -145,12 +145,14 @@ func (c *Cache) Clear() error {
 
 // CacheStats contains detailed cache statistics
 type CacheStats struct {
-	DetailTotal    int
-	DetailValid    int
-	PRListTotal    int
-	PRListValid    int
-	NotifListTotal int
-	NotifListValid int
+	DetailTotal       int
+	DetailValid       int
+	PRListTotal       int
+	PRListValid       int
+	NotifListTotal    int
+	NotifListValid    int
+	OrphanedListTotal int
+	OrphanedListValid int
 }
 
 // Stats returns cache statistics
@@ -159,8 +161,8 @@ func (c *Cache) Stats() (total int, validCount int, err error) {
 	if err != nil {
 		return 0, 0, err
 	}
-	totalCount := stats.DetailTotal + stats.PRListTotal + stats.NotifListTotal
-	validCount = stats.DetailValid + stats.PRListValid + stats.NotifListValid
+	totalCount := stats.DetailTotal + stats.PRListTotal + stats.NotifListTotal + stats.OrphanedListTotal
+	validCount = stats.DetailValid + stats.PRListValid + stats.NotifListValid + stats.OrphanedListValid
 	return totalCount, validCount, nil
 }
 
@@ -192,6 +194,16 @@ func (c *Cache) DetailedStats() (*CacheStats, error) {
 			}
 			if now.Sub(notifEntry.CachedAt) <= NotificationListCacheTTL {
 				stats.NotifListValid++
+			}
+		} else if len(name) > 14 && name[:14] == "orphaned_list_" {
+			// Check if it's an orphaned list cache entry (starts with "orphaned_list_")
+			stats.OrphanedListTotal++
+			var orphanedEntry OrphanedListCacheEntry
+			if err := json.Unmarshal(data, &orphanedEntry); err != nil {
+				continue
+			}
+			if now.Sub(orphanedEntry.CachedAt) <= OrphanedListCacheTTL {
+				stats.OrphanedListValid++
 			}
 		} else if len(name) > 7 && name[:7] == "prlist_" {
 			// Check if it's a PR list cache entry (starts with "prlist_")
@@ -369,6 +381,98 @@ func (c *Cache) SetNotificationList(username string, notifications []Notificatio
 	path := filepath.Join(c.dir, key)
 
 	return os.WriteFile(path, data, 0600)
+}
+
+// OrphanedListCacheEntry stores cached orphaned contributions
+type OrphanedListCacheEntry struct {
+	Orphaned  []Notification `json:"orphaned"`
+	Repos     []string       `json:"repos"`
+	CachedAt  time.Time      `json:"cachedAt"`
+	SinceTime time.Time      `json:"sinceTime"`
+	Version   int            `json:"version"`
+}
+
+// orphanedListCacheKey generates a cache key for orphaned contributions
+func (c *Cache) orphanedListCacheKey(username string) string {
+	return fmt.Sprintf("orphaned_list_%s.json", username)
+}
+
+// GetOrphanedList retrieves cached orphaned contributions.
+// The cache is invalidated if repos don't match or sinceTime has changed significantly.
+func (c *Cache) GetOrphanedList(username string, repos []string, sinceTime time.Time) ([]Notification, bool) {
+	key := c.orphanedListCacheKey(username)
+	path := filepath.Join(c.dir, key)
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, false
+	}
+
+	var entry OrphanedListCacheEntry
+	if err := json.Unmarshal(data, &entry); err != nil {
+		return nil, false
+	}
+
+	// Check version
+	if entry.Version != cacheVersion {
+		return nil, false
+	}
+
+	// Check TTL
+	if time.Since(entry.CachedAt) > OrphanedListCacheTTL {
+		return nil, false
+	}
+
+	// Invalidate if repos don't match (order-insensitive comparison)
+	if !stringSlicesEqual(entry.Repos, repos) {
+		return nil, false
+	}
+
+	// Invalidate if user's since time is earlier than cached
+	if sinceTime.Before(entry.SinceTime) {
+		return nil, false
+	}
+
+	return entry.Orphaned, true
+}
+
+// SetOrphanedList caches orphaned contributions
+func (c *Cache) SetOrphanedList(username string, orphaned []Notification, repos []string, sinceTime time.Time) error {
+	entry := OrphanedListCacheEntry{
+		Orphaned:  orphaned,
+		Repos:     repos,
+		CachedAt:  time.Now(),
+		SinceTime: sinceTime,
+		Version:   cacheVersion,
+	}
+
+	data, err := json.Marshal(entry)
+	if err != nil {
+		return err
+	}
+
+	key := c.orphanedListCacheKey(username)
+	path := filepath.Join(c.dir, key)
+
+	return os.WriteFile(path, data, 0600)
+}
+
+// stringSlicesEqual checks if two string slices contain the same elements (order-insensitive)
+func stringSlicesEqual(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	aMap := make(map[string]int, len(a))
+	for _, s := range a {
+		aMap[s]++
+	}
+	for _, s := range b {
+		if aMap[s] == 0 {
+			return false
+		}
+		aMap[s]--
+	}
+	return true
 }
 
 // discoveredReposCacheKey generates a cache key for discovered repos
