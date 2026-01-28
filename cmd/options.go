@@ -16,6 +16,10 @@ type Options struct {
 	GreenCI       bool  // Filter to only show PRs with passing CI (excludes issues)
 	TUI           *bool // nil = auto-detect, true = force TUI, false = disable TUI
 
+	// Sorting options
+	SortByAge   bool // Sort by age instead of priority
+	OldestFirst bool // When sorting by age, show oldest items first
+
 	// Profiling options
 	CPUProfile string // Write CPU profile to file
 	MemProfile string // Write memory profile to file

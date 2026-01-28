@@ -29,6 +29,8 @@ type OrphanedOptions struct {
 	TUI                 *bool  // nil = auto-detect, true = force TUI, false = disable TUI
 	NoDiscover          bool   // Disable automatic repository discovery
 	Type                string // Filter by type (pr, issue)
+	SortByAge           bool   // Sort by age instead of priority
+	OldestFirst         bool   // When sorting by age, show oldest items first
 }
 
 // NewCmdOrphaned creates the orphaned command.
@@ -76,6 +78,10 @@ Examples:
 
 	// Type filter
 	cmd.Flags().StringVarP(&opts.Type, "type", "t", "", "Filter by type (pr, issue)")
+
+	// Sorting flags
+	cmd.Flags().BoolVar(&opts.SortByAge, "sort-by-age", false, "Sort by age (newest first) instead of by priority")
+	cmd.Flags().BoolVar(&opts.OldestFirst, "oldest-first", false, "Sort with oldest items first (requires --sort-by-age)")
 
 	return cmd
 }
@@ -273,12 +279,18 @@ func runOrphaned(opts *OrphanedOptions) error {
 	weights := cfg.GetScoreWeights()
 	quickWinLabels := cfg.GetQuickWinLabels()
 	engine := triage.NewEngine(currentUser, weights, quickWinLabels)
-	items := engine.Prioritize(notifications)
+	sortOpts := triage.SortOptions{
+		SortByAge:   opts.SortByAge,
+		OldestFirst: opts.OldestFirst,
+	}
+	items := engine.PrioritizeWithOptions(notifications, sortOpts)
 
-	// Sort by priority/score
-	sort.Slice(items, func(i, j int) bool {
-		return items[i].Score > items[j].Score
-	})
+	// If not sorting by age, sort by score descending (orphaned items care more about score than priority)
+	if !opts.SortByAge {
+		sort.Slice(items, func(i, j int) bool {
+			return items[i].Score > items[j].Score
+		})
+	}
 
 	// Filter by type if specified
 	if opts.Type != "" {

@@ -178,17 +178,22 @@ func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, pr
 		cursor = listCursorStyle.Render("> ")
 	}
 
-	// Type
+	// Type with color
 	typeStr := "ISS"
+	typeWidth := 3
 	isPR := false
 	if n.Details != nil && n.Details.IsPR {
-		typeStr = "PR"
+		typeStr = listTypePRStyle.Render("PR")
+		typeWidth = 2
 		isPR = true
 	} else if n.Subject.Type == "PullRequest" {
-		typeStr = "PR"
+		typeStr = listTypePRStyle.Render("PR")
+		typeWidth = 2
 		isPR = true
+	} else {
+		typeStr = listTypeIssueStyle.Render("ISS")
 	}
-	typeStr = padRight(typeStr, len(typeStr), colType)
+	typeStr = padRight(typeStr, typeWidth, colType)
 
 	// Priority with color - need to pad based on visible width
 	priority := ""
@@ -232,8 +237,9 @@ func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, pr
 	}
 	status = padRight(status, statusWidth, colStatus)
 
-	// Age
-	age := formatAge(time.Since(n.UpdatedAt))
+	// Age with color based on staleness
+	age, ageWidth := renderAge(time.Since(n.UpdatedAt))
+	age = padRight(age, ageWidth, colAge)
 
 	var row string
 	if hideAssignedCI {
@@ -279,38 +285,61 @@ func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, pr
 }
 
 // renderSignal renders the signal column showing why an item needs attention
+// Returns colored text and visible width
 func renderSignal(d *github.ItemDetails) (string, int) {
 	if d == nil {
 		return "─", 1
 	}
 
-	var signals []string
+	var coloredParts []string
+	var plainWidth int
 
-	// Consecutive unanswered comments
+	// Consecutive unanswered comments - color based on count
 	if d.ConsecutiveAuthorComments >= 2 {
-		signals = append(signals, fmt.Sprintf("%d unanswered", d.ConsecutiveAuthorComments))
+		text := fmt.Sprintf("%d unanswered", d.ConsecutiveAuthorComments)
+		if d.ConsecutiveAuthorComments >= 4 {
+			coloredParts = append(coloredParts, listSignalCriticalStyle.Render(text))
+		} else if d.ConsecutiveAuthorComments >= 3 {
+			coloredParts = append(coloredParts, listSignalWarningStyle.Render(text))
+		} else {
+			coloredParts = append(coloredParts, listSignalInfoStyle.Render(text))
+		}
+		plainWidth += len(text)
 	}
 
-	// Days since team activity
+	// Days since team activity - color based on age
+	var days int
 	if d.LastTeamActivityAt != nil {
-		days := int(time.Since(*d.LastTeamActivityAt).Hours() / 24)
-		if days > 0 {
-			signals = append(signals, fmt.Sprintf("No response %dd", days))
-		}
+		days = int(time.Since(*d.LastTeamActivityAt).Hours() / 24)
 	} else if !d.CreatedAt.IsZero() {
-		// No team activity at all
-		days := int(time.Since(d.CreatedAt).Hours() / 24)
-		if days > 0 {
-			signals = append(signals, fmt.Sprintf("No response %dd", days))
+		days = int(time.Since(d.CreatedAt).Hours() / 24)
+	}
+
+	if days > 0 {
+		text := fmt.Sprintf("No response %dd", days)
+		var coloredText string
+		if days >= 30 {
+			coloredText = listSignalCriticalStyle.Render(text)
+		} else if days >= 14 {
+			coloredText = listSignalWarningStyle.Render(text)
+		} else {
+			coloredText = listSignalInfoStyle.Render(text)
+		}
+
+		if plainWidth > 0 {
+			coloredParts = append(coloredParts, ", "+coloredText)
+			plainWidth += 2 + len(text) // ", " + text
+		} else {
+			coloredParts = append(coloredParts, coloredText)
+			plainWidth += len(text)
 		}
 	}
 
-	if len(signals) == 0 {
-		return "Needs attention", 15
+	if len(coloredParts) == 0 {
+		return listSignalInfoStyle.Render("Needs attention"), 15
 	}
 
-	result := strings.Join(signals, ", ")
-	return result, len(result)
+	return strings.Join(coloredParts, ""), plainWidth
 }
 
 // renderPriority renders the priority with appropriate styling
@@ -589,6 +618,25 @@ func formatAge(d time.Duration) string {
 	return fmt.Sprintf("%dmo", days/30)
 }
 
+// renderAge renders the age with color based on staleness
+// Returns colored string and visible width
+func renderAge(d time.Duration) (string, int) {
+	text := formatAge(d)
+	days := int(d.Hours() / 24)
+
+	// Color based on age
+	if days >= 14 {
+		return listAgeCriticalStyle.Render(text), len(text)
+	}
+	if days >= 7 {
+		return listAgeWarningStyle.Render(text), len(text)
+	}
+	if days >= 3 {
+		return listAgeModerateStyle.Render(text), len(text)
+	}
+	return listAgeFreshStyle.Render(text), len(text)
+}
+
 // List view styles - balanced palette (vibrant but not harsh)
 var (
 	// Neutral UI
@@ -662,4 +710,34 @@ var (
 	listEmptyStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#6B7280")).
 			Italic(true)
+
+	// Type column styles
+	listTypePRStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#60A5FA")) // Blue for PRs
+
+	listTypeIssueStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#A78BFA")) // Purple for issues
+
+	// Signal severity styles
+	listSignalCriticalStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#EF4444")) // Red - urgent
+
+	listSignalWarningStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#F59E0B")) // Orange - warning
+
+	listSignalInfoStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#FBBF24")) // Yellow - info
+
+	// Age styles based on staleness
+	listAgeCriticalStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#EF4444")) // Red - very old
+
+	listAgeWarningStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#F59E0B")) // Orange - getting old
+
+	listAgeModerateStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#FBBF24")) // Yellow - moderate
+
+	listAgeFreshStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#22C55E")) // Green - fresh
 )

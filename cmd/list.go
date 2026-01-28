@@ -53,6 +53,10 @@ func addListFlags(cmd *cobra.Command, opts *Options) {
 	cmd.Flags().BoolVar(&opts.GreenCI, "green-ci", false, "Only show PRs with passing CI status (excludes issues)")
 	cmd.Flags().StringVarP(&opts.Type, "type", "t", "", "Filter by type (pr, issue)")
 
+	// Sorting flags
+	cmd.Flags().BoolVar(&opts.SortByAge, "sort-by-age", false, "Sort by age (newest first) instead of by priority")
+	cmd.Flags().BoolVar(&opts.OldestFirst, "oldest-first", false, "Sort with oldest items first (requires --sort-by-age)")
+
 	// TUI flag with tri-state: nil = auto, true = force, false = disable
 	cmd.Flags().Var(&tuiFlag{opts: opts}, "tui", "Enable/disable TUI progress (default: auto-detect)")
 
@@ -515,7 +519,11 @@ func runList(_ *cobra.Command, _ []string, opts *Options) error {
 
 	// Prioritize
 	engine := triage.NewEngine(currentUser, weights, quickWinLabels)
-	items := engine.Prioritize(notifications)
+	sortOpts := triage.SortOptions{
+		SortByAge:   opts.SortByAge,
+		OldestFirst: opts.OldestFirst,
+	}
+	items := engine.PrioritizeWithOptions(notifications, sortOpts)
 
 	// Apply filters
 	if !opts.IncludeMerged {

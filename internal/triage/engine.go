@@ -13,6 +13,12 @@ type Engine struct {
 	heuristics *Heuristics
 }
 
+// SortOptions configures how prioritized items should be sorted
+type SortOptions struct {
+	SortByAge   bool // Sort by age instead of priority
+	OldestFirst bool // When sorting by age, show oldest items first
+}
+
 // NewEngine creates a new priority engine with the given weights and labels
 func NewEngine(currentUser string, weights config.ScoreWeights, quickWinLabels []string) *Engine {
 	return &Engine{
@@ -52,6 +58,54 @@ func (e *Engine) Prioritize(notifications []github.Notification) []PrioritizedIt
 		}
 		return items[i].Score > items[j].Score
 	})
+
+	return items
+}
+
+// PrioritizeWithOptions scores and sorts notifications with configurable sort options
+func (e *Engine) PrioritizeWithOptions(notifications []github.Notification, opts SortOptions) []PrioritizedItem {
+	items := make([]PrioritizedItem, 0, len(notifications))
+
+	for _, n := range notifications {
+		score := e.heuristics.Score(&n)
+		priority := e.heuristics.DeterminePriority(&n, score)
+		action := e.heuristics.DetermineAction(&n)
+
+		items = append(items, PrioritizedItem{
+			Notification: n,
+			Score:        score,
+			Priority:     priority,
+			ActionNeeded: action,
+		})
+	}
+
+	if opts.SortByAge {
+		// Sort by UpdatedAt timestamp
+		sort.Slice(items, func(i, j int) bool {
+			if opts.OldestFirst {
+				// Ascending: older items first (smaller time = earlier)
+				return items[i].Notification.UpdatedAt.Before(items[j].Notification.UpdatedAt)
+			}
+			// Descending: newer items first (larger time = more recent)
+			return items[i].Notification.UpdatedAt.After(items[j].Notification.UpdatedAt)
+		})
+	} else {
+		// Sort by priority first, then by score descending within each priority
+		priorityOrder := map[PriorityLevel]int{
+			PriorityUrgent:    0,
+			PriorityImportant: 1,
+			PriorityQuickWin:  2,
+			PriorityNotable:   3,
+			PriorityFYI:       4,
+		}
+		sort.Slice(items, func(i, j int) bool {
+			pi, pj := priorityOrder[items[i].Priority], priorityOrder[items[j].Priority]
+			if pi != pj {
+				return pi < pj
+			}
+			return items[i].Score > items[j].Score
+		})
+	}
 
 	return items
 }
