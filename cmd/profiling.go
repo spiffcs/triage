@@ -37,7 +37,7 @@ func (p *Profiler) Start() error {
 		}
 		p.cpuFile = f
 		if err := pprof.StartCPUProfile(f); err != nil {
-			p.cpuFile.Close()
+			_ = p.cpuFile.Close()
 			p.cpuFile = nil
 			return fmt.Errorf("could not start CPU profile: %w", err)
 		}
@@ -51,7 +51,7 @@ func (p *Profiler) Start() error {
 		}
 		p.traceFile = f
 		if err := trace.Start(f); err != nil {
-			p.traceFile.Close()
+			_ = p.traceFile.Close()
 			p.traceFile = nil
 			p.stopCPU()
 			return fmt.Errorf("could not start trace: %w", err)

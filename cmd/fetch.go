@@ -13,6 +13,19 @@ import (
 	"github.com/spiffcs/triage/internal/tui"
 )
 
+// handleFetchError processes a fetch error by either setting the rate limit flag
+// or logging a warning. It follows the guard clause pattern for early returns.
+func handleFetchError(err error, msg string, rateLimited *bool) {
+	if err == nil {
+		return
+	}
+	if errors.Is(err, github.ErrRateLimited) {
+		*rateLimited = true
+		return
+	}
+	log.Warn(msg, "error", err)
+}
+
 // FetchResult contains all data fetched from GitHub.
 type FetchResult struct {
 	Notifications  []github.Notification
@@ -139,21 +152,9 @@ func FetchAll(ctx context.Context, client *github.Client, cache *github.Cache, o
 			return nil, fmt.Errorf("failed to fetch notifications: %w", notifErr)
 		}
 	}
-	if reviewErr != nil && !errors.Is(reviewErr, github.ErrRateLimited) {
-		log.Warn("failed to fetch review-requested PRs", "error", reviewErr)
-	} else if errors.Is(reviewErr, github.ErrRateLimited) {
-		result.RateLimited = true
-	}
-	if authoredErr != nil && !errors.Is(authoredErr, github.ErrRateLimited) {
-		log.Warn("failed to fetch authored PRs", "error", authoredErr)
-	} else if errors.Is(authoredErr, github.ErrRateLimited) {
-		result.RateLimited = true
-	}
-	if assignedErr != nil && !errors.Is(assignedErr, github.ErrRateLimited) {
-		log.Warn("failed to fetch assigned issues", "error", assignedErr)
-	} else if errors.Is(assignedErr, github.ErrRateLimited) {
-		result.RateLimited = true
-	}
+	handleFetchError(reviewErr, "failed to fetch review-requested PRs", &result.RateLimited)
+	handleFetchError(authoredErr, "failed to fetch authored PRs", &result.RateLimited)
+	handleFetchError(assignedErr, "failed to fetch assigned issues", &result.RateLimited)
 
 	// Send rate limit event to TUI if rate limited
 	if result.RateLimited && opts.Events != nil {

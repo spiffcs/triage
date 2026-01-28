@@ -194,9 +194,7 @@ func (f *TableFormatter) Format(items []triage.PrioritizedItem, w io.Writer) err
 
 		// Determine type indicator
 		typeStr := "ISS"
-		if n.Details != nil && n.Details.IsPR {
-			typeStr = "PR"
-		} else if n.Subject.Type == "PullRequest" {
+		if (n.Details != nil && n.Details.IsPR) || n.Subject.Type == "PullRequest" {
 			typeStr = "PR"
 		}
 

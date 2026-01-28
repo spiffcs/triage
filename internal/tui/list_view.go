@@ -134,13 +134,9 @@ func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, pr
 
 	// Type
 	typeStr := "ISS"
-	isPR := false
-	if n.Details != nil && n.Details.IsPR {
+	isPR := (n.Details != nil && n.Details.IsPR) || n.Subject.Type == "PullRequest"
+	if isPR {
 		typeStr = "PR"
-		isPR = true
-	} else if n.Subject.Type == "PullRequest" {
-		typeStr = "PR"
-		isPR = true
 	}
 	typeStr = padRight(typeStr, len(typeStr), colType)
 
