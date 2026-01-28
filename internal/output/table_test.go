@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/spiffcs/triage/internal/format"
 	"github.com/spiffcs/triage/internal/github"
 	"github.com/spiffcs/triage/internal/triage"
 )
@@ -114,10 +115,10 @@ func TestFormatAge(t *testing.T) {
 		duration time.Duration
 		expected string
 	}{
-		// Just now
-		{"zero", 0, "just now"},
-		{"30 seconds", 30 * time.Second, "just now"},
-		{"59 seconds", 59 * time.Second, "just now"},
+		// Now (sub-minute)
+		{"zero", 0, "now"},
+		{"30 seconds", 30 * time.Second, "now"},
+		{"59 seconds", 59 * time.Second, "now"},
 
 		// Minutes
 		{"1 minute", time.Minute, "1m"},
@@ -150,9 +151,9 @@ func TestFormatAge(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := formatAge(tt.duration)
+			got := format.FormatAge(tt.duration)
 			if got != tt.expected {
-				t.Errorf("formatAge(%v) = %q, want %q", tt.duration, got, tt.expected)
+				t.Errorf("format.FormatAge(%v) = %q, want %q", tt.duration, got, tt.expected)
 			}
 		})
 	}

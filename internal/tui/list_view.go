@@ -2,32 +2,15 @@ package tui
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/mattn/go-runewidth"
 	"github.com/spiffcs/triage/internal/constants"
+	"github.com/spiffcs/triage/internal/format"
 	"github.com/spiffcs/triage/internal/github"
 	"github.com/spiffcs/triage/internal/triage"
 )
-
-// Column widths
-const (
-	colPriority = 10
-	colType     = 5
-	colAssigned = 12
-	colCI       = 2
-	colRepo     = 26
-	colTitle    = 40
-	colStatus   = 20
-	colAge      = 5
-)
-
-// ansiRegex matches ANSI escape sequences
-var ansiRegex = regexp.MustCompile(`\x1b\[[0-9;]*m`)
 
 // renderListView renders the complete list view
 func renderListView(m ListModel) string {
@@ -105,20 +88,20 @@ func calculateScrollWindow(cursor, total, viewHeight int) (start, end int) {
 func renderHeader() string {
 	return listHeaderStyle.Render(fmt.Sprintf(
 		"  %-*s  %-*s  %-*s  %-*s  %-*s  %-*s  %-*s  %s",
-		colPriority, "Priority",
-		colType, "Type",
-		colAssigned, "Assigned",
-		colCI, "CI",
-		colRepo, "Repository",
-		colTitle, "Title",
-		colStatus, "Status",
+		constants.ColPriority, "Priority",
+		constants.ColType, "Type",
+		constants.ColAssigned, "Assigned",
+		constants.ColCI, "CI",
+		constants.ColRepo, "Repository",
+		constants.ColTitle, "Title",
+		constants.ColStatus, "Status",
 		"Age",
 	))
 }
 
 // renderSeparator renders the header separator line
 func renderSeparator() string {
-	width := 2 + colPriority + 2 + colType + 2 + colAssigned + 2 + colCI + 2 + colRepo + 2 + colTitle + 2 + colStatus + 2 + colAge
+	width := 2 + constants.ColPriority + 2 + constants.ColType + 2 + constants.ColAssigned + 2 + constants.ColCI + 2 + constants.ColRepo + 2 + constants.ColTitle + 2 + constants.ColStatus + 2 + constants.ColAge
 	return listSeparatorStyle.Render(strings.Repeat("─", width))
 }
 
@@ -138,69 +121,69 @@ func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, pr
 	if isPR {
 		typeStr = "PR"
 	}
-	typeStr = padRight(typeStr, len(typeStr), colType)
+	typeStr = format.PadRight(typeStr, len(typeStr), constants.ColType)
 
-	// Assigned
+	// Assigned using shared logic
 	assigned, assignedWidth := renderAssigned(n.Details)
-	assigned = padRight(assigned, assignedWidth, colAssigned)
+	assigned = format.PadRight(assigned, assignedWidth, constants.ColAssigned)
 
 	// CI status
 	ci, ciWidth := renderCI(n.Details, isPR)
-	ci = padRight(ci, ciWidth, colCI)
+	ci = format.PadRight(ci, ciWidth, constants.ColCI)
 
 	// Priority with color - need to pad based on visible width
 	priority, priorityWidth := renderPriority(item.Priority)
-	priority = padRight(priority, priorityWidth, colPriority)
+	priority = format.PadRight(priority, priorityWidth, constants.ColPriority)
 
-	// Title with icon prefix
+	// Title with icon prefix using shared logic
 	title := n.Subject.Title
 
-	// Icon column: always 3 display columns (emoji=2 + space=1, or 3 spaces if no icon)
-	const iconWidth = 3
 	var titleIcon string
 	var iconDisplayWidth int
 
-	// Check for hot topic first (fire takes precedence if both apply)
-	if n.Details != nil && hotTopicThreshold > 0 && n.Details.CommentCount > hotTopicThreshold {
-		suppressForIssue := !n.Details.IsPR && n.Details.LastCommenter == currentUser
-		if !suppressForIssue {
-			titleIcon = "🔥 "
-			iconDisplayWidth = 3
-		}
+	iconInput := format.IconInput{
+		HotTopicThreshold: hotTopicThreshold,
+		IsQuickWin:        item.Priority == triage.PriorityQuickWin,
+		CurrentUser:       currentUser,
+	}
+	if n.Details != nil {
+		iconInput.CommentCount = n.Details.CommentCount
+		iconInput.IsPR = n.Details.IsPR
+		iconInput.LastCommenter = n.Details.LastCommenter
 	}
 
-	// Quick win indicator with yellow color (only if no fire icon)
-	// Using ⚡️ (U+26A1 + U+FE0F) to force emoji presentation for consistent 2-column width
-	if titleIcon == "" && item.Priority == triage.PriorityQuickWin {
-		titleIcon = listQuickWinIconStyle.Render("⚡\uFE0F") + " "
-		iconDisplayWidth = 3
-	}
-
-	// If no icon, use spaces to maintain alignment
-	if titleIcon == "" {
+	iconType := format.DetermineIcon(iconInput)
+	switch iconType {
+	case format.IconHotTopic:
+		titleIcon = format.HotTopicIcon + " "
+		iconDisplayWidth = format.IconWidth
+	case format.IconQuickWin:
+		titleIcon = listQuickWinIconStyle.Render(format.QuickWinIcon) + " "
+		iconDisplayWidth = format.IconWidth
+	default:
 		titleIcon = "   " // 3 spaces
-		iconDisplayWidth = 3
+		iconDisplayWidth = format.IconWidth
 	}
 
 	// Truncate title to fit remaining space after icon
-	title, titleWidth := truncateToWidth(title, colTitle-iconWidth)
+	title, titleWidth := format.TruncateToWidth(title, constants.ColTitle-format.IconWidth)
 	title = titleIcon + title
 	titleWidth += iconDisplayWidth
-	title = padRight(title, titleWidth, colTitle)
+	title = format.PadRight(title, titleWidth, constants.ColTitle)
 
 	// Repository
-	repo, repoWidth := truncateToWidth(n.Repository.FullName, colRepo)
-	repo = padRight(repo, repoWidth, colRepo)
+	repo, repoWidth := format.TruncateToWidth(n.Repository.FullName, constants.ColRepo)
+	repo = format.PadRight(repo, repoWidth, constants.ColRepo)
 
 	// Status with colors
 	status, statusWidth := renderStatus(n, prSizeXS, prSizeS, prSizeM, prSizeL)
-	if statusWidth > colStatus {
-		status, statusWidth = truncateToWidth(status, colStatus)
+	if statusWidth > constants.ColStatus {
+		status, statusWidth = format.TruncateToWidth(status, constants.ColStatus)
 	}
-	status = padRight(status, statusWidth, colStatus)
+	status = format.PadRight(status, statusWidth, constants.ColStatus)
 
-	// Age
-	age := formatAge(time.Since(n.UpdatedAt))
+	// Age using shared logic
+	age := format.FormatAge(time.Since(n.UpdatedAt))
 
 	row := fmt.Sprintf("%s%s  %s  %s  %s  %s  %s  %s  %s",
 		cursor,
@@ -258,36 +241,27 @@ func renderCI(d *github.ItemDetails, isPR bool) (string, int) {
 	}
 }
 
-// renderAssigned renders the Assigned column
-// For PRs: shows requested reviewer if available, otherwise assignee
-// For Issues: shows assignee
+// renderAssigned renders the Assigned column using shared logic
 // Returns the string and its visible width
-// Priority: assignee > latest reviewer > requested reviewer
 func renderAssigned(d *github.ItemDetails) (string, int) {
 	if d == nil {
 		return "─", 1
 	}
 
-	var assigned string
-	// Prefer assignees first
-	if len(d.Assignees) > 0 {
-		assigned = d.Assignees[0]
-	} else if d.IsPR && d.LatestReviewer != "" {
-		// For PRs without assignee, show the most recent reviewer
-		assigned = d.LatestReviewer
-	} else if d.IsPR && len(d.RequestedReviewers) > 0 {
-		// Fall back to requested reviewers
-		assigned = d.RequestedReviewers[0]
+	input := format.AssignedInput{
+		Assignees:          d.Assignees,
+		IsPR:               d.IsPR,
+		LatestReviewer:     d.LatestReviewer,
+		RequestedReviewers: d.RequestedReviewers,
 	}
 
+	assigned := format.GetAssignedUser(input)
 	if assigned == "" {
 		return "─", 1
 	}
 
 	// Truncate if needed
-	if len(assigned) > colAssigned {
-		assigned = assigned[:colAssigned-1] + "…"
-	}
+	assigned = format.TruncateUsername(assigned, constants.ColAssigned)
 
 	return assigned, len(assigned)
 }
@@ -320,14 +294,20 @@ func renderStatus(n github.Notification, sizeXS, sizeS, sizeM, sizeL int) (strin
 
 		totalChanges := d.Additions + d.Deletions
 		if totalChanges > 0 {
-			sizeColored, sizePlain := getPRSizeColored(totalChanges, sizeXS, sizeS, sizeM, sizeL)
+			thresholds := format.PRSizeThresholds{
+				XS: sizeXS,
+				S:  sizeS,
+				M:  sizeM,
+				L:  sizeL,
+			}
+			sizeResult := format.CalculatePRSize(d.Additions, d.Deletions, thresholds)
+			sizeColored := colorPRSizeTUI(sizeResult.Size)
 			sizeStr := fmt.Sprintf("%s+%d/-%d", sizeColored, d.Additions, d.Deletions)
-			sizePlainStr := fmt.Sprintf("%s+%d/-%d", sizePlain, d.Additions, d.Deletions)
 			coloredParts = append(coloredParts, sizeStr)
 			if plainWidth > 0 {
 				plainWidth += 1 // space
 			}
-			plainWidth += len(sizePlainStr)
+			plainWidth += len(sizeResult.Formatted)
 		}
 
 		if len(coloredParts) > 0 {
@@ -344,19 +324,15 @@ func renderStatus(n github.Notification, sizeXS, sizeS, sizeM, sizeL int) (strin
 	return reason, len(reason)
 }
 
-// getPRSizeColored returns colored and plain t-shirt size
-func getPRSizeColored(total, sizeXS, sizeS, sizeM, sizeL int) (colored string, plain string) {
-	switch {
-	case total <= sizeXS:
-		return listSizeSmallStyle.Render("XS"), "XS"
-	case total <= sizeS:
-		return listSizeSmallStyle.Render("S"), "S"
-	case total <= sizeM:
-		return listSizeMediumStyle.Render("M"), "M"
-	case total <= sizeL:
-		return listSizeMediumStyle.Render("L"), "L"
-	default:
-		return listSizeLargeStyle.Render("XL"), "XL"
+// colorPRSizeTUI returns a styled string for the PR size using lipgloss
+func colorPRSizeTUI(size format.PRSize) string {
+	switch size {
+	case format.PRSizeXS, format.PRSizeS:
+		return listSizeSmallStyle.Render(string(size))
+	case format.PRSizeM, format.PRSizeL:
+		return listSizeMediumStyle.Render(string(size))
+	default: // XL
+		return listSizeLargeStyle.Render(string(size))
 	}
 }
 
@@ -368,132 +344,6 @@ func renderHelp() string {
 // renderEmptyState renders the empty state message
 func renderEmptyState() string {
 	return listEmptyStyle.Render("All caught up! No items to triage.")
-}
-
-// stripAnsi removes ANSI escape sequences from a string
-func stripAnsi(s string) string {
-	return ansiRegex.ReplaceAllString(s, "")
-}
-
-// displayWidth returns the visible width of a string in terminal columns
-// accounting for wide characters like emojis and stripping ANSI codes
-func displayWidth(s string) int {
-	plain := stripAnsi(s)
-	width := 0
-	runes := []rune(plain)
-	for i := 0; i < len(runes); i++ {
-		r := runes[i]
-		// Check for emoji presentation sequence: base emoji + U+FE0F (VS16)
-		// These display as 2 columns in modern terminals
-		if i+1 < len(runes) && runes[i+1] == '\uFE0F' {
-			width += 2
-			i++ // skip the variation selector
-			continue
-		}
-		// Skip standalone variation selectors
-		if r == '\uFE0F' {
-			continue
-		}
-		width += runewidth.RuneWidth(r)
-	}
-	return width
-}
-
-// truncateToWidth truncates a string to fit within maxWidth display columns
-// handling ANSI codes and emoji presentation sequences
-func truncateToWidth(s string, maxWidth int) (string, int) {
-	width := displayWidth(s)
-	if width <= maxWidth {
-		return s, width
-	}
-
-	targetWidth := maxWidth - constants.TruncationSuffixWidth // Leave room for "..."
-	if targetWidth < 0 {
-		targetWidth = 0
-	}
-
-	// Find all ANSI sequences and their positions
-	matches := ansiRegex.FindAllStringIndex(s, -1)
-
-	var result strings.Builder
-	visibleWidth := 0
-	pos := 0
-	matchIdx := 0
-
-	for pos < len(s) && visibleWidth < targetWidth {
-		// Check if current position is the start of an ANSI sequence
-		if matchIdx < len(matches) && pos == matches[matchIdx][0] {
-			result.WriteString(s[matches[matchIdx][0]:matches[matchIdx][1]])
-			pos = matches[matchIdx][1]
-			matchIdx++
-			continue
-		}
-
-		r, size := utf8.DecodeRuneInString(s[pos:])
-
-		// Check for emoji presentation sequence: base + U+FE0F (VS16)
-		nextPos := pos + size
-		if nextPos < len(s) {
-			nextR, nextSize := utf8.DecodeRuneInString(s[nextPos:])
-			if nextR == '\uFE0F' {
-				// Emoji + VS16 = 2 columns
-				if visibleWidth+2 > targetWidth {
-					break
-				}
-				result.WriteString(s[pos : nextPos+nextSize])
-				visibleWidth += 2
-				pos = nextPos + nextSize
-				continue
-			}
-		}
-
-		// Skip standalone variation selectors
-		if r == '\uFE0F' {
-			pos += size
-			continue
-		}
-
-		rw := runewidth.RuneWidth(r)
-		if visibleWidth+rw > targetWidth {
-			break
-		}
-
-		result.WriteString(s[pos : pos+size])
-		visibleWidth += rw
-		pos += size
-	}
-
-	result.WriteString("...")
-	return result.String(), maxWidth
-}
-
-// padRight pads a string with spaces to reach target visible width
-func padRight(s string, visibleWidth, targetWidth int) string {
-	if visibleWidth >= targetWidth {
-		return s
-	}
-	return s + strings.Repeat(" ", targetWidth-visibleWidth)
-}
-
-// formatAge formats a duration as a human-readable age string
-func formatAge(d time.Duration) string {
-	if d < time.Minute {
-		return "now"
-	}
-	if d < time.Hour {
-		return fmt.Sprintf("%dm", int(d.Minutes()))
-	}
-	if d < 24*time.Hour {
-		return fmt.Sprintf("%dh", int(d.Hours()))
-	}
-	days := int(d.Hours() / 24)
-	if days < 7 {
-		return fmt.Sprintf("%dd", days)
-	}
-	if days < 30 {
-		return fmt.Sprintf("%dw", days/7)
-	}
-	return fmt.Sprintf("%dmo", days/30)
 }
 
 // List view styles - balanced palette (vibrant but not harsh)
