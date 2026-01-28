@@ -346,7 +346,7 @@ func TestFilterByGreenCI(t *testing.T) {
 		makePrioritizedItem("2", github.ReasonReviewRequested, github.SubjectPullRequest, PriorityUrgent, &github.ItemDetails{CIStatus: "failure"}),
 		makePrioritizedItem("3", github.ReasonReviewRequested, github.SubjectPullRequest, PriorityUrgent, &github.ItemDetails{CIStatus: "pending"}),
 		makePrioritizedItem("4", github.ReasonReviewRequested, github.SubjectPullRequest, PriorityUrgent, &github.ItemDetails{CIStatus: ""}),
-		makePrioritizedItem("5", github.ReasonReviewRequested, github.SubjectPullRequest, PriorityUrgent, nil), // nil Details - excluded
+		makePrioritizedItem("5", github.ReasonReviewRequested, github.SubjectPullRequest, PriorityUrgent, nil),                 // nil Details - excluded
 		makePrioritizedItem("6", github.ReasonSubscribed, github.SubjectIssue, PriorityFYI, &github.ItemDetails{CIStatus: ""}), // Issue - excluded
 	}
 

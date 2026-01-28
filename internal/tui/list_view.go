@@ -15,14 +15,14 @@ import (
 
 // Column widths
 const (
-	colPriority  = 10
-	colType      = 5
-	colAssigned  = 12
-	colCI        = 2
-	colRepo      = 26
-	colTitle     = 40
-	colStatus    = 20
-	colAge       = 5
+	colPriority = 10
+	colType     = 5
+	colAssigned = 12
+	colCI       = 2
+	colRepo     = 26
+	colTitle    = 40
+	colStatus   = 20
+	colAge      = 5
 )
 
 // ansiRegex matches ANSI escape sequences
