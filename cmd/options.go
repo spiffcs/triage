@@ -17,9 +17,8 @@ type Options struct {
 	TUI           *bool // nil = auto-detect, true = force TUI, false = disable TUI
 
 	// Sorting options
-	SortByAge   bool   // Sort by age instead of priority
-	OldestFirst bool   // When sorting by age, show oldest items first
-	SortBy      string // Sort orphaned pane: column with optional direction prefix (+/-)
+	SortByAge   bool // Sort by age instead of priority
+	OldestFirst bool // When sorting by age, show oldest items first
 
 	// Orphaned contribution options
 	SkipOrphaned        bool     // Skip orphaned contribution fetching (included by default)

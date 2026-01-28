@@ -22,6 +22,38 @@ const (
 	paneOrphaned
 )
 
+// SortColumn represents the available sort columns
+type SortColumn string
+
+// Priority pane sort columns
+const (
+	SortPriority SortColumn = "priority"
+	SortScore    SortColumn = "score"
+	SortUpdated  SortColumn = "updated"
+	SortCreated  SortColumn = "created"
+	SortRepo     SortColumn = "repo"
+)
+
+// Orphaned pane sort columns
+const (
+	SortStale    SortColumn = "stale"
+	SortComments SortColumn = "comments"
+	SortSize     SortColumn = "size"
+	SortAuthor   SortColumn = "author"
+)
+
+// prioritySortColumns defines the cycling order for priority pane
+var prioritySortColumns = []SortColumn{SortPriority, SortScore, SortUpdated, SortCreated, SortRepo}
+
+// orphanedSortColumns defines the cycling order for orphaned pane
+var orphanedSortColumns = []SortColumn{SortStale, SortUpdated, SortCreated, SortComments, SortSize, SortAuthor, SortRepo}
+
+// Default sort columns
+const (
+	defaultPrioritySortColumn = SortPriority
+	defaultOrphanedSortColumn = SortStale
+)
+
 // ListModel is the Bubble Tea model for the interactive notification list
 type ListModel struct {
 	items               []triage.PrioritizedItem
@@ -44,43 +76,53 @@ type ListModel struct {
 	currentUser         string
 	hideAssignedCI bool // Hide Assigned and CI columns (for orphaned view)
 	hidePriority   bool // Hide Priority column (for orphaned view)
-	sortColumn     string // Sort column for orphaned pane
-	sortDescending bool   // Sort direction for orphaned pane (true = descending)
+
+	// Sort state per pane
+	prioritySortColumn SortColumn
+	prioritySortDesc   bool
+	orphanedSortColumn SortColumn
+	orphanedSortDesc   bool
+
+	// Config for persisting preferences
+	config *config.Config
 }
 
 // ListOption is a functional option for configuring ListModel
 type ListOption func(*ListModel)
 
-// WithSortBy configures the sort column and direction for the orphaned pane.
-// Column can be: updated, created, author, repo, comments, stale, size.
-// Descending=true sorts highest/newest first, false sorts lowest/oldest first.
-func WithSortBy(column string, descending bool) ListOption {
+// WithConfig provides the config for loading and saving UI preferences.
+func WithConfig(cfg *config.Config) ListOption {
 	return func(m *ListModel) {
-		m.sortColumn = column
-		m.sortDescending = descending
+		m.config = cfg
 	}
 }
 
 // NewListModel creates a new list model
 func NewListModel(items []triage.PrioritizedItem, store *resolved.Store, weights config.ScoreWeights, currentUser string, opts ...ListOption) ListModel {
 	m := ListModel{
-		items:             items,
-		resolved:          store,
-		windowWidth:       80,
-		windowHeight:      24,
-		hotTopicThreshold: weights.HotTopicThreshold,
-		prSizeXS:          weights.PRSizeXS,
-		prSizeS:           weights.PRSizeS,
-		prSizeM:           weights.PRSizeM,
-		prSizeL:           weights.PRSizeL,
-		currentUser:       currentUser,
-		activePane:        panePriority,
-		priorityCursor:    0,
-		orphanedCursor:    0,
+		items:              items,
+		resolved:           store,
+		windowWidth:        80,
+		windowHeight:       24,
+		hotTopicThreshold:  weights.HotTopicThreshold,
+		prSizeXS:           weights.PRSizeXS,
+		prSizeS:            weights.PRSizeS,
+		prSizeM:            weights.PRSizeM,
+		prSizeL:            weights.PRSizeL,
+		currentUser:        currentUser,
+		activePane:         panePriority,
+		priorityCursor:     0,
+		orphanedCursor:     0,
+		prioritySortColumn: defaultPrioritySortColumn,
+		prioritySortDesc:   true, // default: descending (highest priority first)
+		orphanedSortColumn: defaultOrphanedSortColumn,
+		orphanedSortDesc:   true, // default: descending (most stale first)
 	}
 	for _, opt := range opts {
 		opt(&m)
 	}
+	// Load sort preferences from config if available
+	m.loadSortPreferences()
 	// Split items into priority and orphaned lists
 	m.splitItems()
 	return m
@@ -97,8 +139,97 @@ func (m *ListModel) splitItems() {
 			m.priorityItems = append(m.priorityItems, item)
 		}
 	}
-	// Sort orphaned items based on configured column and direction
+	// Sort both lists based on configured column and direction
+	m.sortPriorityItems()
 	m.sortOrphanedItems()
+}
+
+// loadSortPreferences loads sort preferences from config
+func (m *ListModel) loadSortPreferences() {
+	if m.config == nil || m.config.UI == nil {
+		return
+	}
+	ui := m.config.UI
+	if ui.PrioritySortColumn != "" {
+		m.prioritySortColumn = SortColumn(ui.PrioritySortColumn)
+	}
+	if ui.PrioritySortDesc != nil {
+		m.prioritySortDesc = *ui.PrioritySortDesc
+	}
+	if ui.OrphanedSortColumn != "" {
+		m.orphanedSortColumn = SortColumn(ui.OrphanedSortColumn)
+	}
+	if ui.OrphanedSortDesc != nil {
+		m.orphanedSortDesc = *ui.OrphanedSortDesc
+	}
+}
+
+// saveSortPreferences saves sort preferences to config
+func (m *ListModel) saveSortPreferences() {
+	if m.config == nil {
+		return
+	}
+	if m.config.UI == nil {
+		m.config.UI = &config.UIPreferences{}
+	}
+	m.config.UI.PrioritySortColumn = string(m.prioritySortColumn)
+	m.config.UI.PrioritySortDesc = &m.prioritySortDesc
+	m.config.UI.OrphanedSortColumn = string(m.orphanedSortColumn)
+	m.config.UI.OrphanedSortDesc = &m.orphanedSortDesc
+	// Save async to avoid blocking UI
+	go func() {
+		_ = m.config.SaveUIPreferences()
+	}()
+}
+
+// sortPriorityItems sorts the priority items by the configured column and direction.
+func (m *ListModel) sortPriorityItems() {
+	if len(m.priorityItems) == 0 {
+		return
+	}
+
+	column := m.prioritySortColumn
+	desc := m.prioritySortDesc
+
+	sort.Slice(m.priorityItems, func(i, j int) bool {
+		a, b := m.priorityItems[i], m.priorityItems[j]
+		var less bool
+
+		switch column {
+		case SortPriority:
+			// Sort by priority level first, then by score within level
+			if a.Priority != b.Priority {
+				less = a.Priority > b.Priority // Higher priority number = lower priority
+			} else {
+				less = a.Score < b.Score
+			}
+		case SortScore:
+			less = a.Score < b.Score
+		case SortUpdated:
+			less = a.Notification.UpdatedAt.Before(b.Notification.UpdatedAt)
+		case SortCreated:
+			if a.Notification.Details != nil && b.Notification.Details != nil {
+				less = a.Notification.Details.CreatedAt.Before(b.Notification.Details.CreatedAt)
+			} else {
+				less = a.Notification.UpdatedAt.Before(b.Notification.UpdatedAt)
+			}
+		case SortRepo:
+			less = a.Notification.Repository.FullName < b.Notification.Repository.FullName
+		default:
+			// Default to priority
+			if a.Priority != b.Priority {
+				less = a.Priority > b.Priority
+			} else {
+				less = a.Score < b.Score
+			}
+		}
+
+		// Invert for descending order
+		if desc {
+			return !less
+		}
+		return less
+	})
 }
 
 // daysSinceTeamActivity calculates how many days since the last team activity on an item.
@@ -115,30 +246,23 @@ func (m *ListModel) sortOrphanedItems() {
 		return
 	}
 
-	// Default to updated descending (newest first) if no sort specified
-	column := m.sortColumn
-	if column == "" {
-		column = "updated"
-	}
-	desc := m.sortDescending
-	if m.sortColumn == "" {
-		desc = true // default to descending for dates
-	}
+	column := m.orphanedSortColumn
+	desc := m.orphanedSortDesc
 
 	sort.Slice(m.orphanedItems, func(i, j int) bool {
 		a, b := m.orphanedItems[i], m.orphanedItems[j]
 		var less bool
 
 		switch column {
-		case "updated":
+		case SortUpdated:
 			less = a.Notification.UpdatedAt.Before(b.Notification.UpdatedAt)
-		case "created":
+		case SortCreated:
 			if a.Notification.Details != nil && b.Notification.Details != nil {
 				less = a.Notification.Details.CreatedAt.Before(b.Notification.Details.CreatedAt)
 			} else {
 				less = a.Notification.UpdatedAt.Before(b.Notification.UpdatedAt)
 			}
-		case "author":
+		case SortAuthor:
 			authorA, authorB := "", ""
 			if a.Notification.Details != nil {
 				authorA = a.Notification.Details.Author
@@ -147,9 +271,9 @@ func (m *ListModel) sortOrphanedItems() {
 				authorB = b.Notification.Details.Author
 			}
 			less = authorA < authorB
-		case "repo":
+		case SortRepo:
 			less = a.Notification.Repository.FullName < b.Notification.Repository.FullName
-		case "comments":
+		case SortComments:
 			commentsA, commentsB := 0, 0
 			if a.Notification.Details != nil {
 				commentsA = a.Notification.Details.CommentCount
@@ -158,12 +282,12 @@ func (m *ListModel) sortOrphanedItems() {
 				commentsB = b.Notification.Details.CommentCount
 			}
 			less = commentsA < commentsB
-		case "stale":
+		case SortStale:
 			// Calculate days since last team activity
 			staleA := daysSinceTeamActivity(a)
 			staleB := daysSinceTeamActivity(b)
 			less = staleA < staleB
-		case "size":
+		case SortSize:
 			sizeA, sizeB := 0, 0
 			if a.Notification.Details != nil {
 				sizeA = a.Notification.Details.Additions + a.Notification.Details.Deletions
@@ -288,6 +412,15 @@ func (m ListModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "enter":
 		return m.openInBrowser()
+
+	case "s":
+		return m.cycleSortColumn()
+
+	case "S":
+		return m.toggleSortDirection()
+
+	case "r":
+		return m.resetSort()
 	}
 
 	return m, nil
@@ -356,6 +489,185 @@ func (m ListModel) openInBrowser() (tea.Model, tea.Cmd) {
 	}
 
 	return m, openURL(url)
+}
+
+// cycleSortColumn cycles to the next sort column for the active pane
+func (m ListModel) cycleSortColumn() (tea.Model, tea.Cmd) {
+	// Get current item to preserve cursor position
+	items := m.activeItems()
+	var currentItem *triage.PrioritizedItem
+	cursor := m.activeCursor()
+	if len(items) > 0 && cursor < len(items) {
+		currentItem = &items[cursor]
+	}
+
+	var columns []SortColumn
+	var currentCol *SortColumn
+
+	if m.activePane == paneOrphaned {
+		columns = orphanedSortColumns
+		currentCol = &m.orphanedSortColumn
+	} else {
+		columns = prioritySortColumns
+		currentCol = &m.prioritySortColumn
+	}
+
+	// Find current column index and cycle to next
+	currentIdx := 0
+	for i, col := range columns {
+		if col == *currentCol {
+			currentIdx = i
+			break
+		}
+	}
+	nextIdx := (currentIdx + 1) % len(columns)
+	*currentCol = columns[nextIdx]
+
+	// Re-sort the items
+	if m.activePane == paneOrphaned {
+		m.sortOrphanedItems()
+	} else {
+		m.sortPriorityItems()
+	}
+
+	// Preserve cursor position on the same item
+	m.preserveCursorPosition(currentItem)
+
+	// Save preferences
+	m.saveSortPreferences()
+
+	// Show status message
+	direction := "▼"
+	if (m.activePane == paneOrphaned && !m.orphanedSortDesc) ||
+		(m.activePane == panePriority && !m.prioritySortDesc) {
+		direction = "▲"
+	}
+	m.statusMsg = "Sorted by " + string(*currentCol) + " " + direction
+	m.statusTime = time.Now()
+
+	return m, clearStatusAfter(2 * time.Second)
+}
+
+// toggleSortDirection toggles the sort direction for the active pane
+func (m ListModel) toggleSortDirection() (tea.Model, tea.Cmd) {
+	// Get current item to preserve cursor position
+	items := m.activeItems()
+	var currentItem *triage.PrioritizedItem
+	cursor := m.activeCursor()
+	if len(items) > 0 && cursor < len(items) {
+		currentItem = &items[cursor]
+	}
+
+	if m.activePane == paneOrphaned {
+		m.orphanedSortDesc = !m.orphanedSortDesc
+		m.sortOrphanedItems()
+	} else {
+		m.prioritySortDesc = !m.prioritySortDesc
+		m.sortPriorityItems()
+	}
+
+	// Preserve cursor position on the same item
+	m.preserveCursorPosition(currentItem)
+
+	// Save preferences
+	m.saveSortPreferences()
+
+	// Show status message
+	var col SortColumn
+	var desc bool
+	if m.activePane == paneOrphaned {
+		col = m.orphanedSortColumn
+		desc = m.orphanedSortDesc
+	} else {
+		col = m.prioritySortColumn
+		desc = m.prioritySortDesc
+	}
+	direction := "▼"
+	if !desc {
+		direction = "▲"
+	}
+	m.statusMsg = "Sorted by " + string(col) + " " + direction
+	m.statusTime = time.Now()
+
+	return m, clearStatusAfter(2 * time.Second)
+}
+
+// resetSort resets the sort to defaults for the active pane
+func (m ListModel) resetSort() (tea.Model, tea.Cmd) {
+	// Get current item to preserve cursor position
+	items := m.activeItems()
+	var currentItem *triage.PrioritizedItem
+	cursor := m.activeCursor()
+	if len(items) > 0 && cursor < len(items) {
+		currentItem = &items[cursor]
+	}
+
+	if m.activePane == paneOrphaned {
+		m.orphanedSortColumn = defaultOrphanedSortColumn
+		m.orphanedSortDesc = true
+		m.sortOrphanedItems()
+	} else {
+		m.prioritySortColumn = defaultPrioritySortColumn
+		m.prioritySortDesc = true
+		m.sortPriorityItems()
+	}
+
+	// Preserve cursor position on the same item
+	m.preserveCursorPosition(currentItem)
+
+	// Save preferences
+	m.saveSortPreferences()
+
+	// Show status message
+	var col SortColumn
+	if m.activePane == paneOrphaned {
+		col = m.orphanedSortColumn
+	} else {
+		col = m.prioritySortColumn
+	}
+	m.statusMsg = "Reset to default sort: " + string(col) + " ▼"
+	m.statusTime = time.Now()
+
+	return m, clearStatusAfter(2 * time.Second)
+}
+
+// preserveCursorPosition finds the item after sorting and sets the cursor to it
+func (m *ListModel) preserveCursorPosition(item *triage.PrioritizedItem) {
+	if item == nil {
+		return
+	}
+
+	items := m.activeItems()
+	for i, it := range items {
+		if it.Notification.ID == item.Notification.ID {
+			m.setActiveCursor(i)
+			return
+		}
+	}
+	// Item not found, keep cursor in bounds
+	if m.activeCursor() >= len(items) && len(items) > 0 {
+		m.setActiveCursor(len(items) - 1)
+	}
+}
+
+// GetPrioritySortColumn returns the current priority sort column for rendering
+func (m ListModel) GetPrioritySortColumn() SortColumn {
+	return m.prioritySortColumn
+}
+
+// GetPrioritySortDesc returns whether priority sort is descending
+func (m ListModel) GetPrioritySortDesc() bool {
+	return m.prioritySortDesc
+}
+
+// GetOrphanedSortColumn returns the current orphaned sort column for rendering
+func (m ListModel) GetOrphanedSortColumn() SortColumn {
+	return m.orphanedSortColumn
+}
+
+// GetOrphanedSortDesc returns whether orphaned sort is descending
+func (m ListModel) GetOrphanedSortDesc() bool {
+	return m.orphanedSortDesc
 }
 
 // View implements tea.Model

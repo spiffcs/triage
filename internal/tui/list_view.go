@@ -37,7 +37,9 @@ func renderListView(m ListModel) string {
 
 	// Render tab bar with top padding
 	b.WriteString("\n")
-	b.WriteString(renderTabBar(m.activePane, len(m.priorityItems), len(m.orphanedItems)))
+	b.WriteString(renderTabBar(m.activePane, len(m.priorityItems), len(m.orphanedItems),
+		m.GetPrioritySortColumn(), m.GetPrioritySortDesc(),
+		m.GetOrphanedSortColumn(), m.GetOrphanedSortDesc()))
 	b.WriteString("\n\n")
 
 	if len(items) == 0 {
@@ -87,9 +89,22 @@ func renderListView(m ListModel) string {
 }
 
 // renderTabBar renders the tab bar at the top of the view
-func renderTabBar(activePane pane, priorityCount, orphanedCount int) string {
-	priority := fmt.Sprintf("[ 1: Priority (%d) ]", priorityCount)
-	orphaned := fmt.Sprintf("[ 2: Orphaned (%d) ]", orphanedCount)
+func renderTabBar(activePane pane, priorityCount, orphanedCount int,
+	prioritySortCol SortColumn, prioritySortDesc bool,
+	orphanedSortCol SortColumn, orphanedSortDesc bool) string {
+
+	// Format sort indicator
+	priorityDir := "▼"
+	if !prioritySortDesc {
+		priorityDir = "▲"
+	}
+	orphanedDir := "▼"
+	if !orphanedSortDesc {
+		orphanedDir = "▲"
+	}
+
+	priority := fmt.Sprintf("[ 1: Priority (%d) %s%s ]", priorityCount, priorityDir, prioritySortCol)
+	orphaned := fmt.Sprintf("[ 2: Orphaned (%d) %s%s ]", orphanedCount, orphanedDir, orphanedSortCol)
 
 	var priorityStyled, orphanedStyled string
 	if activePane == panePriority {
@@ -338,7 +353,7 @@ func renderSignal(d *github.ItemDetails) (string, int) {
 	}
 
 	if days > 0 {
-		text := fmt.Sprintf("Last Team Response: %dd ago", days)
+		text := fmt.Sprintf("Stale %dd", days)
 		var coloredText string
 		if days >= 30 {
 			coloredText = listSignalCriticalStyle.Render(text)
@@ -353,7 +368,7 @@ func renderSignal(d *github.ItemDetails) (string, int) {
 
 	// Consecutive unanswered comments - color based on count
 	if d.ConsecutiveAuthorComments >= 2 {
-		text := fmt.Sprintf("%d unanswered", d.ConsecutiveAuthorComments)
+		text := fmt.Sprintf("%d waiting", d.ConsecutiveAuthorComments)
 		var coloredText string
 		if d.ConsecutiveAuthorComments >= 4 {
 			coloredText = listSignalCriticalStyle.Render(text)
@@ -531,7 +546,7 @@ func renderAge(d time.Duration) string {
 
 // renderHelp renders the help text
 func renderHelp() string {
-	return listHelpStyle.Render("Tab/1/2: switch panes   j/k: navigate   d: mark done   enter: open   q: quit")
+	return listHelpStyle.Render("Tab/1/2: panes   j/k: nav   s/S: sort   r: reset   d: done   enter: open   q: quit")
 }
 
 // renderEmptyState renders the empty state message

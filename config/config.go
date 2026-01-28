@@ -22,6 +22,15 @@ type Config struct {
 	PR         *PROverrides        `yaml:"pr,omitempty"`
 	Urgency    *UrgencyOverrides   `yaml:"urgency,omitempty"`
 	Orphaned   *OrphanedConfig     `yaml:"orphaned,omitempty"`
+	UI         *UIPreferences      `yaml:"ui,omitempty"`
+}
+
+// UIPreferences stores user interface preferences like sort settings
+type UIPreferences struct {
+	PrioritySortColumn string `yaml:"priority_sort_column,omitempty"`
+	PrioritySortDesc   *bool  `yaml:"priority_sort_desc,omitempty"`
+	OrphanedSortColumn string `yaml:"orphaned_sort_column,omitempty"`
+	OrphanedSortDesc   *bool  `yaml:"orphaned_sort_desc,omitempty"`
 }
 
 // OrphanedConfig configures orphaned contribution detection
@@ -453,6 +462,9 @@ func mergeConfig(global, local *Config) *Config {
 	// Merge Orphaned
 	result.Orphaned = mergeOrphanedConfig(global.Orphaned, local.Orphaned)
 
+	// Merge UI preferences
+	result.UI = mergeUIPreferences(global.UI, local.UI)
+
 	return result
 }
 
@@ -559,6 +571,77 @@ func mergeOrphanedConfig(global, local *OrphanedConfig) *OrphanedConfig {
 	}
 
 	return result
+}
+
+func mergeUIPreferences(global, local *UIPreferences) *UIPreferences {
+	if global == nil && local == nil {
+		return nil
+	}
+	result := &UIPreferences{}
+
+	if global != nil {
+		result.PrioritySortColumn = global.PrioritySortColumn
+		result.PrioritySortDesc = global.PrioritySortDesc
+		result.OrphanedSortColumn = global.OrphanedSortColumn
+		result.OrphanedSortDesc = global.OrphanedSortDesc
+	}
+
+	if local != nil {
+		if local.PrioritySortColumn != "" {
+			result.PrioritySortColumn = local.PrioritySortColumn
+		}
+		if local.PrioritySortDesc != nil {
+			result.PrioritySortDesc = local.PrioritySortDesc
+		}
+		if local.OrphanedSortColumn != "" {
+			result.OrphanedSortColumn = local.OrphanedSortColumn
+		}
+		if local.OrphanedSortDesc != nil {
+			result.OrphanedSortDesc = local.OrphanedSortDesc
+		}
+	}
+
+	// Return nil if effectively empty
+	if result.PrioritySortColumn == "" && result.PrioritySortDesc == nil &&
+		result.OrphanedSortColumn == "" && result.OrphanedSortDesc == nil {
+		return nil
+	}
+
+	return result
+}
+
+// SaveUIPreferences saves only the UI preferences section to the config file.
+// It loads the existing config, updates only the UI preferences, and saves.
+func (c *Config) SaveUIPreferences() error {
+	// Read existing config file to preserve other settings
+	globalPath := configPath()
+	var existing Config
+
+	if data, err := os.ReadFile(globalPath); err == nil {
+		if err := yaml.Unmarshal(data, &existing); err != nil {
+			return fmt.Errorf("failed to parse existing config: %w", err)
+		}
+	}
+
+	// Update only the UI section
+	existing.UI = c.UI
+
+	// Write back
+	configDir := defaultConfigDir()
+	if err := os.MkdirAll(configDir, 0700); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
+
+	data, err := yaml.Marshal(&existing)
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+
+	if err := os.WriteFile(globalPath, data, 0600); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
+
+	return nil
 }
 
 // Save saves the configuration to disk

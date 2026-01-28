@@ -59,8 +59,6 @@ func addListFlags(cmd *cobra.Command, opts *Options) {
 	cmd.Flags().StringSliceVar(&opts.OrphanedRepos, "orphaned-repos", nil, "Repositories to check for orphaned contributions (owner/repo)")
 	cmd.Flags().IntVar(&opts.StaleDays, "stale-days", 7, "Days without team response to be considered orphaned")
 	cmd.Flags().IntVar(&opts.ConsecutiveComments, "consecutive", 2, "Consecutive author comments without response to be considered orphaned")
-	cmd.Flags().StringVar(&opts.SortBy, "sort", "", "Sort orphaned by column (prefix '-' desc, '+' asc): updated, created, author, repo, comments, stale, size")
-
 	// Profiling flags
 	cmd.Flags().StringVar(&opts.CPUProfile, "cpuprofile", "", "Write CPU profile to file")
 	cmd.Flags().StringVar(&opts.MemProfile, "memprofile", "", "Write memory profile to file")
@@ -264,15 +262,7 @@ func runList(cmd *cobra.Command, _ []string, opts *Options) error {
 	// If running in a TTY with table format, launch interactive UI
 	// Use shouldUseTUI to respect verbose mode and --tui flag
 	if shouldUseTUI(opts) && (format == "" || format == output.FormatTable) {
-		var tuiOpts []tui.ListOption
-		if opts.SortBy != "" {
-			sortCfg, err := parseSortFlag(opts.SortBy)
-			if err != nil {
-				return err
-			}
-			tuiOpts = append(tuiOpts, tui.WithSortBy(sortCfg.Column, sortCfg.Descending))
-		}
-		return tui.RunListUI(items, resolvedStore, weights, currentUser, tuiOpts...)
+		return tui.RunListUI(items, resolvedStore, weights, currentUser, tui.WithConfig(cfg))
 	}
 
 	// Output
@@ -455,50 +445,3 @@ func closeTUI(events chan tui.Event, tuiDone chan error) {
 	}
 }
 
-// sortConfig holds parsed sort flag configuration.
-type sortConfig struct {
-	Column     string
-	Descending bool
-}
-
-// validSortColumns lists the allowed sort column names.
-var validSortColumns = map[string]bool{
-	"updated":  true,
-	"created":  true,
-	"author":   true,
-	"repo":     true,
-	"comments": true,
-	"stale":    true,
-	"size":     true,
-}
-
-// parseSortFlag parses a sort flag value like "updated", "-author", or "+created".
-func parseSortFlag(s string) (sortConfig, error) {
-	if s == "" {
-		return sortConfig{Column: "updated", Descending: true}, nil
-	}
-
-	desc := true
-	col := s
-
-	if len(s) > 0 {
-		switch s[0] {
-		case '-':
-			desc = true
-			col = s[1:]
-		case '+':
-			desc = false
-			col = s[1:]
-		}
-	}
-
-	if col == "" {
-		return sortConfig{}, fmt.Errorf("invalid sort flag: missing column name")
-	}
-
-	if !validSortColumns[col] {
-		return sortConfig{}, fmt.Errorf("invalid sort column %q: valid columns are updated, created, author, repo, comments, stale, size", col)
-	}
-
-	return sortConfig{Column: col, Descending: desc}, nil
-}
