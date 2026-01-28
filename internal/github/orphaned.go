@@ -68,14 +68,14 @@ func (c *Client) ListOrphanedContributions(opts OrphanedSearchOptions) ([]Notifi
 			continue
 		}
 
-		for _, contrib := range contributions {
-			notification := orphanedToNotification(contrib)
-			allNotifications = append(allNotifications, notification)
-		}
-
 		// Limit total results per repo
 		if len(contributions) > opts.MaxPerRepo {
 			contributions = contributions[:opts.MaxPerRepo]
+		}
+
+		for _, contrib := range contributions {
+			notification := orphanedToNotification(contrib)
+			allNotifications = append(allNotifications, notification)
 		}
 	}
 
