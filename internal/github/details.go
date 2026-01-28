@@ -220,6 +220,15 @@ func (c *Client) enrichPullRequest(n *Notification, owner, repo string, number i
 		details.Labels = append(details.Labels, label.GetName())
 	}
 
+	// Get requested reviewers
+	for _, reviewer := range pr.RequestedReviewers {
+		details.RequestedReviewers = append(details.RequestedReviewers, reviewer.GetLogin())
+	}
+	// Also include teams as reviewers
+	for _, team := range pr.RequestedTeams {
+		details.RequestedReviewers = append(details.RequestedReviewers, team.GetName())
+	}
+
 	n.Details = details
 	return nil
 }

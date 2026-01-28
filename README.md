@@ -95,6 +95,9 @@ triage --repo owner/repo
 triage --include-merged
 triage --include-closed
 
+# Show only PRs with passing CI (excludes issues)
+triage --green-ci
+
 # Output formats
 triage               # Interactive TUI (default)
 triage -f json       # JSON for scripting
