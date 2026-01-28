@@ -375,3 +375,26 @@ func TestFilterByGreenCI(t *testing.T) {
 		})
 	}
 }
+
+func TestFilterOutUnenriched(t *testing.T) {
+	items := []PrioritizedItem{
+		makePrioritizedItem("1", github.ReasonReviewRequested, github.SubjectPullRequest, PriorityUrgent, &github.ItemDetails{State: "open"}), // PR with Details - kept
+		makePrioritizedItem("2", github.ReasonReviewRequested, github.SubjectPullRequest, PriorityUrgent, nil),                                // PR without Details - filtered
+		makePrioritizedItem("3", github.ReasonSubscribed, github.SubjectIssue, PriorityFYI, &github.ItemDetails{State: "open"}),               // Issue with Details - kept
+		makePrioritizedItem("4", github.ReasonSubscribed, github.SubjectIssue, PriorityFYI, nil),                                              // Issue without Details - filtered
+		makePrioritizedItem("5", github.ReasonSubscribed, github.SubjectRelease, PriorityFYI, nil),                                            // Release without Details - kept (different type)
+	}
+
+	got := FilterOutUnenriched(items)
+
+	wantIDs := []string{"1", "3", "5"}
+	if len(got) != len(wantIDs) {
+		t.Errorf("FilterOutUnenriched() returned %d items, want %d", len(got), len(wantIDs))
+		return
+	}
+	for i, item := range got {
+		if item.Notification.ID != wantIDs[i] {
+			t.Errorf("FilterOutUnenriched()[%d].ID = %s, want %s", i, item.Notification.ID, wantIDs[i])
+		}
+	}
+}
