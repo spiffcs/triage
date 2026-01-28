@@ -346,8 +346,8 @@ func TestFilterByGreenCI(t *testing.T) {
 		makePrioritizedItem("2", github.ReasonReviewRequested, github.SubjectPullRequest, PriorityUrgent, &github.ItemDetails{CIStatus: "failure"}),
 		makePrioritizedItem("3", github.ReasonReviewRequested, github.SubjectPullRequest, PriorityUrgent, &github.ItemDetails{CIStatus: "pending"}),
 		makePrioritizedItem("4", github.ReasonReviewRequested, github.SubjectPullRequest, PriorityUrgent, &github.ItemDetails{CIStatus: ""}),
-		makePrioritizedItem("5", github.ReasonReviewRequested, github.SubjectPullRequest, PriorityUrgent, nil), // nil Details - should be kept (fail-open)
-		makePrioritizedItem("6", github.ReasonSubscribed, github.SubjectIssue, PriorityFYI, &github.ItemDetails{CIStatus: ""}), // Issue - should be kept
+		makePrioritizedItem("5", github.ReasonReviewRequested, github.SubjectPullRequest, PriorityUrgent, nil), // nil Details - excluded
+		makePrioritizedItem("6", github.ReasonSubscribed, github.SubjectIssue, PriorityFYI, &github.ItemDetails{CIStatus: ""}), // Issue - excluded
 	}
 
 	tests := []struct {
@@ -355,8 +355,8 @@ func TestFilterByGreenCI(t *testing.T) {
 		wantIDs []string
 	}{
 		{
-			name:    "keeps PRs with success CI, issues, and items without details",
-			wantIDs: []string{"1", "5", "6"},
+			name:    "keeps only PRs with success CI",
+			wantIDs: []string{"1"},
 		},
 	}
 

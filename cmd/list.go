@@ -50,7 +50,7 @@ func addListFlags(cmd *cobra.Command, opts *Options) {
 	cmd.Flags().IntVarP(&opts.Workers, "workers", "w", 20, "Number of concurrent workers for fetching details")
 	cmd.Flags().BoolVar(&opts.IncludeMerged, "include-merged", false, "Include notifications for merged PRs")
 	cmd.Flags().BoolVar(&opts.IncludeClosed, "include-closed", false, "Include notifications for closed issues/PRs")
-	cmd.Flags().BoolVar(&opts.GreenCI, "green-ci", false, "Only show PRs with passing CI status")
+	cmd.Flags().BoolVar(&opts.GreenCI, "green-ci", false, "Only show PRs with passing CI status (excludes issues)")
 	cmd.Flags().StringVarP(&opts.Type, "type", "t", "", "Filter by type (pr, issue)")
 
 	// TUI flag with tri-state: nil = auto, true = force, false = disable
