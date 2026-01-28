@@ -31,6 +31,8 @@ func NewCmdRateLimitStatus() *cobra.Command {
 }
 
 func runRateLimitStatus(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
+
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
@@ -41,7 +43,7 @@ func runRateLimitStatus(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("GitHub token not configured. Set the GITHUB_TOKEN environment variable")
 	}
 
-	client, err := github.NewClient(token)
+	client, err := github.NewClient(ctx, token)
 	if err != nil {
 		return err
 	}

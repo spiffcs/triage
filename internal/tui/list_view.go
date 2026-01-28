@@ -9,6 +9,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-runewidth"
+	"github.com/spiffcs/triage/internal/constants"
 	"github.com/spiffcs/triage/internal/github"
 	"github.com/spiffcs/triage/internal/triage"
 )
@@ -33,9 +34,7 @@ func renderListView(m ListModel) string {
 	var b strings.Builder
 
 	// Calculate available height for items
-	headerLines := 2 // header + separator
-	footerLines := 3 // blank + help + status
-	availableHeight := m.windowHeight - headerLines - footerLines
+	availableHeight := m.windowHeight - constants.HeaderLines - constants.FooterLines
 
 	if len(m.items) == 0 {
 		b.WriteString(renderEmptyState())
@@ -135,13 +134,9 @@ func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, pr
 
 	// Type
 	typeStr := "ISS"
-	isPR := false
-	if n.Details != nil && n.Details.IsPR {
+	isPR := (n.Details != nil && n.Details.IsPR) || n.Subject.Type == "PullRequest"
+	if isPR {
 		typeStr = "PR"
-		isPR = true
-	} else if n.Subject.Type == "PullRequest" {
-		typeStr = "PR"
-		isPR = true
 	}
 	typeStr = padRight(typeStr, len(typeStr), colType)
 
@@ -238,11 +233,11 @@ func renderCI(d *github.ItemDetails, isPR bool) (string, int) {
 		return "─", 1 // dash if no details
 	}
 	switch d.CIStatus {
-	case "success":
+	case constants.CIStatusSuccess:
 		return listCISuccessStyle.Render("✓"), 1
-	case "failure":
+	case constants.CIStatusFailure:
 		return listCIFailureStyle.Render("✗"), 1
-	case "pending":
+	case constants.CIStatusPending:
 		return listCIPendingStyle.Render("○"), 1
 	default:
 		return "─", 1 // dash for no CI
@@ -298,13 +293,13 @@ func renderStatus(n github.Notification, sizeXS, sizeS, sizeM, sizeL int) (strin
 		var plainWidth int
 
 		switch d.ReviewState {
-		case "approved":
+		case constants.ReviewStateApproved:
 			coloredParts = append(coloredParts, listApprovedStyle.Render("+ APPROVED"))
 			plainWidth += 10
-		case "changes_requested":
+		case constants.ReviewStateChangesRequested:
 			coloredParts = append(coloredParts, listChangesStyle.Render("! CHANGES"))
 			plainWidth += 9
-		case "pending", "review_required", "reviewed":
+		case constants.ReviewStatePending, constants.ReviewStateReviewRequired, constants.ReviewStateReviewed:
 			coloredParts = append(coloredParts, listReviewStyle.Render("* REVIEW"))
 			plainWidth += 8
 		}
@@ -398,7 +393,7 @@ func truncateToWidth(s string, maxWidth int) (string, int) {
 		return s, width
 	}
 
-	targetWidth := maxWidth - 3 // Leave room for "..."
+	targetWidth := maxWidth - constants.TruncationSuffixWidth // Leave room for "..."
 	if targetWidth < 0 {
 		targetWidth = 0
 	}
