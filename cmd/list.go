@@ -177,8 +177,8 @@ func runList(cmd *cobra.Command, _ []string, opts *Options) error {
 		ConsecutiveComments: consecutiveComments,
 	})
 	if err != nil {
-		closeTUI(events, tuiDone)
-		return err
+		// Log partial fetch failures but continue with results we have
+		log.Warn("some fetches failed", "error", err)
 	}
 
 	notifications := fetchResult.Notifications

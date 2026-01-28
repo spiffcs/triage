@@ -13,19 +13,6 @@ import (
 	"github.com/spiffcs/triage/internal/tui"
 )
 
-// handleFetchError processes a fetch error by either setting the rate limit flag
-// or logging a warning. It follows the guard clause pattern for early returns.
-func handleFetchError(err error, msg string, rateLimited *bool) {
-	if err == nil {
-		return
-	}
-	if errors.Is(err, github.ErrRateLimited) {
-		*rateLimited = true
-		return
-	}
-	log.Warn(msg, "error", err)
-}
-
 // FetchResult contains all data fetched from GitHub.
 type FetchResult struct {
 	Notifications  []github.Notification
@@ -88,7 +75,7 @@ type FetchOptions struct {
 // FetchAll fetches all data sources in parallel.
 func FetchAll(ctx context.Context, client *github.Client, cache *github.Cache, opts FetchOptions) (*FetchResult, error) {
 	totalFetches := 4
-	if opts.IncludeOrphaned {
+	if len(opts.OrphanedRepos) > 0 {
 		totalFetches = 5
 	}
 
@@ -156,7 +143,7 @@ func FetchAll(ctx context.Context, client *github.Client, cache *github.Cache, o
 
 	// Fetch orphaned contributions (if enabled)
 	var orphanedErr error
-	if opts.IncludeOrphaned && len(opts.OrphanedRepos) > 0 {
+	if len(opts.OrphanedRepos) > 0 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -183,10 +170,25 @@ func FetchAll(ctx context.Context, client *github.Client, cache *github.Cache, o
 			return nil, fmt.Errorf("failed to fetch notifications: %w", notifErr)
 		}
 	}
-	handleFetchError(reviewErr, "failed to fetch review-requested PRs", &result.RateLimited)
-	handleFetchError(authoredErr, "failed to fetch authored PRs", &result.RateLimited)
-	handleFetchError(assignedErr, "failed to fetch assigned issues", &result.RateLimited)
-	handleFetchError(orphanedErr, "failed to fetch orphaned contributions", &result.RateLimited)
+	var fetchErrs []error
+	for _, fe := range []struct {
+		err error
+		msg string
+	}{
+		{reviewErr, "review-requested PRs"},
+		{authoredErr, "authored PRs"},
+		{assignedErr, "assigned issues"},
+		{orphanedErr, "orphaned contributions"},
+	} {
+		if fe.err == nil {
+			continue
+		}
+		if errors.Is(fe.err, github.ErrRateLimited) {
+			result.RateLimited = true
+			continue
+		}
+		fetchErrs = append(fetchErrs, fmt.Errorf("%s: %w", fe.msg, fe.err))
+	}
 
 	// Send rate limit event to TUI if rate limited
 	if result.RateLimited && opts.Events != nil {
@@ -219,5 +221,5 @@ func FetchAll(ctx context.Context, client *github.Client, cache *github.Cache, o
 		"assignedCached", result.AssignedCached,
 		"orphanedCached", result.OrphanedCached)
 
-	return result, nil
+	return result, errors.Join(fetchErrs...)
 }
