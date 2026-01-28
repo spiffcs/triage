@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/spiffcs/triage/internal/constants"
 	"github.com/spiffcs/triage/internal/log"
 )
 
@@ -89,8 +90,8 @@ func (c *Cache) Get(n *Notification) (*ItemDetails, bool) {
 		return nil, false
 	}
 
-	// Also invalidate if cache is too old (24 hours)
-	if time.Since(entry.CachedAt) > 24*time.Hour {
+	// Also invalidate if cache is too old
+	if time.Since(entry.CachedAt) > constants.DetailCacheTTL {
 		return nil, false
 	}
 
@@ -208,7 +209,7 @@ func (c *Cache) DetailedStats() (*CacheStats, error) {
 			if err := json.Unmarshal(data, &cacheEntry); err != nil {
 				continue
 			}
-			if now.Sub(cacheEntry.CachedAt) <= 24*time.Hour {
+			if now.Sub(cacheEntry.CachedAt) <= constants.DetailCacheTTL {
 				stats.DetailValid++
 			}
 		}
@@ -224,8 +225,10 @@ type PRListCacheEntry struct {
 	Version  int            `json:"version"`
 }
 
-// PRListCacheTTL is shorter than details cache since PR lists change more frequently
-const PRListCacheTTL = 5 * time.Minute
+// PRListCacheTTL is shorter than details cache since PR lists change more frequently.
+// Note: This is kept as a package-level constant for backward compatibility,
+// but the canonical value is in the constants package.
+const PRListCacheTTL = constants.PRListCacheTTL
 
 // NotificationListCacheEntry stores cached notifications with fetch timestamp
 type NotificationListCacheEntry struct {
@@ -236,8 +239,10 @@ type NotificationListCacheEntry struct {
 	Version       int            `json:"version"`
 }
 
-// NotificationListCacheTTL is the max age before a full refresh is required
-const NotificationListCacheTTL = 1 * time.Hour
+// NotificationListCacheTTL is the max age before a full refresh is required.
+// Note: This is kept as a package-level constant for backward compatibility,
+// but the canonical value is in the constants package.
+const NotificationListCacheTTL = constants.NotificationListCacheTTL
 
 // prListCacheKey generates a cache key for a PR list
 func (c *Cache) prListCacheKey(username string, listType string) string {

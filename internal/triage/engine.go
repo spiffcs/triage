@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/spiffcs/triage/config"
+	"github.com/spiffcs/triage/internal/constants"
 	"github.com/spiffcs/triage/internal/github"
 )
 
@@ -206,7 +207,7 @@ func FilterByGreenCI(items []PrioritizedItem) []PrioritizedItem {
 			continue
 		}
 		// Keep PRs with successful CI
-		if item.Notification.Details.CIStatus == "success" {
+		if item.Notification.Details.CIStatus == constants.CIStatusSuccess {
 			filtered = append(filtered, item)
 		}
 	}

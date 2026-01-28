@@ -1,19 +1,17 @@
 package cmd
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"os"
-	"runtime"
-	"runtime/pprof"
-	"runtime/trace"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/spiffcs/triage/config"
+	"github.com/spiffcs/triage/internal/constants"
+	"github.com/spiffcs/triage/internal/duration"
 	"github.com/spiffcs/triage/internal/github"
 	"github.com/spiffcs/triage/internal/log"
 	"github.com/spiffcs/triage/internal/output"
@@ -101,60 +99,15 @@ func (f *tuiFlag) IsBoolFlag() bool {
 	return true
 }
 
-func runList(_ *cobra.Command, _ []string, opts *Options) error {
-	// Start CPU profiling if requested
-	if opts.CPUProfile != "" {
-		f, err := os.Create(opts.CPUProfile)
-		if err != nil {
-			return fmt.Errorf("could not create CPU profile: %w", err)
-		}
-		defer func() {
-			if err := f.Close(); err != nil {
-				fmt.Fprintf(os.Stderr, "could not close CPU profile file: %v\n", err)
-			}
-		}()
-		if err := pprof.StartCPUProfile(f); err != nil {
-			return fmt.Errorf("could not start CPU profile: %w", err)
-		}
-		defer pprof.StopCPUProfile()
-	}
+func runList(cmd *cobra.Command, _ []string, opts *Options) error {
+	ctx := cmd.Context()
 
-	// Start execution trace if requested
-	if opts.Trace != "" {
-		f, err := os.Create(opts.Trace)
-		if err != nil {
-			return fmt.Errorf("could not create trace: %w", err)
-		}
-		defer func() {
-			if err := f.Close(); err != nil {
-				fmt.Fprintf(os.Stderr, "could not close trace file: %v\n", err)
-			}
-		}()
-		if err := trace.Start(f); err != nil {
-			return fmt.Errorf("could not start trace: %w", err)
-		}
-		defer trace.Stop()
+	// Set up profiling
+	profiler := NewProfiler(opts.CPUProfile, opts.MemProfile, opts.Trace)
+	if err := profiler.Start(); err != nil {
+		return err
 	}
-
-	// Write memory profile at end if requested
-	if opts.MemProfile != "" {
-		defer func() {
-			f, err := os.Create(opts.MemProfile)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "could not create memory profile: %v\n", err)
-				return
-			}
-			defer func() {
-				if err := f.Close(); err != nil {
-					fmt.Fprintf(os.Stderr, "could not close memory profile file: %v\n", err)
-				}
-			}()
-			runtime.GC() // Get up-to-date statistics
-			if err := pprof.WriteHeapProfile(f); err != nil {
-				fmt.Fprintf(os.Stderr, "could not write memory profile: %v\n", err)
-			}
-		}()
-	}
+	defer profiler.Stop()
 
 	// Determine if TUI should be used
 	useTUI := shouldUseTUI(opts)
@@ -183,7 +136,7 @@ func runList(_ *cobra.Command, _ []string, opts *Options) error {
 		return fmt.Errorf("GitHub token not configured. Set the GITHUB_TOKEN environment variable")
 	}
 
-	ghClient, err := github.NewClient(token)
+	ghClient, err := github.NewClient(ctx, token)
 	if err != nil {
 		return err
 	}
@@ -211,7 +164,7 @@ func runList(_ *cobra.Command, _ []string, opts *Options) error {
 	sendTaskEvent(events, tui.TaskAuth, tui.StatusComplete, tui.WithMessage(currentUser))
 
 	// Parse since duration
-	since, err := parseDuration(opts.Since)
+	since, err := duration.Parse(opts.Since)
 	if err != nil {
 		closeTUI(events, tuiDone)
 		return fmt.Errorf("invalid duration: %w", err)
@@ -225,268 +178,50 @@ func runList(_ *cobra.Command, _ []string, opts *Options) error {
 		log.Warn("failed to initialize cache", "error", cacheErr)
 	}
 
-	// Parallel fetch all data sources
-	type fetchResult struct {
-		notifications  []github.Notification
-		reviewPRs      []github.Notification
-		authoredPRs    []github.Notification
-		assignedIssues []github.Notification
-		notifErr       error
-		reviewErr      error
-		authoredErr    error
-		assignedErr    error
-		notifCached    bool
-		notifNewCount  int
-		reviewCached   bool
-		authoredCached bool
-		assignedCached bool
+	// Fetch all data sources in parallel
+	fetchResult, err := FetchAll(ctx, ghClient, prCache, FetchOptions{
+		Since:       since,
+		SinceLabel:  opts.Since,
+		CurrentUser: currentUser,
+		Events:      events,
+	})
+	if err != nil {
+		closeTUI(events, tuiDone)
+		return err
 	}
 
-	// Track progress of parallel fetches
-	var completedFetches int32
-	const totalFetches = 4
-
-	updateFetchProgress := func() {
-		current := atomic.AddInt32(&completedFetches, 1)
-		progress := float64(current) / float64(totalFetches)
-		msg := fmt.Sprintf("for the past %s (%d/%d sources)", opts.Since, current, totalFetches)
-		sendTaskEvent(events, tui.TaskFetch, tui.StatusRunning,
-			tui.WithProgress(progress),
-			tui.WithMessage(msg))
-	}
-
-	sendTaskEvent(events, tui.TaskFetch, tui.StatusRunning,
-		tui.WithProgress(0.0),
-		tui.WithMessage(fmt.Sprintf("for the past %s (0/%d sources)", opts.Since, totalFetches)))
-
-	var wg sync.WaitGroup
-	result := &fetchResult{}
-
-	// Fetch notifications (with caching)
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		notifResult, err := ghClient.ListUnreadNotificationsCached(currentUser, since, prCache)
-		if err != nil {
-			result.notifErr = err
-			updateFetchProgress()
-			return
-		}
-		result.notifications = notifResult.Notifications
-		result.notifCached = notifResult.FromCache
-		result.notifNewCount = notifResult.NewCount
-		updateFetchProgress()
-	}()
-
-	// Fetch review-requested PRs
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		result.reviewPRs, result.reviewCached, result.reviewErr = ghClient.ListReviewRequestedPRsCached(currentUser, prCache)
-		updateFetchProgress()
-	}()
-
-	// Fetch authored PRs
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		result.authoredPRs, result.authoredCached, result.authoredErr = ghClient.ListAuthoredPRsCached(currentUser, prCache)
-		updateFetchProgress()
-	}()
-
-	// Fetch assigned issues
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		result.assignedIssues, result.assignedCached, result.assignedErr = ghClient.ListAssignedIssuesCached(currentUser, prCache)
-		updateFetchProgress()
-	}()
-
-	wg.Wait()
-
-	// Handle fetch errors - check for rate limiting
-	rateLimited := false
-	if result.notifErr != nil {
-		if errors.Is(result.notifErr, github.ErrRateLimited) {
-			rateLimited = true
-		} else {
-			sendTaskEvent(events, tui.TaskFetch, tui.StatusError, tui.WithError(result.notifErr))
-			closeTUI(events, tuiDone)
-			return fmt.Errorf("failed to fetch notifications: %w", result.notifErr)
-		}
-	}
-	if result.reviewErr != nil && !errors.Is(result.reviewErr, github.ErrRateLimited) {
-		log.Warn("failed to fetch review-requested PRs", "error", result.reviewErr)
-	} else if errors.Is(result.reviewErr, github.ErrRateLimited) {
-		rateLimited = true
-	}
-	if result.authoredErr != nil && !errors.Is(result.authoredErr, github.ErrRateLimited) {
-		log.Warn("failed to fetch authored PRs", "error", result.authoredErr)
-	} else if errors.Is(result.authoredErr, github.ErrRateLimited) {
-		rateLimited = true
-	}
-	if result.assignedErr != nil && !errors.Is(result.assignedErr, github.ErrRateLimited) {
-		log.Warn("failed to fetch assigned issues", "error", result.assignedErr)
-	} else if errors.Is(result.assignedErr, github.ErrRateLimited) {
-		rateLimited = true
-	}
-
-	// Send rate limit event to TUI if rate limited
-	if rateLimited && events != nil {
-		_, _, resetAt, _ := github.GetRateLimitStatus()
-		events <- tui.RateLimitEvent{
-			Limited: true,
-			ResetAt: resetAt,
-		}
-	}
-
-	notifications := result.notifications
-	reviewPRs := result.reviewPRs
-	authoredPRs := result.authoredPRs
-	assignedIssues := result.assignedIssues
-
-	totalFetched := len(notifications) + len(reviewPRs) + len(authoredPRs) + len(assignedIssues)
-	fetchMsg := fmt.Sprintf("for the past %s (%d items)", opts.Since, totalFetched)
-	if result.notifCached && result.notifNewCount > 0 {
-		fetchMsg = fmt.Sprintf("for the past %s (%d items, %d new)", opts.Since, totalFetched, result.notifNewCount)
-	} else if result.notifCached {
-		fetchMsg = fmt.Sprintf("for the past %s (%d items, cached)", opts.Since, totalFetched)
-	}
-	sendTaskEvent(events, tui.TaskFetch, tui.StatusComplete, tui.WithMessage(fetchMsg))
-
-	log.Info("fetched data",
-		"notifications", len(notifications),
-		"reviewPRs", len(reviewPRs),
-		"authoredPRs", len(authoredPRs),
-		"assignedIssues", len(assignedIssues),
-		"notifCached", result.notifCached,
-		"notifNewCount", result.notifNewCount,
-		"reviewCached", result.reviewCached,
-		"authoredCached", result.authoredCached,
-		"assignedCached", result.assignedCached)
+	notifications := fetchResult.Notifications
+	reviewPRs := fetchResult.ReviewPRs
+	authoredPRs := fetchResult.AuthoredPRs
+	assignedIssues := fetchResult.AssignedIssues
 
 	// Enrich all items concurrently
 	sendTaskEvent(events, tui.TaskEnrich, tui.StatusRunning)
 
-	// Track total items to enrich
 	totalToEnrich := len(notifications) + len(reviewPRs) + len(authoredPRs)
 	var totalCacheHits int64
 	var totalCompleted int64
 
 	if totalToEnrich > 0 {
-		// Progress callback using atomic counter for concurrent updates
-		// The delta parameter indicates how many items were just processed
-		var lastLogPercent int64 = -1
-		var lastTUIUpdate int64 = 0 // Unix nanoseconds
-		const tuiUpdateInterval = int64(50 * time.Millisecond)
-
-		onProgress := func(delta int, _ int) {
-			completed := atomic.AddInt64(&totalCompleted, int64(delta))
-			cacheHits := atomic.LoadInt64(&totalCacheHits)
-
-			if useTUI {
-				// Throttle TUI updates to every 50ms for smooth progress without overhead
-				now := time.Now().UnixNano()
-				lastUpdate := atomic.LoadInt64(&lastTUIUpdate)
-				if now-lastUpdate >= tuiUpdateInterval || completed == int64(totalToEnrich) {
-					if atomic.CompareAndSwapInt64(&lastTUIUpdate, lastUpdate, now) {
-						progress := float64(completed) / float64(totalToEnrich)
-						msg := fmt.Sprintf("%d/%d", completed, totalToEnrich)
-						if cacheHits > 0 {
-							msg = fmt.Sprintf("%d/%d (%d cached)", completed, totalToEnrich, cacheHits)
-						}
-						sendTaskEvent(events, tui.TaskEnrich, tui.StatusRunning,
-							tui.WithProgress(progress),
-							tui.WithMessage(msg))
-					}
-				}
-			} else {
-				// Throttle log output to 5% intervals
-				percent := (completed * 100) / int64(totalToEnrich)
-				if percent != atomic.LoadInt64(&lastLogPercent) && percent%5 == 0 {
-					atomic.StoreInt64(&lastLogPercent, percent)
-					log.Progress("Enriching items: %d/%d (%d%%)...", completed, totalToEnrich, percent)
-				}
-			}
-		}
-
-		// Enrich all three sources concurrently
-		var enrichWg sync.WaitGroup
-
-		// Enrich notifications
-		if len(notifications) > 0 {
-			enrichWg.Add(1)
-			go func() {
-				defer enrichWg.Done()
-				cacheHits, err := ghClient.EnrichNotificationsConcurrent(notifications, opts.Workers, onProgress)
-				if err != nil {
-					log.Warn("some notifications could not be enriched", "error", err)
-				}
-				atomic.AddInt64(&totalCacheHits, int64(cacheHits))
-			}()
-		}
-
-		// Enrich review-requested PRs
-		if len(reviewPRs) > 0 {
-			enrichWg.Add(1)
-			go func() {
-				defer enrichWg.Done()
-				cacheHits, err := ghClient.EnrichPRsConcurrent(reviewPRs, opts.Workers, prCache, onProgress)
-				if err != nil {
-					log.Warn("some review PRs could not be enriched", "error", err)
-				}
-				atomic.AddInt64(&totalCacheHits, int64(cacheHits))
-			}()
-		}
-
-		// Enrich authored PRs
-		if len(authoredPRs) > 0 {
-			enrichWg.Add(1)
-			go func() {
-				defer enrichWg.Done()
-				cacheHits, err := ghClient.EnrichPRsConcurrent(authoredPRs, opts.Workers, prCache, onProgress)
-				if err != nil {
-					log.Warn("some authored PRs could not be enriched", "error", err)
-				}
-				atomic.AddInt64(&totalCacheHits, int64(cacheHits))
-			}()
-		}
-
-		enrichWg.Wait()
-
-		if !useTUI {
-			log.ProgressDone()
-		}
+		enrichItems(ghClient, notifications, reviewPRs, authoredPRs, prCache, opts.Workers, useTUI, events, totalToEnrich, &totalCompleted, &totalCacheHits)
 	}
 
 	enrichCompleteMsg := fmt.Sprintf("%d/%d", totalCompleted, totalToEnrich)
 	if totalCacheHits > 0 {
 		enrichCompleteMsg = fmt.Sprintf("%d/%d (%d cached)", totalCompleted, totalToEnrich, totalCacheHits)
 	}
-	sendTaskEvent(events, tui.TaskEnrich, tui.StatusComplete,
-		tui.WithMessage(enrichCompleteMsg))
+	sendTaskEvent(events, tui.TaskEnrich, tui.StatusComplete, tui.WithMessage(enrichCompleteMsg))
 
-	// Merge review-requested and authored PRs into notifications
-	if len(reviewPRs) > 0 {
-		var added int
-		notifications, added = mergeReviewRequests(notifications, reviewPRs)
-		if added > 0 {
-			log.Info("PRs awaiting your review", "count", added)
-		}
+	// Merge all additional data sources into notifications
+	notifications, mergeResult := MergeAll(notifications, reviewPRs, authoredPRs, assignedIssues)
+	if mergeResult.ReviewPRsAdded > 0 {
+		log.Info("PRs awaiting your review", "count", mergeResult.ReviewPRsAdded)
 	}
-	if len(authoredPRs) > 0 {
-		var added int
-		notifications, added = mergeAuthoredPRs(notifications, authoredPRs)
-		if added > 0 {
-			log.Info("your open PRs", "count", added)
-		}
+	if mergeResult.AuthoredPRsAdded > 0 {
+		log.Info("your open PRs", "count", mergeResult.AuthoredPRsAdded)
 	}
-	if len(assignedIssues) > 0 {
-		var added int
-		notifications, added = mergeAssignedIssues(notifications, assignedIssues)
-		if added > 0 {
-			log.Info("issues assigned to you", "count", added)
-		}
+	if mergeResult.AssignedIssuesAdded > 0 {
+		log.Info("issues assigned to you", "count", mergeResult.AssignedIssuesAdded)
 	}
 
 	if len(notifications) == 0 {
@@ -518,6 +253,128 @@ func runList(_ *cobra.Command, _ []string, opts *Options) error {
 	items := engine.Prioritize(notifications)
 
 	// Apply filters
+	items = applyFilters(items, opts, cfg, resolvedStore)
+
+	sendTaskEvent(events, tui.TaskProcess, tui.StatusComplete, tui.WithCount(len(items)))
+
+	// Close TUI and wait for it to finish before showing output
+	closeTUI(events, tuiDone)
+
+	// Determine format
+	format := output.Format(opts.Format)
+	if format == "" {
+		format = output.Format(cfg.DefaultFormat)
+	}
+
+	// If running in a TTY with table format, launch interactive UI
+	// Use shouldUseTUI to respect verbose mode and --tui flag
+	if shouldUseTUI(opts) && (format == "" || format == output.FormatTable) {
+		return tui.RunListUI(items, resolvedStore, weights, currentUser)
+	}
+
+	// Output
+	formatter := output.NewFormatterWithWeights(format, weights, currentUser)
+
+	return formatter.Format(items, os.Stdout)
+}
+
+// enrichItems enriches notifications and PRs concurrently.
+func enrichItems(
+	ghClient *github.Client,
+	notifications, reviewPRs, authoredPRs []github.Notification,
+	prCache *github.Cache,
+	workers int,
+	useTUI bool,
+	events chan tui.Event,
+	totalToEnrich int,
+	totalCompleted, totalCacheHits *int64,
+) {
+	// Progress callback using atomic counter for concurrent updates
+	var lastLogPercent int64 = -1
+	var lastTUIUpdate int64 = 0 // Unix nanoseconds
+	tuiUpdateInterval := int64(constants.TUIUpdateInterval)
+
+	onProgress := func(delta int, _ int) {
+		completed := atomic.AddInt64(totalCompleted, int64(delta))
+		cacheHits := atomic.LoadInt64(totalCacheHits)
+
+		if useTUI {
+			// Throttle TUI updates to every 50ms for smooth progress without overhead
+			now := time.Now().UnixNano()
+			lastUpdate := atomic.LoadInt64(&lastTUIUpdate)
+			if now-lastUpdate >= tuiUpdateInterval || completed == int64(totalToEnrich) {
+				if atomic.CompareAndSwapInt64(&lastTUIUpdate, lastUpdate, now) {
+					progress := float64(completed) / float64(totalToEnrich)
+					msg := fmt.Sprintf("%d/%d", completed, totalToEnrich)
+					if cacheHits > 0 {
+						msg = fmt.Sprintf("%d/%d (%d cached)", completed, totalToEnrich, cacheHits)
+					}
+					sendTaskEvent(events, tui.TaskEnrich, tui.StatusRunning,
+						tui.WithProgress(progress),
+						tui.WithMessage(msg))
+				}
+			}
+		} else {
+			// Throttle log output to configured percent intervals
+			percent := (completed * 100) / int64(totalToEnrich)
+			if percent != atomic.LoadInt64(&lastLogPercent) && percent%constants.LogThrottlePercent == 0 {
+				atomic.StoreInt64(&lastLogPercent, percent)
+				log.Progress("Enriching items: %d/%d (%d%%)...", completed, totalToEnrich, percent)
+			}
+		}
+	}
+
+	// Enrich all three sources concurrently
+	var enrichWg sync.WaitGroup
+
+	// Enrich notifications
+	if len(notifications) > 0 {
+		enrichWg.Add(1)
+		go func() {
+			defer enrichWg.Done()
+			cacheHits, err := ghClient.EnrichNotificationsConcurrent(notifications, workers, onProgress)
+			if err != nil {
+				log.Warn("some notifications could not be enriched", "error", err)
+			}
+			atomic.AddInt64(totalCacheHits, int64(cacheHits))
+		}()
+	}
+
+	// Enrich review-requested PRs
+	if len(reviewPRs) > 0 {
+		enrichWg.Add(1)
+		go func() {
+			defer enrichWg.Done()
+			cacheHits, err := ghClient.EnrichPRsConcurrent(reviewPRs, workers, prCache, onProgress)
+			if err != nil {
+				log.Warn("some review PRs could not be enriched", "error", err)
+			}
+			atomic.AddInt64(totalCacheHits, int64(cacheHits))
+		}()
+	}
+
+	// Enrich authored PRs
+	if len(authoredPRs) > 0 {
+		enrichWg.Add(1)
+		go func() {
+			defer enrichWg.Done()
+			cacheHits, err := ghClient.EnrichPRsConcurrent(authoredPRs, workers, prCache, onProgress)
+			if err != nil {
+				log.Warn("some authored PRs could not be enriched", "error", err)
+			}
+			atomic.AddInt64(totalCacheHits, int64(cacheHits))
+		}()
+	}
+
+	enrichWg.Wait()
+
+	if !useTUI {
+		log.ProgressDone()
+	}
+}
+
+// applyFilters applies all configured filters to the items.
+func applyFilters(items []triage.PrioritizedItem, opts *Options, cfg *config.Config, resolvedStore *resolved.Store) []triage.PrioritizedItem {
 	if !opts.IncludeMerged {
 		items = triage.FilterOutMerged(items)
 	}
@@ -544,11 +401,10 @@ func runList(_ *cobra.Command, _ []string, opts *Options) error {
 			subjectType = github.SubjectPullRequest
 		case "issue", "Issue":
 			subjectType = github.SubjectIssue
-		default:
-			closeTUI(events, tuiDone)
-			return fmt.Errorf("invalid type: %s (must be 'pr' or 'issue')", opts.Type)
 		}
-		items = triage.FilterByType(items, subjectType)
+		if subjectType != "" {
+			items = triage.FilterByType(items, subjectType)
+		}
 	}
 
 	// Filter out excluded authors (bots like dependabot, renovate, etc.)
@@ -570,27 +426,8 @@ func runList(_ *cobra.Command, _ []string, opts *Options) error {
 	if opts.Limit > 0 && len(items) > opts.Limit {
 		items = items[:opts.Limit]
 	}
-	sendTaskEvent(events, tui.TaskProcess, tui.StatusComplete, tui.WithCount(len(items)))
 
-	// Close TUI and wait for it to finish before showing output
-	closeTUI(events, tuiDone)
-
-	// Determine format
-	format := output.Format(opts.Format)
-	if format == "" {
-		format = output.Format(cfg.DefaultFormat)
-	}
-
-	// If running in a TTY with table format, launch interactive UI
-	// Use shouldUseTUI to respect verbose mode and --tui flag
-	if shouldUseTUI(opts) && (format == "" || format == output.FormatTable) {
-		return tui.RunListUI(items, resolvedStore, weights, currentUser)
-	}
-
-	// Output
-	formatter := output.NewFormatterWithWeights(format, weights, currentUser)
-
-	return formatter.Format(items, os.Stdout)
+	return items
 }
 
 // shouldUseTUI determines whether to use the TUI based on options and environment.
@@ -622,156 +459,4 @@ func closeTUI(events chan tui.Event, tuiDone chan error) {
 	if tuiDone != nil {
 		<-tuiDone
 	}
-}
-
-func parseDuration(s string) (time.Time, error) {
-	now := time.Now()
-
-	// Handle common patterns
-	var duration time.Duration
-	var n int
-	var unit string
-
-	if _, err := fmt.Sscanf(s, "%d%s", &n, &unit); err != nil {
-		return time.Time{}, fmt.Errorf("invalid duration format: %s (use e.g., 1w, 30d, 6mo)", s)
-	}
-
-	switch unit {
-	case "m", "min", "mins":
-		duration = time.Duration(n) * time.Minute
-	case "h", "hr", "hrs", "hour", "hours":
-		duration = time.Duration(n) * time.Hour
-	case "d", "day", "days":
-		duration = time.Duration(n) * 24 * time.Hour
-	case "w", "wk", "wks", "week", "weeks":
-		duration = time.Duration(n) * 7 * 24 * time.Hour
-	case "mo", "month", "months":
-		duration = time.Duration(n) * 30 * 24 * time.Hour
-	case "y", "yr", "yrs", "year", "years":
-		duration = time.Duration(n) * 365 * 24 * time.Hour
-	default:
-		return time.Time{}, fmt.Errorf("unknown duration unit: %s", unit)
-	}
-
-	return now.Add(-duration), nil
-}
-
-// mergeReviewRequests adds review-requested PRs that aren't already in notifications
-// Returns the merged list and the count of newly added items
-func mergeReviewRequests(notifications []github.Notification, reviewPRs []github.Notification) ([]github.Notification, int) {
-	// Build a set of existing PR identifiers (repo/number and also Subject.URL for fallback)
-	existing := make(map[string]bool)
-	existingURLs := make(map[string]bool)
-
-	for _, n := range notifications {
-		if n.Subject.Type == github.SubjectPullRequest {
-			// Track by URL (always available)
-			if n.Subject.URL != "" {
-				existingURLs[n.Subject.URL] = true
-			}
-			// Track by repo#number if Details available
-			if n.Details != nil {
-				key := fmt.Sprintf("%s#%d", n.Repository.FullName, n.Details.Number)
-				existing[key] = true
-			}
-		}
-	}
-
-	// Add review PRs that aren't already in the list
-	added := 0
-	for _, pr := range reviewPRs {
-		if pr.Details == nil {
-			continue
-		}
-
-		// Check both key formats to avoid duplicates
-		key := fmt.Sprintf("%s#%d", pr.Repository.FullName, pr.Details.Number)
-		if existing[key] || existingURLs[pr.Subject.URL] {
-			continue
-		}
-
-		notifications = append(notifications, pr)
-		existing[key] = true
-		added++
-	}
-
-	return notifications, added
-}
-
-// mergeAuthoredPRs adds user's open PRs that aren't already in notifications
-// Returns the merged list and the count of newly added items
-func mergeAuthoredPRs(notifications []github.Notification, authoredPRs []github.Notification) ([]github.Notification, int) {
-	// Build a set of existing PR identifiers
-	existing := make(map[string]bool)
-	existingURLs := make(map[string]bool)
-
-	for _, n := range notifications {
-		if n.Subject.Type == github.SubjectPullRequest {
-			if n.Subject.URL != "" {
-				existingURLs[n.Subject.URL] = true
-			}
-			if n.Details != nil {
-				key := fmt.Sprintf("%s#%d", n.Repository.FullName, n.Details.Number)
-				existing[key] = true
-			}
-		}
-	}
-
-	// Add authored PRs that aren't already in the list
-	added := 0
-	for _, pr := range authoredPRs {
-		if pr.Details == nil {
-			continue
-		}
-
-		key := fmt.Sprintf("%s#%d", pr.Repository.FullName, pr.Details.Number)
-		if existing[key] || existingURLs[pr.Subject.URL] {
-			continue
-		}
-
-		notifications = append(notifications, pr)
-		existing[key] = true
-		added++
-	}
-
-	return notifications, added
-}
-
-// mergeAssignedIssues adds user's assigned issues that aren't already in notifications
-// Returns the merged list and the count of newly added items
-func mergeAssignedIssues(notifications []github.Notification, assignedIssues []github.Notification) ([]github.Notification, int) {
-	// Build a set of existing issue identifiers
-	existing := make(map[string]bool)
-	existingURLs := make(map[string]bool)
-
-	for _, n := range notifications {
-		if n.Subject.Type == github.SubjectIssue {
-			if n.Subject.URL != "" {
-				existingURLs[n.Subject.URL] = true
-			}
-			if n.Details != nil {
-				key := fmt.Sprintf("%s#%d", n.Repository.FullName, n.Details.Number)
-				existing[key] = true
-			}
-		}
-	}
-
-	// Add assigned issues that aren't already in the list
-	added := 0
-	for _, issue := range assignedIssues {
-		if issue.Details == nil {
-			continue
-		}
-
-		key := fmt.Sprintf("%s#%d", issue.Repository.FullName, issue.Details.Number)
-		if existing[key] || existingURLs[issue.Subject.URL] {
-			continue
-		}
-
-		notifications = append(notifications, issue)
-		existing[key] = true
-		added++
-	}
-
-	return notifications, added
 }
