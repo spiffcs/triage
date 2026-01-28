@@ -33,6 +33,13 @@ type OrphanedContribution struct {
 	LastTeamActivity  *time.Time
 	ConsecutiveAuthor int
 	HTMLURL           string
+	CommentCount      int
+	Assignees         []string
+	// PR-specific fields
+	Additions      int
+	Deletions      int
+	ReviewDecision string
+	ReviewState    string
 }
 
 // ListOrphanedContributions finds external PRs/issues needing attention
@@ -106,7 +113,11 @@ func buildOrphanedQuery(owner, repo string) string {
         url
         author { login }
         authorAssociation
+        assignees(first: 5) {
+          nodes { login }
+        }
         comments(last: 10) {
+          totalCount
           nodes {
             author { login }
             authorAssociation
@@ -124,7 +135,14 @@ func buildOrphanedQuery(owner, repo string) string {
         url
         author { login }
         authorAssociation
+        additions
+        deletions
+        reviewDecision
+        assignees(first: 5) {
+          nodes { login }
+        }
         comments(last: 10) {
+          totalCount
           nodes {
             author { login }
             authorAssociation
@@ -136,6 +154,7 @@ func buildOrphanedQuery(owner, repo string) string {
             author { login }
             authorAssociation
             submittedAt
+            state
           }
         }
       }
@@ -164,8 +183,12 @@ type orphanedIssueNode struct {
 	URL               string    `json:"url"`
 	Author            *actorRef `json:"author"`
 	AuthorAssociation string    `json:"authorAssociation"`
-	Comments          struct {
-		Nodes []commentNode `json:"nodes"`
+	Assignees         struct {
+		Nodes []actorRef `json:"nodes"`
+	} `json:"assignees"`
+	Comments struct {
+		TotalCount int           `json:"totalCount"`
+		Nodes      []commentNode `json:"nodes"`
 	} `json:"comments"`
 }
 
@@ -177,8 +200,15 @@ type orphanedPRNode struct {
 	URL               string    `json:"url"`
 	Author            *actorRef `json:"author"`
 	AuthorAssociation string    `json:"authorAssociation"`
-	Comments          struct {
-		Nodes []commentNode `json:"nodes"`
+	Additions         int       `json:"additions"`
+	Deletions         int       `json:"deletions"`
+	ReviewDecision    string    `json:"reviewDecision"`
+	Assignees         struct {
+		Nodes []actorRef `json:"nodes"`
+	} `json:"assignees"`
+	Comments struct {
+		TotalCount int           `json:"totalCount"`
+		Nodes      []commentNode `json:"nodes"`
 	} `json:"comments"`
 	Reviews struct {
 		Nodes []reviewNode `json:"nodes"`
@@ -199,6 +229,7 @@ type reviewNode struct {
 	Author            *actorRef `json:"author"`
 	AuthorAssociation string    `json:"authorAssociation"`
 	SubmittedAt       time.Time `json:"submittedAt"`
+	State             string    `json:"state"`
 }
 
 // parseOrphanedResponse parses the GraphQL response and identifies orphaned contributions
@@ -226,6 +257,12 @@ func parseOrphanedResponse(data json.RawMessage, owner, repo string, opts Orphan
 
 		// Check if orphaned based on criteria
 		if isOrphaned(issue.UpdatedAt, lastTeam, consecutive, opts) {
+			// Extract assignee logins
+			var assignees []string
+			for _, a := range issue.Assignees.Nodes {
+				assignees = append(assignees, a.Login)
+			}
+
 			contributions = append(contributions, OrphanedContribution{
 				Owner:             owner,
 				Repo:              repo,
@@ -239,6 +276,8 @@ func parseOrphanedResponse(data json.RawMessage, owner, repo string, opts Orphan
 				LastTeamActivity:  lastTeam,
 				ConsecutiveAuthor: consecutive,
 				HTMLURL:           issue.URL,
+				CommentCount:      issue.Comments.TotalCount,
+				Assignees:         assignees,
 			})
 		}
 	}
@@ -266,6 +305,15 @@ func parseOrphanedResponse(data json.RawMessage, owner, repo string, opts Orphan
 
 		// Check if orphaned based on criteria
 		if isOrphaned(pr.UpdatedAt, lastTeam, consecutive, opts) {
+			// Determine review state from reviews
+			reviewState := determineReviewState(pr.Reviews.Nodes, pr.ReviewDecision)
+
+			// Extract assignee logins
+			var assignees []string
+			for _, a := range pr.Assignees.Nodes {
+				assignees = append(assignees, a.Login)
+			}
+
 			contributions = append(contributions, OrphanedContribution{
 				Owner:             owner,
 				Repo:              repo,
@@ -279,6 +327,12 @@ func parseOrphanedResponse(data json.RawMessage, owner, repo string, opts Orphan
 				LastTeamActivity:  lastTeam,
 				ConsecutiveAuthor: consecutive,
 				HTMLURL:           pr.URL,
+				CommentCount:      pr.Comments.TotalCount,
+				Assignees:         assignees,
+				Additions:         pr.Additions,
+				Deletions:         pr.Deletions,
+				ReviewDecision:    pr.ReviewDecision,
+				ReviewState:       reviewState,
 			})
 		}
 	}
@@ -354,6 +408,44 @@ func analyzeReviews(reviews []reviewNode) *time.Time {
 	return lastTeamReview
 }
 
+// determineReviewState determines the review state from reviews and reviewDecision
+func determineReviewState(reviews []reviewNode, reviewDecision string) string {
+	// Map reviewDecision to our internal state names
+	switch reviewDecision {
+	case "APPROVED":
+		return "approved"
+	case "CHANGES_REQUESTED":
+		return "changes_requested"
+	case "REVIEW_REQUIRED":
+		return "review_required"
+	}
+
+	// Fall back to checking individual reviews for the most recent state
+	var latestReview *reviewNode
+	for i := range reviews {
+		r := &reviews[i]
+		if r.Author == nil {
+			continue
+		}
+		if latestReview == nil || r.SubmittedAt.After(latestReview.SubmittedAt) {
+			latestReview = r
+		}
+	}
+
+	if latestReview != nil {
+		switch latestReview.State {
+		case "APPROVED":
+			return "approved"
+		case "CHANGES_REQUESTED":
+			return "changes_requested"
+		case "COMMENTED", "PENDING":
+			return "reviewed"
+		}
+	}
+
+	return "pending"
+}
+
 // isOrphaned determines if a contribution should be flagged as orphaned
 func isOrphaned(updatedAt time.Time, lastTeamActivity *time.Time, consecutiveAuthor int, opts OrphanedSearchOptions) bool {
 	now := time.Now()
@@ -391,6 +483,28 @@ func orphanedToNotification(contrib OrphanedContribution) Notification {
 		subjectType = SubjectPullRequest
 	}
 
+	details := &ItemDetails{
+		Number:                    contrib.Number,
+		State:                     "open",
+		HTMLURL:                   contrib.HTMLURL,
+		CreatedAt:                 contrib.CreatedAt,
+		UpdatedAt:                 contrib.UpdatedAt,
+		Author:                    contrib.Author,
+		Assignees:                 contrib.Assignees,
+		CommentCount:              contrib.CommentCount,
+		IsPR:                      contrib.IsPR,
+		AuthorAssociation:         contrib.AuthorAssociation,
+		LastTeamActivityAt:        contrib.LastTeamActivity,
+		ConsecutiveAuthorComments: contrib.ConsecutiveAuthor,
+	}
+
+	// Add PR-specific fields
+	if contrib.IsPR {
+		details.Additions = contrib.Additions
+		details.Deletions = contrib.Deletions
+		details.ReviewState = contrib.ReviewState
+	}
+
 	n := Notification{
 		ID:        fmt.Sprintf("orphaned-%s-%d", fullName, contrib.Number),
 		Reason:    ReasonOrphaned,
@@ -406,19 +520,8 @@ func orphanedToNotification(contrib OrphanedContribution) Notification {
 			URL:   contrib.HTMLURL,
 			Type:  subjectType,
 		},
-		URL: contrib.HTMLURL,
-		Details: &ItemDetails{
-			Number:                    contrib.Number,
-			State:                     "open",
-			HTMLURL:                   contrib.HTMLURL,
-			CreatedAt:                 contrib.CreatedAt,
-			UpdatedAt:                 contrib.UpdatedAt,
-			Author:                    contrib.Author,
-			IsPR:                      contrib.IsPR,
-			AuthorAssociation:         contrib.AuthorAssociation,
-			LastTeamActivityAt:        contrib.LastTeamActivity,
-			ConsecutiveAuthorComments: contrib.ConsecutiveAuthor,
-		},
+		URL:     contrib.HTMLURL,
+		Details: details,
 	}
 
 	return n

@@ -350,6 +350,11 @@ func (f *TableFormatter) formatStatus(n github.Notification, _ triage.Prioritize
 		return statusResult{text, len(text)}
 	}
 
+	// For items with assignees but no comments, show "assign"
+	if len(d.Assignees) > 0 {
+		return statusResult{"assign", 6}
+	}
+
 	reason := string(n.Reason)
 	return statusResult{reason, len(reason)}
 }
