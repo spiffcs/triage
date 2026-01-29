@@ -1,7 +1,7 @@
 package triage
 
 import (
-	"github.com/spiffcs/triage/internal/github"
+	"github.com/spiffcs/triage/internal/model"
 )
 
 // PriorityLevel represents the action priority (displayed in table)
@@ -38,7 +38,7 @@ func (p PriorityLevel) Display() string {
 
 // PrioritizedItem wraps a notification with priority information
 type PrioritizedItem struct {
-	Notification github.Notification `json:"notification"`
+	Notification model.Item `json:"notification"`
 	Score        int                 `json:"score"`
 	Priority     PriorityLevel       `json:"priority"`
 	ActionNeeded string              `json:"actionNeeded"`

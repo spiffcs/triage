@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"github.com/spiffcs/triage/internal/model"
 	"context"
 	"errors"
 	"fmt"
@@ -8,18 +9,18 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/spiffcs/triage/internal/github"
+	"github.com/spiffcs/triage/internal/ghclient"
 	"github.com/spiffcs/triage/internal/log"
 	"github.com/spiffcs/triage/internal/tui"
 )
 
 // fetchResult contains all data fetched from GitHub.
 type fetchResult struct {
-	Notifications  []github.Notification
-	ReviewPRs      []github.Notification
-	AuthoredPRs    []github.Notification
-	AssignedIssues []github.Notification
-	Orphaned       []github.Notification
+	Notifications  []model.Item
+	ReviewPRs      []model.Item
+	AuthoredPRs    []model.Item
+	AssignedIssues []model.Item
+	Orphaned       []model.Item
 	RateLimited    bool
 
 	// Cache statistics
@@ -73,7 +74,7 @@ type fetchOptions struct {
 }
 
 // fetchAll fetches all data sources in parallel.
-func fetchAll(ctx context.Context, client *github.Client, cache *github.Cache, opts fetchOptions) (*fetchResult, error) {
+func fetchAll(ctx context.Context, client *ghclient.Client, cache *ghclient.Cache, opts fetchOptions) (*fetchResult, error) {
 	totalFetches := 4
 	if len(opts.OrphanedRepos) > 0 {
 		totalFetches = 5
@@ -147,7 +148,7 @@ func fetchAll(ctx context.Context, client *github.Client, cache *github.Cache, o
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			searchOpts := github.OrphanedSearchOptions{
+			searchOpts := model.OrphanedSearchOptions{
 				Repos:                     opts.OrphanedRepos,
 				Since:                     opts.Since,
 				StaleDays:                 opts.StaleDays,
@@ -163,7 +164,7 @@ func fetchAll(ctx context.Context, client *github.Client, cache *github.Cache, o
 
 	// Handle fetch errors - check for rate limiting
 	if notifErr != nil {
-		if errors.Is(notifErr, github.ErrRateLimited) {
+		if errors.Is(notifErr, ghclient.ErrRateLimited) {
 			result.RateLimited = true
 		} else {
 			sendTaskEvent(opts.Events, tui.TaskFetch, tui.StatusError, tui.WithError(notifErr))
@@ -183,7 +184,7 @@ func fetchAll(ctx context.Context, client *github.Client, cache *github.Cache, o
 		if fe.err == nil {
 			continue
 		}
-		if errors.Is(fe.err, github.ErrRateLimited) {
+		if errors.Is(fe.err, ghclient.ErrRateLimited) {
 			result.RateLimited = true
 			continue
 		}
@@ -192,7 +193,7 @@ func fetchAll(ctx context.Context, client *github.Client, cache *github.Cache, o
 
 	// Send rate limit event to TUI if rate limited
 	if result.RateLimited && opts.Events != nil {
-		_, _, resetAt, _ := github.GetRateLimitStatus()
+		_, _, resetAt, _ := ghclient.GetRateLimitStatus()
 		opts.Events <- tui.RateLimitEvent{
 			Limited: true,
 			ResetAt: resetAt,

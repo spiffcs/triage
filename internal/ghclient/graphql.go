@@ -1,6 +1,7 @@
-package github
+package ghclient
 
 import (
+	"github.com/spiffcs/triage/internal/model"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -89,8 +90,8 @@ type IssueGraphQLResult struct {
 // enrichmentItem tracks what we need to enrich.
 type enrichmentItem struct {
 	index  int    // Index in the notifications slice
-	owner  string // Repository owner
-	repo   string // Repository name
+	owner  string // model.Repository owner
+	repo   string // model.Repository name
 	number int    // Issue/PR number
 	isPR   bool   // True if PR, false if Issue
 }
@@ -107,14 +108,14 @@ type batchResult struct {
 
 // EnrichNotificationsGraphQL enriches notifications using GraphQL batch queries.
 // Returns the number of successfully enriched items.
-func (c *Client) EnrichNotificationsGraphQL(notifications []Notification, token string, onProgress func(completed, total int)) (int, error) {
+func (c *Client) EnrichNotificationsGraphQL(notifications []model.Item, token string, onProgress func(completed, total int)) (int, error) {
 	// Separate PRs and Issues, and identify items that need enrichment
 	var items []enrichmentItem
 
 	for i := range notifications {
 		n := &notifications[i]
 		if n.Subject.URL == "" {
-			log.Debug("skipping notification without Subject.URL", "id", n.ID)
+			log.Debug("skipping notification without model.Subject.URL", "id", n.ID)
 			continue
 		}
 
@@ -135,7 +136,7 @@ func (c *Client) EnrichNotificationsGraphQL(notifications []Notification, token 
 			owner:  parts[0],
 			repo:   parts[1],
 			number: number,
-			isPR:   n.Subject.Type == SubjectPullRequest,
+			isPR:   n.Subject.Type == model.SubjectPullRequest,
 		})
 	}
 
@@ -762,9 +763,9 @@ func getCIStatusFromCommits(commits []struct {
 }
 
 // applyPRResult applies GraphQL PR result to a notification.
-func applyPRResult(n *Notification, result *PRGraphQLResult) {
+func applyPRResult(n *model.Item, result *PRGraphQLResult) {
 	if n.Details == nil {
-		n.Details = &ItemDetails{}
+		n.Details = &model.ItemDetails{}
 	}
 
 	n.Details.Number = result.Number
@@ -796,9 +797,9 @@ func applyPRResult(n *Notification, result *PRGraphQLResult) {
 }
 
 // applyIssueResult applies GraphQL Issue result to a notification.
-func applyIssueResult(n *Notification, result *IssueGraphQLResult) {
+func applyIssueResult(n *model.Item, result *IssueGraphQLResult) {
 	if n.Details == nil {
-		n.Details = &ItemDetails{}
+		n.Details = &model.ItemDetails{}
 	}
 
 	n.Details.Number = result.Number

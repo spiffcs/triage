@@ -1,4 +1,6 @@
-package github
+// Package model contains domain types for the triage application.
+// These types are independent of any external GitHub library.
+package model
 
 import (
 	"strings"
@@ -69,8 +71,8 @@ const (
 	SubjectDiscussion  SubjectType = "Discussion"
 )
 
-// Notification represents a GitHub notification with enriched context
-type Notification struct {
+// Item represents a GitHub notification with enriched context
+type Item struct {
 	ID         string             `json:"id"`
 	Reason     NotificationReason `json:"reason"`
 	Unread     bool               `json:"unread"`
@@ -97,43 +99,4 @@ type Subject struct {
 	Title string      `json:"title"`
 	URL   string      `json:"url"`
 	Type  SubjectType `json:"type"`
-}
-
-// ItemDetails contains enriched information about an issue or PR
-type ItemDetails struct {
-	Number    int        `json:"number"`
-	State     string     `json:"state"` // open, closed, merged
-	HTMLURL   string     `json:"htmlUrl"`
-	CreatedAt time.Time  `json:"createdAt"`
-	UpdatedAt time.Time  `json:"updatedAt"`
-	ClosedAt  *time.Time `json:"closedAt,omitempty"`
-
-	// User info
-	Author    string   `json:"author"`
-	Assignees []string `json:"assignees"`
-
-	// Metadata
-	Labels        []string `json:"labels"`
-	CommentCount  int      `json:"commentCount"`
-	LastCommenter string   `json:"lastCommenter,omitempty"`
-
-	// PR-specific
-	IsPR               bool       `json:"isPR"`
-	Merged             bool       `json:"merged,omitempty"`
-	MergedAt           *time.Time `json:"mergedAt,omitempty"`
-	Additions          int        `json:"additions,omitempty"`
-	Deletions          int        `json:"deletions,omitempty"`
-	ChangedFiles       int        `json:"changedFiles,omitempty"`
-	ReviewState        string     `json:"reviewState,omitempty"` // approved, changes_requested, pending
-	ReviewComments     int        `json:"reviewComments,omitempty"`
-	Mergeable          bool       `json:"mergeable,omitempty"`
-	CIStatus           string     `json:"ciStatus,omitempty"` // success, failure, pending
-	Draft              bool       `json:"draft,omitempty"`
-	RequestedReviewers []string   `json:"requestedReviewers,omitempty"`
-	LatestReviewer     string     `json:"latestReviewer,omitempty"`
-
-	// Orphaned contribution detection
-	AuthorAssociation         string     `json:"authorAssociation,omitempty"` // MEMBER, COLLABORATOR, CONTRIBUTOR, etc.
-	LastTeamActivityAt        *time.Time `json:"lastTeamActivityAt,omitempty"`
-	ConsecutiveAuthorComments int        `json:"consecutiveAuthorComments,omitempty"`
 }

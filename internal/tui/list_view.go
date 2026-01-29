@@ -2,13 +2,13 @@ package tui
 
 import (
 	"fmt"
+	"github.com/spiffcs/triage/internal/model"
 	"strings"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spiffcs/triage/internal/constants"
 	"github.com/spiffcs/triage/internal/format"
-	"github.com/spiffcs/triage/internal/github"
 	"github.com/spiffcs/triage/internal/triage"
 )
 
@@ -151,8 +151,9 @@ func renderHeader(hideAssignedCI, hidePriority bool) string {
 	if hideAssignedCI {
 		if hidePriority {
 			return listHeaderStyle.Render(fmt.Sprintf(
-				"  %-*s  %-*s  %-*s  %-*s  %-*s  %s",
+				"  %-*s  %-*s  %-*s  %-*s  %-*s  %-*s  %s",
 				constants.ColType, "Type",
+				constants.ColAuthor, "Author",
 				constants.ColRepo, "Repository",
 				constants.ColTitle, "Title",
 				constants.ColStatus, "Status",
@@ -204,7 +205,7 @@ func renderSeparator(hideAssignedCI, hidePriority bool) string {
 		priorityWidth = 0
 	}
 	if hideAssignedCI {
-		width = 2 + priorityWidth + constants.ColType + 2 + constants.ColRepo + 2 + constants.ColTitle + 2 + constants.ColStatus + 2 + colSignal + 2 + constants.ColAge
+		width = 2 + priorityWidth + constants.ColType + 2 + constants.ColAuthor + 2 + constants.ColRepo + 2 + constants.ColTitle + 2 + constants.ColStatus + 2 + colSignal + 2 + constants.ColAge
 	} else {
 		width = 2 + priorityWidth + constants.ColType + 2 + constants.ColAssigned + 2 + constants.ColCI + 2 + constants.ColRepo + 2 + constants.ColTitle + 2 + constants.ColStatus + 2 + constants.ColAge
 	}
@@ -293,14 +294,21 @@ func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, pr
 
 	var row string
 	if hideAssignedCI {
-		// Orphaned view: no Assigned/CI, but add Signal column
+		// Orphaned view: no Assigned/CI, but add Signal and Author columns
 		signal, signalWidth := renderSignal(n.Details)
 		signal = format.PadRight(signal, signalWidth, colSignal)
 
-		row = fmt.Sprintf("%s%s%s  %s  %s  %s  %s  %s",
+		author := "─"
+		if n.Details != nil && n.Details.Author != "" {
+			author, _ = format.TruncateToWidth(n.Details.Author, constants.ColAuthor)
+		}
+		author = format.PadRight(author, len(author), constants.ColAuthor)
+
+		row = fmt.Sprintf("%s%s%s  %s  %s  %s  %s  %s  %s",
 			cursor,
 			priority,
 			typeStr,
+			author,
 			repo,
 			title,
 			status,
@@ -336,7 +344,7 @@ func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, pr
 
 // renderSignal renders the signal column showing why an item needs attention
 // Returns colored text and visible width
-func renderSignal(d *github.ItemDetails) (string, int) {
+func renderSignal(d *model.ItemDetails) (string, int) {
 	if d == nil {
 		return "─", 1
 	}
@@ -413,7 +421,7 @@ func renderPriority(p triage.PriorityLevel) (string, int) {
 
 // renderCI renders the CI status column
 // Returns the colored string and its visible width
-func renderCI(d *github.ItemDetails, isPR bool) (string, int) {
+func renderCI(d *model.ItemDetails, isPR bool) (string, int) {
 	if !isPR {
 		return "─", 1 // dash for non-PRs
 	}
@@ -434,7 +442,7 @@ func renderCI(d *github.ItemDetails, isPR bool) (string, int) {
 
 // renderAssigned renders the Assigned column using shared logic
 // Returns the string and its visible width
-func renderAssigned(d *github.ItemDetails) (string, int) {
+func renderAssigned(d *model.ItemDetails) (string, int) {
 	if d == nil {
 		return "─", 1
 	}
@@ -459,7 +467,7 @@ func renderAssigned(d *github.ItemDetails) (string, int) {
 
 // renderStatus renders the status column with colors
 // Returns the colored string and its visible width
-func renderStatus(n github.Notification, sizeXS, sizeS, sizeM, sizeL int) (string, int) {
+func renderStatus(n model.Item, sizeXS, sizeS, sizeM, sizeL int) (string, int) {
 	if n.Details == nil {
 		reason := string(n.Reason)
 		return reason, len(reason)

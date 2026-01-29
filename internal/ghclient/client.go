@@ -1,6 +1,7 @@
-package github
+package ghclient
 
 import (
+	"github.com/spiffcs/triage/internal/model"
 	"context"
 	"fmt"
 	"net/http"
@@ -9,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/go-github/v57/github"
+	gh "github.com/google/go-github/v57/github"
 	"github.com/spiffcs/triage/internal/constants"
 	"github.com/spiffcs/triage/internal/log"
 	"golang.org/x/oauth2"
@@ -83,7 +84,7 @@ func parseRateLimitHeaders(resp *http.Response) (remaining, limit int, resetAt t
 
 // Client wraps the GitHub API client
 type Client struct {
-	client *github.Client
+	client *gh.Client
 	ctx    context.Context
 	token  string
 }
@@ -108,7 +109,7 @@ func NewClient(ctx context.Context, token string) (*Client, error) {
 		base: tc.Transport,
 	}
 
-	client := github.NewClient(tc)
+	client := gh.NewClient(tc)
 
 	return &Client{
 		client: client,
@@ -127,7 +128,7 @@ func (c *Client) GetAuthenticatedUser() (string, error) {
 }
 
 // RawClient returns the underlying go-github client for advanced operations
-func (c *Client) RawClient() *github.Client {
+func (c *Client) RawClient() *gh.Client {
 	return c.client
 }
 
@@ -142,18 +143,18 @@ func (c *Client) Token() string {
 }
 
 // ListReviewRequestedPRs fetches open PRs where the user is a requested reviewer
-func (c *Client) ListReviewRequestedPRs(username string) ([]Notification, error) {
+func (c *Client) ListReviewRequestedPRs(username string) ([]model.Item, error) {
 	query := fmt.Sprintf("is:pr is:open review-requested:%s", username)
 
-	opts := &github.SearchOptions{
+	opts := &gh.SearchOptions{
 		Sort:  "updated",
 		Order: "desc",
-		ListOptions: github.ListOptions{
+		ListOptions: gh.ListOptions{
 			PerPage: 100,
 		},
 	}
 
-	var notifications []Notification
+	var notifications []model.Item
 
 	for {
 		result, resp, err := c.client.Search.Issues(c.ctx, query, opts)
@@ -176,8 +177,8 @@ func (c *Client) ListReviewRequestedPRs(username string) ([]Notification, error)
 	return notifications, nil
 }
 
-// prToNotification converts a PR from search results to a Notification
-func (c *Client) prToNotification(issue *github.Issue) Notification {
+// prToNotification converts a PR from search results to a model.Item
+func (c *Client) prToNotification(issue *gh.Issue) model.Item {
 	// Extract owner/repo from the repository URL
 	// Issue.RepositoryURL format: https://api.github.com/repos/owner/repo
 	repoURL := issue.GetRepositoryURL()
@@ -189,23 +190,23 @@ func (c *Client) prToNotification(issue *github.Issue) Notification {
 		repoName = parts[1]
 	}
 
-	notification := Notification{
+	notification := model.Item{
 		ID:        fmt.Sprintf("review-requested-%d", issue.GetID()),
-		Reason:    ReasonReviewRequested,
+		Reason:    model.ReasonReviewRequested,
 		Unread:    true, // Treat as unread since review is pending
 		UpdatedAt: issue.GetUpdatedAt().Time,
-		Repository: Repository{
+		Repository: model.Repository{
 			Name:     repoName,
 			FullName: fullName,
 			HTMLURL:  fmt.Sprintf("https://github.com/%s", fullName),
 		},
-		Subject: Subject{
+		Subject: model.Subject{
 			Title: issue.GetTitle(),
 			URL:   issue.GetURL(),
-			Type:  SubjectPullRequest,
+			Type:  model.SubjectPullRequest,
 		},
 		URL: issue.GetURL(),
-		Details: &ItemDetails{
+		Details: &model.ItemDetails{
 			Number:       issue.GetNumber(),
 			State:        issue.GetState(),
 			HTMLURL:      issue.GetHTMLURL(),
@@ -273,18 +274,18 @@ func splitBySlash(s string) []string {
 }
 
 // ListAssignedIssues fetches open issues assigned to the user
-func (c *Client) ListAssignedIssues(username string) ([]Notification, error) {
+func (c *Client) ListAssignedIssues(username string) ([]model.Item, error) {
 	query := fmt.Sprintf("is:issue is:open assignee:%s", username)
 
-	opts := &github.SearchOptions{
+	opts := &gh.SearchOptions{
 		Sort:  "updated",
 		Order: "desc",
-		ListOptions: github.ListOptions{
+		ListOptions: gh.ListOptions{
 			PerPage: 100,
 		},
 	}
 
-	var notifications []Notification
+	var notifications []model.Item
 
 	for {
 		result, resp, err := c.client.Search.Issues(c.ctx, query, opts)
@@ -306,8 +307,8 @@ func (c *Client) ListAssignedIssues(username string) ([]Notification, error) {
 	return notifications, nil
 }
 
-// assignedIssueToNotification converts an assigned issue to a Notification
-func (c *Client) assignedIssueToNotification(issue *github.Issue) Notification {
+// assignedIssueToNotification converts an assigned issue to a model.Item
+func (c *Client) assignedIssueToNotification(issue *gh.Issue) model.Item {
 	repoURL := issue.GetRepositoryURL()
 	parts := splitRepoURL(repoURL)
 	fullName := ""
@@ -317,23 +318,23 @@ func (c *Client) assignedIssueToNotification(issue *github.Issue) Notification {
 		repoName = parts[1]
 	}
 
-	notification := Notification{
+	notification := model.Item{
 		ID:        fmt.Sprintf("assigned-%d", issue.GetID()),
-		Reason:    ReasonAssign,
+		Reason:    model.ReasonAssign,
 		Unread:    true,
 		UpdatedAt: issue.GetUpdatedAt().Time,
-		Repository: Repository{
+		Repository: model.Repository{
 			Name:     repoName,
 			FullName: fullName,
 			HTMLURL:  fmt.Sprintf("https://github.com/%s", fullName),
 		},
-		Subject: Subject{
+		Subject: model.Subject{
 			Title: issue.GetTitle(),
 			URL:   issue.GetURL(),
-			Type:  SubjectIssue,
+			Type:  model.SubjectIssue,
 		},
 		URL: issue.GetURL(),
-		Details: &ItemDetails{
+		Details: &model.ItemDetails{
 			Number:       issue.GetNumber(),
 			State:        issue.GetState(),
 			HTMLURL:      issue.GetHTMLURL(),
@@ -359,18 +360,18 @@ func (c *Client) assignedIssueToNotification(issue *github.Issue) Notification {
 }
 
 // ListAuthoredPRs fetches open PRs authored by the user
-func (c *Client) ListAuthoredPRs(username string) ([]Notification, error) {
+func (c *Client) ListAuthoredPRs(username string) ([]model.Item, error) {
 	query := fmt.Sprintf("is:pr is:open author:%s", username)
 
-	opts := &github.SearchOptions{
+	opts := &gh.SearchOptions{
 		Sort:  "updated",
 		Order: "desc",
-		ListOptions: github.ListOptions{
+		ListOptions: gh.ListOptions{
 			PerPage: 100,
 		},
 	}
 
-	var notifications []Notification
+	var notifications []model.Item
 
 	for {
 		result, resp, err := c.client.Search.Issues(c.ctx, query, opts)
@@ -392,8 +393,8 @@ func (c *Client) ListAuthoredPRs(username string) ([]Notification, error) {
 	return notifications, nil
 }
 
-// authoredPRToNotification converts an authored PR to a Notification
-func (c *Client) authoredPRToNotification(issue *github.Issue) Notification {
+// authoredPRToNotification converts an authored PR to a model.Item
+func (c *Client) authoredPRToNotification(issue *gh.Issue) model.Item {
 	repoURL := issue.GetRepositoryURL()
 	parts := splitRepoURL(repoURL)
 	fullName := ""
@@ -405,23 +406,23 @@ func (c *Client) authoredPRToNotification(issue *github.Issue) Notification {
 		fullName = owner + "/" + repoName
 	}
 
-	notification := Notification{
+	notification := model.Item{
 		ID:        fmt.Sprintf("authored-%d", issue.GetID()),
-		Reason:    ReasonAuthor,
+		Reason:    model.ReasonAuthor,
 		Unread:    true,
 		UpdatedAt: issue.GetUpdatedAt().Time,
-		Repository: Repository{
+		Repository: model.Repository{
 			Name:     repoName,
 			FullName: fullName,
 			HTMLURL:  fmt.Sprintf("https://github.com/%s", fullName),
 		},
-		Subject: Subject{
+		Subject: model.Subject{
 			Title: issue.GetTitle(),
 			URL:   issue.GetURL(),
-			Type:  SubjectPullRequest,
+			Type:  model.SubjectPullRequest,
 		},
 		URL: issue.GetURL(),
-		Details: &ItemDetails{
+		Details: &model.ItemDetails{
 			Number:       issue.GetNumber(),
 			State:        issue.GetState(),
 			HTMLURL:      issue.GetHTMLURL(),
@@ -448,7 +449,7 @@ func (c *Client) authoredPRToNotification(issue *github.Issue) Notification {
 }
 
 // ListReviewRequestedPRsCached fetches PRs with caching support
-func (c *Client) ListReviewRequestedPRsCached(username string, cache *Cache) ([]Notification, bool, error) {
+func (c *Client) ListReviewRequestedPRsCached(username string, cache *Cache) ([]model.Item, bool, error) {
 	// Check cache first
 	if cache != nil {
 		if prs, ok := cache.GetPRList(username, "review-requested"); ok {
@@ -478,7 +479,7 @@ func (c *Client) ListReviewRequestedPRsCached(username string, cache *Cache) ([]
 }
 
 // ListAuthoredPRsCached fetches authored PRs with caching support
-func (c *Client) ListAuthoredPRsCached(username string, cache *Cache) ([]Notification, bool, error) {
+func (c *Client) ListAuthoredPRsCached(username string, cache *Cache) ([]model.Item, bool, error) {
 	// Check cache first
 	if cache != nil {
 		if prs, ok := cache.GetPRList(username, "authored"); ok {
@@ -508,7 +509,7 @@ func (c *Client) ListAuthoredPRsCached(username string, cache *Cache) ([]Notific
 }
 
 // ListAssignedIssuesCached fetches assigned issues with caching support
-func (c *Client) ListAssignedIssuesCached(username string, cache *Cache) ([]Notification, bool, error) {
+func (c *Client) ListAssignedIssuesCached(username string, cache *Cache) ([]model.Item, bool, error) {
 	// Check cache first
 	if cache != nil {
 		if issues, ok := cache.GetPRList(username, "assigned-issues"); ok {
@@ -539,7 +540,7 @@ func (c *Client) ListAssignedIssuesCached(username string, cache *Cache) ([]Noti
 
 // NotificationFetchResult contains the result of a cached notification fetch
 type NotificationFetchResult struct {
-	Notifications []Notification
+	Notifications []model.Item
 	FromCache     bool
 	NewCount      int // Number of new notifications fetched (for incremental updates)
 }
@@ -612,8 +613,8 @@ func (c *Client) ListUnreadNotificationsCached(username string, since time.Time,
 // mergeNotifications merges cached and fresh notifications.
 // Fresh notifications replace cached ones by ID. Only unread notifications
 // within the since timeframe are kept.
-func mergeNotifications(cached, fresh []Notification, since time.Time) []Notification {
-	byID := make(map[string]Notification)
+func mergeNotifications(cached, fresh []model.Item, since time.Time) []model.Item {
+	byID := make(map[string]model.Item)
 
 	// Add cached notifications
 	for _, n := range cached {
@@ -626,7 +627,7 @@ func mergeNotifications(cached, fresh []Notification, since time.Time) []Notific
 	}
 
 	// Build result, filtering appropriately
-	result := make([]Notification, 0, len(byID))
+	result := make([]model.Item, 0, len(byID))
 	for _, n := range byID {
 		// Only keep unread notifications
 		if !n.Unread {
@@ -645,7 +646,7 @@ func mergeNotifications(cached, fresh []Notification, since time.Time) []Notific
 // EnrichPRsConcurrent enriches PRs (review-requested or authored) using GraphQL batch queries with caching.
 // Uses GraphQL API (separate quota from Core API) for efficient batch enrichment.
 // Returns the number of cache hits.
-func (c *Client) EnrichPRsConcurrent(notifications []Notification, workers int, cache *Cache, onProgress func(completed, total int)) (int, error) {
+func (c *Client) EnrichPRsConcurrent(notifications []model.Item, workers int, cache *Cache, onProgress func(completed, total int)) (int, error) {
 	total := len(notifications)
 	if total == 0 {
 		return 0, nil
@@ -654,7 +655,7 @@ func (c *Client) EnrichPRsConcurrent(notifications []Notification, workers int, 
 	var cacheHits int64
 
 	// First pass: check cache and build list of items needing enrichment
-	uncachedNotifications := make([]Notification, 0, total)
+	uncachedNotifications := make([]model.Item, 0, total)
 	uncachedIndices := make([]int, 0, total)
 
 	for i := range notifications {
@@ -720,14 +721,14 @@ func (c *Client) EnrichPRsConcurrent(notifications []Notification, workers int, 
 }
 
 // EnrichAuthoredPR fetches additional PR details like review state, mergeable status
-func (c *Client) EnrichAuthoredPR(n *Notification) error {
+func (c *Client) EnrichAuthoredPR(n *model.Item) error {
 	if n.Details == nil || !n.Details.IsPR {
 		return nil
 	}
 
 	parts := splitRepoURL(n.URL)
 	if len(parts) < 2 {
-		// Try parsing from Repository.FullName
+		// Try parsing from model.Repository.FullName
 		if n.Repository.FullName != "" {
 			parts = splitBySlash(n.Repository.FullName)
 		}
@@ -741,10 +742,10 @@ func (c *Client) EnrichAuthoredPR(n *Notification) error {
 	number := n.Details.Number
 
 	// Fetch PR details, review state, and comments concurrently
-	var pr *github.PullRequest
+	var pr *gh.PullRequest
 	var prErr error
 	var reviewState string
-	var comments []*github.PullRequestComment
+	var comments []*gh.PullRequestComment
 	var commentsErr error
 
 	var wg sync.WaitGroup
@@ -765,8 +766,8 @@ func (c *Client) EnrichAuthoredPR(n *Notification) error {
 	// Get review comments count
 	go func() {
 		defer wg.Done()
-		comments, _, commentsErr = c.client.PullRequests.ListComments(c.ctx, owner, repo, number, &github.PullRequestListCommentsOptions{
-			ListOptions: github.ListOptions{PerPage: 100},
+		comments, _, commentsErr = c.client.PullRequests.ListComments(c.ctx, owner, repo, number, &gh.PullRequestListCommentsOptions{
+			ListOptions: gh.ListOptions{PerPage: 100},
 		})
 	}()
 

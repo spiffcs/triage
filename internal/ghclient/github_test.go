@@ -1,29 +1,31 @@
-package github
+package ghclient
 
 import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/spiffcs/triage/internal/model"
 )
 
 func TestNotificationTypes(t *testing.T) {
 	// Test that notification types can be created
-	n := Notification{
+	n := model.Item{
 		ID:        "123",
-		Reason:    ReasonMention,
+		Reason:    model.ReasonMention,
 		Unread:    true,
 		UpdatedAt: time.Now(),
-		Repository: Repository{
+		Repository: model.Repository{
 			ID:       1,
 			Name:     "test-repo",
 			FullName: "owner/test-repo",
 			Private:  false,
 			HTMLURL:  "https://github.com/owner/test-repo",
 		},
-		Subject: Subject{
+		Subject: model.Subject{
 			Title: "Test Issue",
 			URL:   "https://api.github.com/repos/owner/test-repo/issues/1",
-			Type:  SubjectIssue,
+			Type:  model.SubjectIssue,
 		},
 		URL: "https://api.github.com/notifications/threads/123",
 	}
@@ -31,13 +33,13 @@ func TestNotificationTypes(t *testing.T) {
 	if n.ID != "123" {
 		t.Errorf("expected ID '123', got %q", n.ID)
 	}
-	if n.Reason != ReasonMention {
-		t.Errorf("expected reason %q, got %q", ReasonMention, n.Reason)
+	if n.Reason != model.ReasonMention {
+		t.Errorf("expected reason %q, got %q", model.ReasonMention, n.Reason)
 	}
 }
 
 func TestItemDetails(t *testing.T) {
-	details := &ItemDetails{
+	details := &model.ItemDetails{
 		Number:       42,
 		State:        "open",
 		HTMLURL:      "https://github.com/owner/repo/issues/42",
@@ -64,17 +66,17 @@ func TestItemDetails(t *testing.T) {
 }
 
 func TestNotificationReasons(t *testing.T) {
-	reasons := []NotificationReason{
-		ReasonMention,
-		ReasonReviewRequested,
-		ReasonAuthor,
-		ReasonAssign,
-		ReasonComment,
-		ReasonSubscribed,
-		ReasonTeamMention,
-		ReasonStateChange,
-		ReasonCIActivity,
-		ReasonManual,
+	reasons := []model.NotificationReason{
+		model.ReasonMention,
+		model.ReasonReviewRequested,
+		model.ReasonAuthor,
+		model.ReasonAssign,
+		model.ReasonComment,
+		model.ReasonSubscribed,
+		model.ReasonTeamMention,
+		model.ReasonStateChange,
+		model.ReasonCIActivity,
+		model.ReasonManual,
 	}
 
 	for _, reason := range reasons {
@@ -85,11 +87,11 @@ func TestNotificationReasons(t *testing.T) {
 }
 
 func TestSubjectTypes(t *testing.T) {
-	types := []SubjectType{
-		SubjectIssue,
-		SubjectPullRequest,
-		SubjectRelease,
-		SubjectDiscussion,
+	types := []model.SubjectType{
+		model.SubjectIssue,
+		model.SubjectPullRequest,
+		model.SubjectRelease,
+		model.SubjectDiscussion,
 	}
 
 	for _, st := range types {
@@ -137,7 +139,7 @@ func TestNewClientRequiresToken(t *testing.T) {
 }
 
 func TestRepository(t *testing.T) {
-	repo := Repository{
+	repo := model.Repository{
 		ID:       12345,
 		Name:     "my-repo",
 		FullName: "owner/my-repo",
@@ -154,16 +156,16 @@ func TestRepository(t *testing.T) {
 }
 
 func TestSubject(t *testing.T) {
-	subject := Subject{
+	subject := model.Subject{
 		Title: "Fix critical bug",
 		URL:   "https://api.github.com/repos/owner/repo/issues/123",
-		Type:  SubjectIssue,
+		Type:  model.SubjectIssue,
 	}
 
 	if subject.Title != "Fix critical bug" {
 		t.Errorf("expected title 'Fix critical bug', got %q", subject.Title)
 	}
-	if subject.Type != SubjectIssue {
-		t.Errorf("expected type %q, got %q", SubjectIssue, subject.Type)
+	if subject.Type != model.SubjectIssue {
+		t.Errorf("expected type %q, got %q", model.SubjectIssue, subject.Type)
 	}
 }

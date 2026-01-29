@@ -1,4 +1,4 @@
-package github
+package ghclient
 
 import (
 	"encoding/json"
@@ -10,6 +10,7 @@ import (
 
 	"github.com/spiffcs/triage/internal/constants"
 	"github.com/spiffcs/triage/internal/log"
+	"github.com/spiffcs/triage/internal/model"
 )
 
 // Cache stores notification details to avoid repeated API calls
@@ -23,9 +24,9 @@ const cacheVersion = 2
 
 // CacheEntry represents a cached notification with its details
 type CacheEntry struct {
-	Details   *ItemDetails `json:"details"`
+	Details   *model.ItemDetails `json:"details"`
 	CachedAt  time.Time    `json:"cachedAt"`
-	UpdatedAt time.Time    `json:"updatedAt"` // Notification's UpdatedAt for invalidation
+	UpdatedAt time.Time    `json:"updatedAt"` // model.Item's UpdatedAt for invalidation
 	Version   int          `json:"version"`   // Cache version for invalidation
 }
 
@@ -45,7 +46,7 @@ func NewCache() (*Cache, error) {
 }
 
 // cacheKey generates a cache key for a notification
-func (c *Cache) cacheKey(repoFullName string, subjectType SubjectType, number int) string {
+func (c *Cache) cacheKey(repoFullName string, subjectType model.SubjectType, number int) string {
 	// Replace slashes with underscores to avoid path issues while preserving uniqueness
 	safeName := strings.ReplaceAll(repoFullName, "/", "_")
 	return fmt.Sprintf("%s_%s_%d.json",
@@ -56,7 +57,7 @@ func (c *Cache) cacheKey(repoFullName string, subjectType SubjectType, number in
 }
 
 // Get retrieves cached details for a notification
-func (c *Cache) Get(n *Notification) (*ItemDetails, bool) {
+func (c *Cache) Get(n *model.Item) (*model.ItemDetails, bool) {
 	if n.Subject.URL == "" {
 		return nil, false
 	}
@@ -99,7 +100,7 @@ func (c *Cache) Get(n *Notification) (*ItemDetails, bool) {
 }
 
 // Set caches details for a notification
-func (c *Cache) Set(n *Notification, details *ItemDetails) error {
+func (c *Cache) Set(n *model.Item, details *model.ItemDetails) error {
 	if n.Subject.URL == "" || details == nil {
 		return nil
 	}
@@ -232,7 +233,7 @@ func (c *Cache) DetailedStats() (*CacheStats, error) {
 
 // PRListCacheEntry represents a cached list of PRs
 type PRListCacheEntry struct {
-	PRs      []Notification `json:"prs"`
+	PRs      []model.Item `json:"prs"`
 	CachedAt time.Time      `json:"cachedAt"`
 	Version  int            `json:"version"`
 }
@@ -244,7 +245,7 @@ const PRListCacheTTL = constants.PRListCacheTTL
 
 // NotificationListCacheEntry stores cached notifications with fetch timestamp
 type NotificationListCacheEntry struct {
-	Notifications []Notification `json:"notifications"`
+	Notifications []model.Item `json:"notifications"`
 	LastFetchTime time.Time      `json:"lastFetchTime"` // When we last hit the API
 	CachedAt      time.Time      `json:"cachedAt"`
 	SinceTime     time.Time      `json:"sinceTime"` // The --since value used
@@ -276,7 +277,7 @@ func (c *Cache) prListCacheKey(username string, listType string) string {
 }
 
 // GetPRList retrieves cached PR list
-func (c *Cache) GetPRList(username string, listType string) ([]Notification, bool) {
+func (c *Cache) GetPRList(username string, listType string) ([]model.Item, bool) {
 	key := c.prListCacheKey(username, listType)
 	path := filepath.Join(c.dir, key)
 
@@ -304,7 +305,7 @@ func (c *Cache) GetPRList(username string, listType string) ([]Notification, boo
 }
 
 // SetPRList caches a PR list
-func (c *Cache) SetPRList(username string, listType string, prs []Notification) error {
+func (c *Cache) SetPRList(username string, listType string, prs []model.Item) error {
 	entry := PRListCacheEntry{
 		PRs:      prs,
 		CachedAt: time.Now(),
@@ -329,7 +330,7 @@ func (c *Cache) notificationListCacheKey(username string) string {
 
 // GetNotificationList retrieves cached notification list.
 // Returns: cached notifications, last fetch time, ok
-func (c *Cache) GetNotificationList(username string, sinceTime time.Time) ([]Notification, time.Time, bool) {
+func (c *Cache) GetNotificationList(username string, sinceTime time.Time) ([]model.Item, time.Time, bool) {
 	key := c.notificationListCacheKey(username)
 	path := filepath.Join(c.dir, key)
 
@@ -363,7 +364,7 @@ func (c *Cache) GetNotificationList(username string, sinceTime time.Time) ([]Not
 }
 
 // SetNotificationList caches a notification list
-func (c *Cache) SetNotificationList(username string, notifications []Notification, sinceTime time.Time) error {
+func (c *Cache) SetNotificationList(username string, notifications []model.Item, sinceTime time.Time) error {
 	entry := NotificationListCacheEntry{
 		Notifications: notifications,
 		LastFetchTime: time.Now(),
@@ -385,7 +386,7 @@ func (c *Cache) SetNotificationList(username string, notifications []Notificatio
 
 // OrphanedListCacheEntry stores cached orphaned contributions
 type OrphanedListCacheEntry struct {
-	Orphaned  []Notification `json:"orphaned"`
+	Orphaned  []model.Item `json:"orphaned"`
 	Repos     []string       `json:"repos"`
 	CachedAt  time.Time      `json:"cachedAt"`
 	SinceTime time.Time      `json:"sinceTime"`
@@ -399,7 +400,7 @@ func (c *Cache) orphanedListCacheKey(username string) string {
 
 // GetOrphanedList retrieves cached orphaned contributions.
 // The cache is invalidated if repos don't match or sinceTime has changed significantly.
-func (c *Cache) GetOrphanedList(username string, repos []string, sinceTime time.Time) ([]Notification, bool) {
+func (c *Cache) GetOrphanedList(username string, repos []string, sinceTime time.Time) ([]model.Item, bool) {
 	key := c.orphanedListCacheKey(username)
 	path := filepath.Join(c.dir, key)
 
@@ -437,7 +438,7 @@ func (c *Cache) GetOrphanedList(username string, repos []string, sinceTime time.
 }
 
 // SetOrphanedList caches orphaned contributions
-func (c *Cache) SetOrphanedList(username string, orphaned []Notification, repos []string, sinceTime time.Time) error {
+func (c *Cache) SetOrphanedList(username string, orphaned []model.Item, repos []string, sinceTime time.Time) error {
 	entry := OrphanedListCacheEntry{
 		Orphaned:  orphaned,
 		Repos:     repos,

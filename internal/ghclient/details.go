@@ -1,6 +1,7 @@
-package github
+package ghclient
 
 import (
+	"github.com/spiffcs/triage/internal/model"
 	"fmt"
 	"strings"
 	"sync"
@@ -17,7 +18,7 @@ type EnrichmentProgress struct {
 }
 
 // EnrichNotification fetches additional details for a notification
-func (c *Client) EnrichNotification(n *Notification) error {
+func (c *Client) EnrichNotification(n *model.Item) error {
 	if n.Subject.URL == "" {
 		return nil
 	}
@@ -36,9 +37,9 @@ func (c *Client) EnrichNotification(n *Notification) error {
 	}
 
 	switch n.Subject.Type {
-	case SubjectPullRequest:
+	case model.SubjectPullRequest:
 		return c.enrichPullRequest(n, owner, repo, number)
-	case SubjectIssue:
+	case model.SubjectIssue:
 		return c.enrichIssue(n, owner, repo, number)
 	default:
 		// Skip enrichment for other types
@@ -47,12 +48,12 @@ func (c *Client) EnrichNotification(n *Notification) error {
 }
 
 // EnrichNotifications enriches multiple notifications sequentially (for small batches)
-func (c *Client) EnrichNotifications(notifications []Notification) error {
+func (c *Client) EnrichNotifications(notifications []model.Item) error {
 	return c.EnrichNotificationsWithProgress(notifications, nil)
 }
 
 // EnrichNotificationsWithProgress enriches notifications with progress callback
-func (c *Client) EnrichNotificationsWithProgress(notifications []Notification, onProgress func(completed, total int)) error {
+func (c *Client) EnrichNotificationsWithProgress(notifications []model.Item, onProgress func(completed, total int)) error {
 	total := len(notifications)
 	for i := range notifications {
 		if err := c.EnrichNotification(&notifications[i]); err != nil {
@@ -68,7 +69,7 @@ func (c *Client) EnrichNotificationsWithProgress(notifications []Notification, o
 // EnrichNotificationsConcurrent enriches notifications using GraphQL batch queries with caching.
 // Uses GraphQL API (separate quota from Core API) for efficient batch enrichment.
 // Returns the number of cache hits and any error.
-func (c *Client) EnrichNotificationsConcurrent(notifications []Notification, workers int, onProgress func(completed, total int)) (int, error) {
+func (c *Client) EnrichNotificationsConcurrent(notifications []model.Item, workers int, onProgress func(completed, total int)) (int, error) {
 	// Initialize cache
 	cache, cacheErr := NewCache()
 	if cacheErr != nil {
@@ -79,7 +80,7 @@ func (c *Client) EnrichNotificationsConcurrent(notifications []Notification, wor
 	var cacheHits int64
 
 	// First pass: check cache and build list of items needing enrichment
-	uncachedNotifications := make([]Notification, 0, len(notifications))
+	uncachedNotifications := make([]model.Item, 0, len(notifications))
 	uncachedIndices := make([]int, 0, len(notifications))
 
 	for i := range notifications {
@@ -149,7 +150,7 @@ func (c *Client) EnrichNotificationsConcurrent(notifications []Notification, wor
 	return int(cacheHits), nil
 }
 
-func (c *Client) enrichPullRequest(n *Notification, owner, repo string, number int) error {
+func (c *Client) enrichPullRequest(n *model.Item, owner, repo string, number int) error {
 	var pr *github.PullRequest
 	var prErr error
 	var reviewState string
@@ -181,7 +182,7 @@ func (c *Client) enrichPullRequest(n *Notification, owner, repo string, number i
 	// Wait for review state and CI status to complete
 	wg.Wait()
 
-	details := &ItemDetails{
+	details := &model.ItemDetails{
 		Number:       number,
 		State:        pr.GetState(),
 		HTMLURL:      pr.GetHTMLURL(),
@@ -232,13 +233,13 @@ func (c *Client) enrichPullRequest(n *Notification, owner, repo string, number i
 	return nil
 }
 
-func (c *Client) enrichIssue(n *Notification, owner, repo string, number int) error {
+func (c *Client) enrichIssue(n *model.Item, owner, repo string, number int) error {
 	issue, _, err := c.client.Issues.Get(c.ctx, owner, repo, number)
 	if err != nil {
 		return fmt.Errorf("failed to get issue #%d: %w", number, err)
 	}
 
-	details := &ItemDetails{
+	details := &model.ItemDetails{
 		Number:       number,
 		State:        issue.GetState(),
 		HTMLURL:      issue.GetHTMLURL(),

@@ -1,13 +1,14 @@
-package github
+package ghclient
 
 import (
+	"github.com/spiffcs/triage/internal/model"
 	"fmt"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/google/go-github/v57/github"
+	gh "github.com/google/go-github/v57/github"
 )
 
 // NotificationOptions configures notification fetching
@@ -16,16 +17,16 @@ type NotificationOptions struct {
 	Since         time.Time     // Only notifications updated after this time
 	Participating bool          // Only participating notifications
 	Repos         []string      // Filter to specific repos (owner/repo format)
-	Types         []SubjectType // Filter to specific subject types
+	Types         []model.SubjectType // Filter to specific subject types
 }
 
 // ListNotifications fetches notifications with optional filtering.
 // Uses parallel fetching when multiple pages are detected.
-func (c *Client) ListNotifications(opts NotificationOptions) ([]Notification, error) {
-	listOpts := &github.NotificationListOptions{
+func (c *Client) ListNotifications(opts NotificationOptions) ([]model.Item, error) {
+	listOpts := &gh.NotificationListOptions{
 		All:           opts.All,
 		Participating: opts.Participating,
-		ListOptions: github.ListOptions{
+		ListOptions: gh.ListOptions{
 			PerPage: 100,
 		},
 	}
@@ -58,7 +59,7 @@ func (c *Client) ListNotifications(opts NotificationOptions) ([]Notification, er
 	// Fetch remaining pages in parallel
 	type pageResult struct {
 		page          int
-		notifications []Notification
+		notifications []model.Item
 		err           error
 	}
 
@@ -70,10 +71,10 @@ func (c *Client) ListNotifications(opts NotificationOptions) ([]Notification, er
 		wg.Add(1)
 		go func(p int) {
 			defer wg.Done()
-			pageOpts := &github.NotificationListOptions{
+			pageOpts := &gh.NotificationListOptions{
 				All:           opts.All,
 				Participating: opts.Participating,
-				ListOptions: github.ListOptions{
+				ListOptions: gh.ListOptions{
 					PerPage: 100,
 					Page:    p,
 				},
@@ -115,8 +116,8 @@ func (c *Client) ListNotifications(opts NotificationOptions) ([]Notification, er
 }
 
 // filterNotifications applies type and repo filters to raw notifications
-func filterNotifications(notifications []*github.Notification, opts NotificationOptions) []Notification {
-	var result []Notification
+func filterNotifications(notifications []*gh.Notification, opts NotificationOptions) []model.Item {
+	var result []model.Item
 	for _, n := range notifications {
 		notification := convertNotification(n)
 
@@ -136,13 +137,13 @@ func filterNotifications(notifications []*github.Notification, opts Notification
 }
 
 // listNotificationsSequential fetches remaining pages sequentially (fallback)
-func (c *Client) listNotificationsSequential(opts NotificationOptions, existing []Notification, startPage int) ([]Notification, error) {
+func (c *Client) listNotificationsSequential(opts NotificationOptions, existing []model.Item, startPage int) ([]model.Item, error) {
 	allNotifications := existing
 
-	listOpts := &github.NotificationListOptions{
+	listOpts := &gh.NotificationListOptions{
 		All:           opts.All,
 		Participating: opts.Participating,
-		ListOptions: github.ListOptions{
+		ListOptions: gh.ListOptions{
 			PerPage: 100,
 			Page:    startPage,
 		},
@@ -170,11 +171,11 @@ func (c *Client) listNotificationsSequential(opts NotificationOptions, existing 
 }
 
 // ListUnreadNotifications fetches only unread notifications (convenience method)
-func (c *Client) ListUnreadNotifications(since time.Time) ([]Notification, error) {
+func (c *Client) ListUnreadNotifications(since time.Time) ([]model.Item, error) {
 	return c.ListNotifications(NotificationOptions{
 		All:   false,
 		Since: since,
-		Types: []SubjectType{SubjectIssue, SubjectPullRequest}, // Only issues and PRs
+		Types: []model.SubjectType{model.SubjectIssue, model.SubjectPullRequest}, // Only issues and PRs
 	})
 }
 
@@ -188,17 +189,17 @@ func (c *Client) MarkAsRead(notificationID string) error {
 }
 
 // convertNotification converts a GitHub API notification to our type
-func convertNotification(n *github.Notification) Notification {
-	notification := Notification{
+func convertNotification(n *gh.Notification) model.Item {
+	notification := model.Item{
 		ID:        n.GetID(),
-		Reason:    NotificationReason(n.GetReason()),
+		Reason:    model.NotificationReason(n.GetReason()),
 		Unread:    n.GetUnread(),
 		UpdatedAt: n.GetUpdatedAt().Time,
 		URL:       n.GetURL(),
 	}
 
 	if repo := n.GetRepository(); repo != nil {
-		notification.Repository = Repository{
+		notification.Repository = model.Repository{
 			ID:       repo.GetID(),
 			Name:     repo.GetName(),
 			FullName: repo.GetFullName(),
@@ -208,10 +209,10 @@ func convertNotification(n *github.Notification) Notification {
 	}
 
 	if subject := n.GetSubject(); subject != nil {
-		notification.Subject = Subject{
+		notification.Subject = model.Subject{
 			Title: subject.GetTitle(),
 			URL:   subject.GetURL(),
-			Type:  SubjectType(subject.GetType()),
+			Type:  model.SubjectType(subject.GetType()),
 		}
 	}
 
@@ -236,7 +237,7 @@ func ExtractIssueNumber(apiURL string) (int, error) {
 	return num, nil
 }
 
-func containsType(types []SubjectType, t SubjectType) bool {
+func containsType(types []model.SubjectType, t model.SubjectType) bool {
 	for _, typ := range types {
 		if typ == t {
 			return true

@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-	"github.com/spiffcs/triage/internal/github"
+	"github.com/spiffcs/triage/internal/ghclient"
 )
 
 // NewCmdCache creates the cache command with subcommands.
@@ -39,7 +39,7 @@ func newCmdCacheStats() *cobra.Command {
 }
 
 func runCacheClear(cmd *cobra.Command, args []string) error {
-	cache, err := github.NewCache()
+	cache, err := ghclient.NewCache()
 	if err != nil {
 		return fmt.Errorf("failed to access cache: %w", err)
 	}
@@ -53,7 +53,7 @@ func runCacheClear(cmd *cobra.Command, args []string) error {
 }
 
 func runCacheStats(cmd *cobra.Command, args []string) error {
-	cache, err := github.NewCache()
+	cache, err := ghclient.NewCache()
 	if err != nil {
 		return fmt.Errorf("failed to access cache: %w", err)
 	}

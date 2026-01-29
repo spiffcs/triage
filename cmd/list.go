@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"github.com/spiffcs/triage/internal/model"
 	"fmt"
 	"io"
 	"os"
@@ -12,7 +13,7 @@ import (
 	"github.com/spiffcs/triage/config"
 	"github.com/spiffcs/triage/internal/constants"
 	"github.com/spiffcs/triage/internal/duration"
-	"github.com/spiffcs/triage/internal/github"
+	"github.com/spiffcs/triage/internal/ghclient"
 	"github.com/spiffcs/triage/internal/log"
 	"github.com/spiffcs/triage/internal/output"
 	"github.com/spiffcs/triage/internal/resolved"
@@ -42,7 +43,7 @@ func addListFlags(cmd *cobra.Command, opts *Options) {
 	cmd.Flags().IntVarP(&opts.Limit, "limit", "l", 0, "Limit number of results")
 	cmd.Flags().StringVarP(&opts.Since, "since", "s", "1w", "Show notifications since (e.g., 1w, 30d, 6mo)")
 	cmd.Flags().StringVarP(&opts.Priority, "priority", "p", "", "Filter by priority (urgent, important, quick-win, notable, fyi)")
-	cmd.Flags().StringVarP(&opts.Reason, "reason", "r", "", "Filter by reason ("+github.NotificationReasonsString()+")")
+	cmd.Flags().StringVarP(&opts.Reason, "reason", "r", "", "Filter by reason ("+model.NotificationReasonsString()+")")
 	cmd.Flags().StringVar(&opts.Repo, "repo", "", "Filter to specific repo (owner/repo)")
 	cmd.Flags().CountVarP(&opts.Verbosity, "verbose", "v", "Increase verbosity (-v info, -vv debug, -vvv trace)")
 	cmd.Flags().IntVarP(&opts.Workers, "workers", "w", 20, "Number of concurrent workers for fetching details")
@@ -102,7 +103,7 @@ func runList(cmd *cobra.Command, _ []string, opts *Options) error {
 		return fmt.Errorf("GitHub token not configured. Set the GITHUB_TOKEN environment variable")
 	}
 
-	ghClient, err := github.NewClient(ctx, token)
+	ghClient, err := ghclient.NewClient(ctx, token)
 	if err != nil {
 		return err
 	}
@@ -139,7 +140,7 @@ func runList(cmd *cobra.Command, _ []string, opts *Options) error {
 	log.Info("fetching notifications", "since", opts.Since)
 
 	// Create cache for PR lists
-	prCache, cacheErr := github.NewCache()
+	prCache, cacheErr := ghclient.NewCache()
 	if cacheErr != nil {
 		log.Warn("failed to initialize cache", "error", cacheErr)
 	}
@@ -273,9 +274,9 @@ func runList(cmd *cobra.Command, _ []string, opts *Options) error {
 
 // enrichItems enriches notifications and PRs concurrently.
 func enrichItems(
-	ghClient *github.Client,
-	notifications, reviewPRs, authoredPRs []github.Notification,
-	prCache *github.Cache,
+	ghClient *ghclient.Client,
+	notifications, reviewPRs, authoredPRs []model.Item,
+	prCache *ghclient.Cache,
 	workers int,
 	useTUI bool,
 	events chan tui.Event,
@@ -383,7 +384,7 @@ func applyFilters(items []triage.PrioritizedItem, opts *Options, cfg *config.Con
 	}
 
 	if opts.Reason != "" {
-		items = triage.FilterByReason(items, []github.NotificationReason{github.NotificationReason(opts.Reason)})
+		items = triage.FilterByReason(items, []model.NotificationReason{model.NotificationReason(opts.Reason)})
 	}
 
 	if opts.Repo != "" {
@@ -391,12 +392,12 @@ func applyFilters(items []triage.PrioritizedItem, opts *Options, cfg *config.Con
 	}
 
 	if opts.Type != "" {
-		var subjectType github.SubjectType
+		var subjectType model.SubjectType
 		switch opts.Type {
 		case "pr", "PR", "pullrequest", "PullRequest":
-			subjectType = github.SubjectPullRequest
+			subjectType = model.SubjectPullRequest
 		case "issue", "Issue":
-			subjectType = github.SubjectIssue
+			subjectType = model.SubjectIssue
 		}
 		if subjectType != "" {
 			items = triage.FilterByType(items, subjectType)

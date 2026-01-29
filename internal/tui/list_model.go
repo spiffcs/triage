@@ -25,12 +25,19 @@ const (
 // SortColumn represents the available sort columns
 type SortColumn string
 
+// priorityOrder maps priority levels to their sort order (lower = higher priority)
+var priorityOrder = map[triage.PriorityLevel]int{
+	triage.PriorityUrgent:    0,
+	triage.PriorityImportant: 1,
+	triage.PriorityQuickWin:  2,
+	triage.PriorityNotable:   3,
+	triage.PriorityFYI:       4,
+}
+
 // Priority pane sort columns
 const (
 	SortPriority SortColumn = "priority"
-	SortScore    SortColumn = "score"
 	SortUpdated  SortColumn = "updated"
-	SortCreated  SortColumn = "created"
 	SortRepo     SortColumn = "repo"
 )
 
@@ -43,15 +50,15 @@ const (
 )
 
 // prioritySortColumns defines the cycling order for priority pane
-var prioritySortColumns = []SortColumn{SortPriority, SortScore, SortUpdated, SortCreated, SortRepo}
+var prioritySortColumns = []SortColumn{SortPriority, SortUpdated, SortRepo}
 
 // orphanedSortColumns defines the cycling order for orphaned pane
-var orphanedSortColumns = []SortColumn{SortStale, SortUpdated, SortCreated, SortComments, SortSize, SortAuthor, SortRepo}
+var orphanedSortColumns = []SortColumn{SortStale, SortUpdated, SortComments, SortSize, SortAuthor, SortRepo}
 
 // Default sort columns
 const (
 	defaultPrioritySortColumn = SortPriority
-	defaultOrphanedSortColumn = SortStale
+	defaultOrphanedSortColumn = SortUpdated
 )
 
 // ListModel is the Bubble Tea model for the interactive notification list
@@ -198,27 +205,21 @@ func (m *ListModel) sortPriorityItems() {
 		switch column {
 		case SortPriority:
 			// Sort by priority level first, then by score within level
+			// Lower ordinal = higher priority (Urgent=0, Important=1, QuickWin=2, Notable=3, FYI=4)
 			if a.Priority != b.Priority {
-				less = a.Priority > b.Priority // Higher priority number = lower priority
+				less = priorityOrder[a.Priority] > priorityOrder[b.Priority]
 			} else {
 				less = a.Score < b.Score
 			}
-		case SortScore:
-			less = a.Score < b.Score
 		case SortUpdated:
 			less = a.Notification.UpdatedAt.Before(b.Notification.UpdatedAt)
-		case SortCreated:
-			if a.Notification.Details != nil && b.Notification.Details != nil {
-				less = a.Notification.Details.CreatedAt.Before(b.Notification.Details.CreatedAt)
-			} else {
-				less = a.Notification.UpdatedAt.Before(b.Notification.UpdatedAt)
-			}
 		case SortRepo:
-			less = a.Notification.Repository.FullName < b.Notification.Repository.FullName
+			// Inverted so that descending (▼) gives A-Z order
+			less = a.Notification.Repository.FullName > b.Notification.Repository.FullName
 		default:
 			// Default to priority
 			if a.Priority != b.Priority {
-				less = a.Priority > b.Priority
+				less = priorityOrder[a.Priority] > priorityOrder[b.Priority]
 			} else {
 				less = a.Score < b.Score
 			}
@@ -233,11 +234,19 @@ func (m *ListModel) sortPriorityItems() {
 }
 
 // daysSinceTeamActivity calculates how many days since the last team activity on an item.
+// Falls back to CreatedAt if LastTeamActivityAt is not set (matching display logic).
 func daysSinceTeamActivity(item triage.PrioritizedItem) int {
-	if item.Notification.Details == nil || item.Notification.Details.LastTeamActivityAt == nil {
+	if item.Notification.Details == nil {
 		return 0
 	}
-	return int(time.Since(*item.Notification.Details.LastTeamActivityAt).Hours() / 24)
+	d := item.Notification.Details
+	if d.LastTeamActivityAt != nil {
+		return int(time.Since(*d.LastTeamActivityAt).Hours() / 24)
+	}
+	if !d.CreatedAt.IsZero() {
+		return int(time.Since(d.CreatedAt).Hours() / 24)
+	}
+	return 0
 }
 
 // sortOrphanedItems sorts the orphaned items by the configured column and direction.
@@ -256,13 +265,8 @@ func (m *ListModel) sortOrphanedItems() {
 		switch column {
 		case SortUpdated:
 			less = a.Notification.UpdatedAt.Before(b.Notification.UpdatedAt)
-		case SortCreated:
-			if a.Notification.Details != nil && b.Notification.Details != nil {
-				less = a.Notification.Details.CreatedAt.Before(b.Notification.Details.CreatedAt)
-			} else {
-				less = a.Notification.UpdatedAt.Before(b.Notification.UpdatedAt)
-			}
 		case SortAuthor:
+			// Inverted so that descending (▼) gives A-Z order
 			authorA, authorB := "", ""
 			if a.Notification.Details != nil {
 				authorA = a.Notification.Details.Author
@@ -270,9 +274,10 @@ func (m *ListModel) sortOrphanedItems() {
 			if b.Notification.Details != nil {
 				authorB = b.Notification.Details.Author
 			}
-			less = authorA < authorB
+			less = authorA > authorB
 		case SortRepo:
-			less = a.Notification.Repository.FullName < b.Notification.Repository.FullName
+			// Inverted so that descending (▼) gives A-Z order
+			less = a.Notification.Repository.FullName > b.Notification.Repository.FullName
 		case SortComments:
 			commentsA, commentsB := 0, 0
 			if a.Notification.Details != nil {
@@ -288,12 +293,22 @@ func (m *ListModel) sortOrphanedItems() {
 			staleB := daysSinceTeamActivity(b)
 			less = staleA < staleB
 		case SortSize:
+			// For PRs: sort by review size (additions + deletions)
+			// For issues: sort by comment count
 			sizeA, sizeB := 0, 0
 			if a.Notification.Details != nil {
-				sizeA = a.Notification.Details.Additions + a.Notification.Details.Deletions
+				if a.Notification.Details.IsPR {
+					sizeA = a.Notification.Details.Additions + a.Notification.Details.Deletions
+				} else {
+					sizeA = a.Notification.Details.CommentCount
+				}
 			}
 			if b.Notification.Details != nil {
-				sizeB = b.Notification.Details.Additions + b.Notification.Details.Deletions
+				if b.Notification.Details.IsPR {
+					sizeB = b.Notification.Details.Additions + b.Notification.Details.Deletions
+				} else {
+					sizeB = b.Notification.Details.CommentCount
+				}
 			}
 			less = sizeA < sizeB
 		default:

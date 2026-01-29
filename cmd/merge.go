@@ -1,9 +1,9 @@
 package cmd
 
 import (
+	"github.com/spiffcs/triage/internal/model"
 	"fmt"
 
-	"github.com/spiffcs/triage/internal/github"
 )
 
 // mergeResult contains the counts of items added during merge operations.
@@ -16,7 +16,7 @@ type mergeResult struct {
 
 // mergeAll merges all additional data sources into the notifications list.
 // It returns the merged list and counts of items added from each source.
-func mergeAll(notifications []github.Notification, reviewPRs, authoredPRs, assignedIssues, orphaned []github.Notification) ([]github.Notification, mergeResult) {
+func mergeAll(notifications []model.Item, reviewPRs, authoredPRs, assignedIssues, orphaned []model.Item) ([]model.Item, mergeResult) {
 	result := mergeResult{}
 
 	if len(reviewPRs) > 0 {
@@ -37,7 +37,7 @@ func mergeAll(notifications []github.Notification, reviewPRs, authoredPRs, assig
 
 // mergeOrphaned adds orphaned contributions that aren't already in notifications.
 // Returns the merged list and the count of newly added items.
-func mergeOrphaned(notifications []github.Notification, orphaned []github.Notification) ([]github.Notification, int) {
+func mergeOrphaned(notifications []model.Item, orphaned []model.Item) ([]model.Item, int) {
 	// Orphaned items can be either PRs or issues, so we need to check both types
 	// Build sets of existing identifiers for all items
 	existing := make(map[string]bool)
@@ -77,10 +77,10 @@ func mergeOrphaned(notifications []github.Notification, orphaned []github.Notifi
 // It filters existing notifications by subjectType and checks for duplicates
 // by repo#number and Subject.URL. Returns the merged list and count of added items.
 func mergeNotifications(
-	notifications []github.Notification,
-	newItems []github.Notification,
-	subjectType github.SubjectType,
-) ([]github.Notification, int) {
+	notifications []model.Item,
+	newItems []model.Item,
+	subjectType model.SubjectType,
+) ([]model.Item, int) {
 	// Build sets of existing identifiers for items matching the subject type
 	existing := make(map[string]bool)
 	existingURLs := make(map[string]bool)
@@ -119,18 +119,18 @@ func mergeNotifications(
 
 // mergeReviewRequests adds review-requested PRs that aren't already in notifications.
 // Returns the merged list and the count of newly added items.
-func mergeReviewRequests(notifications []github.Notification, reviewPRs []github.Notification) ([]github.Notification, int) {
-	return mergeNotifications(notifications, reviewPRs, github.SubjectPullRequest)
+func mergeReviewRequests(notifications []model.Item, reviewPRs []model.Item) ([]model.Item, int) {
+	return mergeNotifications(notifications, reviewPRs, model.SubjectPullRequest)
 }
 
 // mergeAuthoredPRs adds user's open PRs that aren't already in notifications.
 // Returns the merged list and the count of newly added items.
-func mergeAuthoredPRs(notifications []github.Notification, authoredPRs []github.Notification) ([]github.Notification, int) {
-	return mergeNotifications(notifications, authoredPRs, github.SubjectPullRequest)
+func mergeAuthoredPRs(notifications []model.Item, authoredPRs []model.Item) ([]model.Item, int) {
+	return mergeNotifications(notifications, authoredPRs, model.SubjectPullRequest)
 }
 
 // mergeAssignedIssues adds user's assigned issues that aren't already in notifications.
 // Returns the merged list and the count of newly added items.
-func mergeAssignedIssues(notifications []github.Notification, assignedIssues []github.Notification) ([]github.Notification, int) {
-	return mergeNotifications(notifications, assignedIssues, github.SubjectIssue)
+func mergeAssignedIssues(notifications []model.Item, assignedIssues []model.Item) ([]model.Item, int) {
+	return mergeNotifications(notifications, assignedIssues, model.SubjectIssue)
 }

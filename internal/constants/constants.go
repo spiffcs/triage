@@ -96,6 +96,9 @@ const (
 	// ColType is the width of the type column (ISS/PR).
 	ColType = 5
 
+	// ColAuthor is the width of the author column.
+	ColAuthor = 15
+
 	// ColAssigned is the width of the assigned user column.
 	ColAssigned = 12
 

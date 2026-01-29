@@ -1,6 +1,7 @@
-package github
+package ghclient
 
 import (
+	"github.com/spiffcs/triage/internal/model"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -28,49 +29,16 @@ const (
 	maxConcurrentOrphanedFetches = 10
 )
 
-// OrphanedSearchOptions configures the search for orphaned contributions
-type OrphanedSearchOptions struct {
-	Repos                     []string
-	Since                     time.Time
-	StaleDays                 int
-	ConsecutiveAuthorComments int
-	MaxPerRepo                int
-}
-
-// OrphanedContribution represents an issue or PR from an external contributor
-// that may need team attention
-type OrphanedContribution struct {
-	Owner             string
-	Repo              string
-	Number            int
-	Title             string
-	IsPR              bool
-	Author            string
-	AuthorAssociation string
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
-	LastTeamActivity  *time.Time
-	ConsecutiveAuthor int
-	HTMLURL           string
-	CommentCount      int
-	Assignees         []string
-	// PR-specific fields
-	Additions      int
-	Deletions      int
-	ReviewDecision string
-	ReviewState    string
-}
-
 // orphanedRepoResult holds the result of fetching orphaned contributions for a single repo
 type orphanedRepoResult struct {
 	repoFullName  string
-	contributions []OrphanedContribution
+	contributions []model.OrphanedContribution
 	err           error
 }
 
 // ListOrphanedContributionsCached finds external PRs/issues needing attention, using cache if available.
 // Returns: notifications, fromCache, error
-func (c *Client) ListOrphanedContributionsCached(opts OrphanedSearchOptions, username string, cache *Cache) ([]Notification, bool, error) {
+func (c *Client) ListOrphanedContributionsCached(opts model.OrphanedSearchOptions, username string, cache *Cache) ([]model.Item, bool, error) {
 	if len(opts.Repos) == 0 {
 		return nil, false, nil
 	}
@@ -99,7 +67,7 @@ func (c *Client) ListOrphanedContributionsCached(opts OrphanedSearchOptions, use
 }
 
 // ListOrphanedContributions finds external PRs/issues needing attention
-func (c *Client) ListOrphanedContributions(opts OrphanedSearchOptions) ([]Notification, error) {
+func (c *Client) ListOrphanedContributions(opts model.OrphanedSearchOptions) ([]model.Item, error) {
 	if len(opts.Repos) == 0 {
 		return nil, nil
 	}
@@ -147,7 +115,7 @@ func (c *Client) ListOrphanedContributions(opts OrphanedSearchOptions) ([]Notifi
 		close(results)
 	}()
 
-	var allNotifications []Notification
+	var allNotifications []model.Item
 	for result := range results {
 		if result.err != nil {
 			log.Debug("failed to fetch orphaned contributions", "repo", result.repoFullName, "error", result.err)
@@ -167,7 +135,7 @@ func (c *Client) ListOrphanedContributions(opts OrphanedSearchOptions) ([]Notifi
 }
 
 // fetchOrphanedForRepo fetches orphaned contributions for a single repository
-func (c *Client) fetchOrphanedForRepo(owner, repo string, opts OrphanedSearchOptions) ([]OrphanedContribution, error) {
+func (c *Client) fetchOrphanedForRepo(owner, repo string, opts model.OrphanedSearchOptions) ([]model.OrphanedContribution, error) {
 	query := buildOrphanedQuery(owner, repo)
 	respData, err := c.executeGraphQL(query, c.token)
 	if err != nil {
@@ -310,13 +278,13 @@ type reviewNode struct {
 }
 
 // parseOrphanedResponse parses the GraphQL response and identifies orphaned contributions
-func parseOrphanedResponse(data json.RawMessage, owner, repo string, opts OrphanedSearchOptions) ([]OrphanedContribution, error) {
+func parseOrphanedResponse(data json.RawMessage, owner, repo string, opts model.OrphanedSearchOptions) ([]model.OrphanedContribution, error) {
 	var resp orphanedGraphQLResponse
 	if err := json.Unmarshal(data, &resp); err != nil {
 		return nil, fmt.Errorf("failed to parse orphaned response: %w", err)
 	}
 
-	var contributions []OrphanedContribution
+	var contributions []model.OrphanedContribution
 
 	// Process issues
 	for _, issue := range resp.Repository.Issues.Nodes {
@@ -340,7 +308,7 @@ func parseOrphanedResponse(data json.RawMessage, owner, repo string, opts Orphan
 				assignees = append(assignees, a.Login)
 			}
 
-			contributions = append(contributions, OrphanedContribution{
+			contributions = append(contributions, model.OrphanedContribution{
 				Owner:             owner,
 				Repo:              repo,
 				Number:            issue.Number,
@@ -391,7 +359,7 @@ func parseOrphanedResponse(data json.RawMessage, owner, repo string, opts Orphan
 				assignees = append(assignees, a.Login)
 			}
 
-			contributions = append(contributions, OrphanedContribution{
+			contributions = append(contributions, model.OrphanedContribution{
 				Owner:             owner,
 				Repo:              repo,
 				Number:            pr.Number,
@@ -524,7 +492,7 @@ func determineReviewState(reviews []reviewNode, reviewDecision string) string {
 }
 
 // isOrphaned determines if a contribution should be flagged as orphaned
-func isOrphaned(updatedAt time.Time, lastTeamActivity *time.Time, consecutiveAuthor int, opts OrphanedSearchOptions) bool {
+func isOrphaned(updatedAt time.Time, lastTeamActivity *time.Time, consecutiveAuthor int, opts model.OrphanedSearchOptions) bool {
 	now := time.Now()
 
 	// Check if stale (no activity in StaleDays)
@@ -551,16 +519,16 @@ func isOrphaned(updatedAt time.Time, lastTeamActivity *time.Time, consecutiveAut
 	return false
 }
 
-// orphanedToNotification converts an OrphanedContribution to a Notification
-func orphanedToNotification(contrib OrphanedContribution) Notification {
+// orphanedToNotification converts an model.OrphanedContribution to a model.Item
+func orphanedToNotification(contrib model.OrphanedContribution) model.Item {
 	fullName := contrib.Owner + "/" + contrib.Repo
 
-	subjectType := SubjectIssue
+	subjectType := model.SubjectIssue
 	if contrib.IsPR {
-		subjectType = SubjectPullRequest
+		subjectType = model.SubjectPullRequest
 	}
 
-	details := &ItemDetails{
+	details := &model.ItemDetails{
 		Number:                    contrib.Number,
 		State:                     "open",
 		HTMLURL:                   contrib.HTMLURL,
@@ -582,17 +550,17 @@ func orphanedToNotification(contrib OrphanedContribution) Notification {
 		details.ReviewState = contrib.ReviewState
 	}
 
-	n := Notification{
+	n := model.Item{
 		ID:        fmt.Sprintf("orphaned-%s-%d", fullName, contrib.Number),
-		Reason:    ReasonOrphaned,
+		Reason:    model.ReasonOrphaned,
 		Unread:    true,
 		UpdatedAt: contrib.UpdatedAt,
-		Repository: Repository{
+		Repository: model.Repository{
 			Name:     contrib.Repo,
 			FullName: fullName,
 			HTMLURL:  fmt.Sprintf("https://github.com/%s", fullName),
 		},
-		Subject: Subject{
+		Subject: model.Subject{
 			Title: contrib.Title,
 			URL:   contrib.HTMLURL,
 			Type:  subjectType,

@@ -2,11 +2,11 @@ package triage
 
 import (
 	"sort"
+	"github.com/spiffcs/triage/internal/model"
 	"time"
 
 	"github.com/spiffcs/triage/config"
 	"github.com/spiffcs/triage/internal/constants"
-	"github.com/spiffcs/triage/internal/github"
 )
 
 // Engine orchestrates the prioritization process
@@ -28,7 +28,7 @@ func NewEngine(currentUser string, weights config.ScoreWeights, quickWinLabels [
 }
 
 // Prioritize scores and sorts notifications by priority
-func (e *Engine) Prioritize(notifications []github.Notification) []PrioritizedItem {
+func (e *Engine) Prioritize(notifications []model.Item) []PrioritizedItem {
 	items := make([]PrioritizedItem, 0, len(notifications))
 
 	for _, n := range notifications {
@@ -64,7 +64,7 @@ func (e *Engine) Prioritize(notifications []github.Notification) []PrioritizedIt
 }
 
 // PrioritizeWithOptions scores and sorts notifications with configurable sort options
-func (e *Engine) PrioritizeWithOptions(notifications []github.Notification, opts SortOptions) []PrioritizedItem {
+func (e *Engine) PrioritizeWithOptions(notifications []model.Item, opts SortOptions) []PrioritizedItem {
 	items := make([]PrioritizedItem, 0, len(notifications))
 
 	for _, n := range notifications {
@@ -123,12 +123,12 @@ func FilterByPriority(items []PrioritizedItem, targetPriority PriorityLevel) []P
 }
 
 // FilterByReason filters items by notification reason
-func FilterByReason(items []PrioritizedItem, reasons []github.NotificationReason) []PrioritizedItem {
+func FilterByReason(items []PrioritizedItem, reasons []model.NotificationReason) []PrioritizedItem {
 	if len(reasons) == 0 {
 		return items
 	}
 
-	reasonSet := make(map[github.NotificationReason]bool, len(reasons))
+	reasonSet := make(map[model.NotificationReason]bool, len(reasons))
 	for _, r := range reasons {
 		reasonSet[r] = true
 	}
@@ -171,7 +171,7 @@ func FilterOutClosed(items []PrioritizedItem) []PrioritizedItem {
 }
 
 // FilterByType filters items by subject type (pr, issue)
-func FilterByType(items []PrioritizedItem, subjectType github.SubjectType) []PrioritizedItem {
+func FilterByType(items []PrioritizedItem, subjectType model.SubjectType) []PrioritizedItem {
 	filtered := make([]PrioritizedItem, 0, len(items))
 	for _, item := range items {
 		if item.Notification.Subject.Type == subjectType {
@@ -253,7 +253,7 @@ func FilterByGreenCI(items []PrioritizedItem) []PrioritizedItem {
 	filtered := make([]PrioritizedItem, 0, len(items))
 	for _, item := range items {
 		// Exclude non-PRs (issues don't have CI)
-		if item.Notification.Subject.Type != github.SubjectPullRequest {
+		if item.Notification.Subject.Type != model.SubjectPullRequest {
 			continue
 		}
 		// Exclude PRs without details (can't determine CI status)
@@ -277,7 +277,7 @@ func FilterOutUnenriched(items []PrioritizedItem) []PrioritizedItem {
 		subjectType := item.Notification.Subject.Type
 
 		// Keep non-PR/Issue types - they don't have enrichment
-		if subjectType != github.SubjectPullRequest && subjectType != github.SubjectIssue {
+		if subjectType != model.SubjectPullRequest && subjectType != model.SubjectIssue {
 			filtered = append(filtered, item)
 			continue
 		}

@@ -2,24 +2,24 @@ package triage
 
 import (
 	"testing"
+	"github.com/spiffcs/triage/internal/model"
 
-	"github.com/spiffcs/triage/internal/github"
 )
 
 // Helper to create a test notification
-func makeNotification(id string, reason github.NotificationReason, subjectType github.SubjectType, details *github.ItemDetails) github.Notification {
+func makeNotification(id string, reason model.NotificationReason, subjectType model.SubjectType, details *model.ItemDetails) model.Item {
 	return makeNotificationWithRepo(id, reason, subjectType, details, "")
 }
 
 // Helper to create a test notification with repo
-func makeNotificationWithRepo(id string, reason github.NotificationReason, subjectType github.SubjectType, details *github.ItemDetails, repo string) github.Notification {
-	return github.Notification{
+func makeNotificationWithRepo(id string, reason model.NotificationReason, subjectType model.SubjectType, details *model.ItemDetails, repo string) model.Item {
+	return model.Item{
 		ID:     id,
 		Reason: reason,
-		Subject: github.Subject{
+		Subject: model.Subject{
 			Type: subjectType,
 		},
-		Repository: github.Repository{
+		Repository: model.Repository{
 			FullName: repo,
 		},
 		Details: details,
@@ -27,7 +27,7 @@ func makeNotificationWithRepo(id string, reason github.NotificationReason, subje
 }
 
 // Helper to create a prioritized item
-func makePrioritizedItem(id string, reason github.NotificationReason, subjectType github.SubjectType, priority PriorityLevel, details *github.ItemDetails) PrioritizedItem {
+func makePrioritizedItem(id string, reason model.NotificationReason, subjectType model.SubjectType, priority PriorityLevel, details *model.ItemDetails) PrioritizedItem {
 	return PrioritizedItem{
 		Notification: makeNotification(id, reason, subjectType, details),
 		Priority:     priority,
@@ -36,10 +36,10 @@ func makePrioritizedItem(id string, reason github.NotificationReason, subjectTyp
 
 func TestFilterByPriority(t *testing.T) {
 	items := []PrioritizedItem{
-		makePrioritizedItem("1", github.ReasonReviewRequested, github.SubjectPullRequest, PriorityUrgent, nil),
-		makePrioritizedItem("2", github.ReasonSubscribed, github.SubjectIssue, PriorityFYI, nil),
-		makePrioritizedItem("3", github.ReasonMention, github.SubjectIssue, PriorityUrgent, nil),
-		makePrioritizedItem("4", github.ReasonAuthor, github.SubjectPullRequest, PriorityImportant, nil),
+		makePrioritizedItem("1", model.ReasonReviewRequested, model.SubjectPullRequest, PriorityUrgent, nil),
+		makePrioritizedItem("2", model.ReasonSubscribed, model.SubjectIssue, PriorityFYI, nil),
+		makePrioritizedItem("3", model.ReasonMention, model.SubjectIssue, PriorityUrgent, nil),
+		makePrioritizedItem("4", model.ReasonAuthor, model.SubjectPullRequest, PriorityImportant, nil),
 	}
 
 	tests := []struct {
@@ -87,30 +87,30 @@ func TestFilterByPriority(t *testing.T) {
 
 func TestFilterByReason(t *testing.T) {
 	items := []PrioritizedItem{
-		makePrioritizedItem("1", github.ReasonReviewRequested, github.SubjectPullRequest, PriorityUrgent, nil),
-		makePrioritizedItem("2", github.ReasonSubscribed, github.SubjectIssue, PriorityFYI, nil),
-		makePrioritizedItem("3", github.ReasonMention, github.SubjectIssue, PriorityUrgent, nil),
-		makePrioritizedItem("4", github.ReasonAuthor, github.SubjectPullRequest, PriorityImportant, nil),
+		makePrioritizedItem("1", model.ReasonReviewRequested, model.SubjectPullRequest, PriorityUrgent, nil),
+		makePrioritizedItem("2", model.ReasonSubscribed, model.SubjectIssue, PriorityFYI, nil),
+		makePrioritizedItem("3", model.ReasonMention, model.SubjectIssue, PriorityUrgent, nil),
+		makePrioritizedItem("4", model.ReasonAuthor, model.SubjectPullRequest, PriorityImportant, nil),
 	}
 
 	tests := []struct {
 		name    string
-		reasons []github.NotificationReason
+		reasons []model.NotificationReason
 		wantIDs []string
 	}{
 		{
 			name:    "filter by single reason",
-			reasons: []github.NotificationReason{github.ReasonReviewRequested},
+			reasons: []model.NotificationReason{model.ReasonReviewRequested},
 			wantIDs: []string{"1"},
 		},
 		{
 			name:    "filter by multiple reasons",
-			reasons: []github.NotificationReason{github.ReasonReviewRequested, github.ReasonMention},
+			reasons: []model.NotificationReason{model.ReasonReviewRequested, model.ReasonMention},
 			wantIDs: []string{"1", "3"},
 		},
 		{
 			name:    "empty reasons returns all",
-			reasons: []github.NotificationReason{},
+			reasons: []model.NotificationReason{},
 			wantIDs: []string{"1", "2", "3", "4"},
 		},
 		{
@@ -138,9 +138,9 @@ func TestFilterByReason(t *testing.T) {
 
 func TestFilterOutMerged(t *testing.T) {
 	items := []PrioritizedItem{
-		makePrioritizedItem("1", github.ReasonAuthor, github.SubjectPullRequest, PriorityImportant, &github.ItemDetails{Merged: true}),
-		makePrioritizedItem("2", github.ReasonAuthor, github.SubjectPullRequest, PriorityImportant, &github.ItemDetails{Merged: false}),
-		makePrioritizedItem("3", github.ReasonSubscribed, github.SubjectIssue, PriorityFYI, nil), // nil Details
+		makePrioritizedItem("1", model.ReasonAuthor, model.SubjectPullRequest, PriorityImportant, &model.ItemDetails{Merged: true}),
+		makePrioritizedItem("2", model.ReasonAuthor, model.SubjectPullRequest, PriorityImportant, &model.ItemDetails{Merged: false}),
+		makePrioritizedItem("3", model.ReasonSubscribed, model.SubjectIssue, PriorityFYI, nil), // nil Details
 	}
 
 	got := FilterOutMerged(items)
@@ -159,10 +159,10 @@ func TestFilterOutMerged(t *testing.T) {
 
 func TestFilterOutClosed(t *testing.T) {
 	items := []PrioritizedItem{
-		makePrioritizedItem("1", github.ReasonAuthor, github.SubjectPullRequest, PriorityImportant, &github.ItemDetails{State: "closed"}),
-		makePrioritizedItem("2", github.ReasonAuthor, github.SubjectPullRequest, PriorityImportant, &github.ItemDetails{State: "merged"}),
-		makePrioritizedItem("3", github.ReasonAuthor, github.SubjectPullRequest, PriorityImportant, &github.ItemDetails{State: "open"}),
-		makePrioritizedItem("4", github.ReasonSubscribed, github.SubjectIssue, PriorityFYI, nil), // nil Details - should be kept
+		makePrioritizedItem("1", model.ReasonAuthor, model.SubjectPullRequest, PriorityImportant, &model.ItemDetails{State: "closed"}),
+		makePrioritizedItem("2", model.ReasonAuthor, model.SubjectPullRequest, PriorityImportant, &model.ItemDetails{State: "merged"}),
+		makePrioritizedItem("3", model.ReasonAuthor, model.SubjectPullRequest, PriorityImportant, &model.ItemDetails{State: "open"}),
+		makePrioritizedItem("4", model.ReasonSubscribed, model.SubjectIssue, PriorityFYI, nil), // nil Details - should be kept
 	}
 
 	got := FilterOutClosed(items)
@@ -180,7 +180,7 @@ func TestFilterOutClosed(t *testing.T) {
 }
 
 // Helper to create a prioritized item with repo
-func makePrioritizedItemWithRepo(id string, reason github.NotificationReason, subjectType github.SubjectType, priority PriorityLevel, details *github.ItemDetails, repo string) PrioritizedItem {
+func makePrioritizedItemWithRepo(id string, reason model.NotificationReason, subjectType model.SubjectType, priority PriorityLevel, details *model.ItemDetails, repo string) PrioritizedItem {
 	return PrioritizedItem{
 		Notification: makeNotificationWithRepo(id, reason, subjectType, details, repo),
 		Priority:     priority,
@@ -189,10 +189,10 @@ func makePrioritizedItemWithRepo(id string, reason github.NotificationReason, su
 
 func TestFilterByRepo(t *testing.T) {
 	items := []PrioritizedItem{
-		makePrioritizedItemWithRepo("1", github.ReasonReviewRequested, github.SubjectPullRequest, PriorityUrgent, nil, "anchore/syft"),
-		makePrioritizedItemWithRepo("2", github.ReasonSubscribed, github.SubjectIssue, PriorityFYI, nil, "anchore/grype"),
-		makePrioritizedItemWithRepo("3", github.ReasonMention, github.SubjectPullRequest, PriorityUrgent, nil, "anchore/syft"),
-		makePrioritizedItemWithRepo("4", github.ReasonAuthor, github.SubjectIssue, PriorityImportant, nil, "golang/go"),
+		makePrioritizedItemWithRepo("1", model.ReasonReviewRequested, model.SubjectPullRequest, PriorityUrgent, nil, "anchore/syft"),
+		makePrioritizedItemWithRepo("2", model.ReasonSubscribed, model.SubjectIssue, PriorityFYI, nil, "anchore/grype"),
+		makePrioritizedItemWithRepo("3", model.ReasonMention, model.SubjectPullRequest, PriorityUrgent, nil, "anchore/syft"),
+		makePrioritizedItemWithRepo("4", model.ReasonAuthor, model.SubjectIssue, PriorityImportant, nil, "golang/go"),
 	}
 
 	tests := []struct {
@@ -240,30 +240,30 @@ func TestFilterByRepo(t *testing.T) {
 
 func TestFilterByType(t *testing.T) {
 	items := []PrioritizedItem{
-		makePrioritizedItem("1", github.ReasonReviewRequested, github.SubjectPullRequest, PriorityUrgent, nil),
-		makePrioritizedItem("2", github.ReasonSubscribed, github.SubjectIssue, PriorityFYI, nil),
-		makePrioritizedItem("3", github.ReasonMention, github.SubjectPullRequest, PriorityUrgent, nil),
-		makePrioritizedItem("4", github.ReasonAuthor, github.SubjectIssue, PriorityImportant, nil),
+		makePrioritizedItem("1", model.ReasonReviewRequested, model.SubjectPullRequest, PriorityUrgent, nil),
+		makePrioritizedItem("2", model.ReasonSubscribed, model.SubjectIssue, PriorityFYI, nil),
+		makePrioritizedItem("3", model.ReasonMention, model.SubjectPullRequest, PriorityUrgent, nil),
+		makePrioritizedItem("4", model.ReasonAuthor, model.SubjectIssue, PriorityImportant, nil),
 	}
 
 	tests := []struct {
 		name        string
-		subjectType github.SubjectType
+		subjectType model.SubjectType
 		wantIDs     []string
 	}{
 		{
 			name:        "filter PRs only",
-			subjectType: github.SubjectPullRequest,
+			subjectType: model.SubjectPullRequest,
 			wantIDs:     []string{"1", "3"},
 		},
 		{
 			name:        "filter issues only",
-			subjectType: github.SubjectIssue,
+			subjectType: model.SubjectIssue,
 			wantIDs:     []string{"2", "4"},
 		},
 		{
 			name:        "filter releases returns empty",
-			subjectType: github.SubjectRelease,
+			subjectType: model.SubjectRelease,
 			wantIDs:     []string{},
 		},
 	}
@@ -286,10 +286,10 @@ func TestFilterByType(t *testing.T) {
 
 func TestFilterByExcludedAuthors(t *testing.T) {
 	items := []PrioritizedItem{
-		makePrioritizedItem("1", github.ReasonReviewRequested, github.SubjectPullRequest, PriorityUrgent, &github.ItemDetails{Author: "dependabot[bot]"}),
-		makePrioritizedItem("2", github.ReasonReviewRequested, github.SubjectPullRequest, PriorityUrgent, &github.ItemDetails{Author: "renovate[bot]"}),
-		makePrioritizedItem("3", github.ReasonReviewRequested, github.SubjectPullRequest, PriorityUrgent, &github.ItemDetails{Author: "human-user"}),
-		makePrioritizedItem("4", github.ReasonSubscribed, github.SubjectIssue, PriorityFYI, nil), // nil Details - should be kept
+		makePrioritizedItem("1", model.ReasonReviewRequested, model.SubjectPullRequest, PriorityUrgent, &model.ItemDetails{Author: "dependabot[bot]"}),
+		makePrioritizedItem("2", model.ReasonReviewRequested, model.SubjectPullRequest, PriorityUrgent, &model.ItemDetails{Author: "renovate[bot]"}),
+		makePrioritizedItem("3", model.ReasonReviewRequested, model.SubjectPullRequest, PriorityUrgent, &model.ItemDetails{Author: "human-user"}),
+		makePrioritizedItem("4", model.ReasonSubscribed, model.SubjectIssue, PriorityFYI, nil), // nil Details - should be kept
 	}
 
 	tests := []struct {
@@ -342,12 +342,12 @@ func TestFilterByExcludedAuthors(t *testing.T) {
 
 func TestFilterByGreenCI(t *testing.T) {
 	items := []PrioritizedItem{
-		makePrioritizedItem("1", github.ReasonReviewRequested, github.SubjectPullRequest, PriorityUrgent, &github.ItemDetails{CIStatus: "success"}),
-		makePrioritizedItem("2", github.ReasonReviewRequested, github.SubjectPullRequest, PriorityUrgent, &github.ItemDetails{CIStatus: "failure"}),
-		makePrioritizedItem("3", github.ReasonReviewRequested, github.SubjectPullRequest, PriorityUrgent, &github.ItemDetails{CIStatus: "pending"}),
-		makePrioritizedItem("4", github.ReasonReviewRequested, github.SubjectPullRequest, PriorityUrgent, &github.ItemDetails{CIStatus: ""}),
-		makePrioritizedItem("5", github.ReasonReviewRequested, github.SubjectPullRequest, PriorityUrgent, nil),                 // nil Details - excluded
-		makePrioritizedItem("6", github.ReasonSubscribed, github.SubjectIssue, PriorityFYI, &github.ItemDetails{CIStatus: ""}), // Issue - excluded
+		makePrioritizedItem("1", model.ReasonReviewRequested, model.SubjectPullRequest, PriorityUrgent, &model.ItemDetails{CIStatus: "success"}),
+		makePrioritizedItem("2", model.ReasonReviewRequested, model.SubjectPullRequest, PriorityUrgent, &model.ItemDetails{CIStatus: "failure"}),
+		makePrioritizedItem("3", model.ReasonReviewRequested, model.SubjectPullRequest, PriorityUrgent, &model.ItemDetails{CIStatus: "pending"}),
+		makePrioritizedItem("4", model.ReasonReviewRequested, model.SubjectPullRequest, PriorityUrgent, &model.ItemDetails{CIStatus: ""}),
+		makePrioritizedItem("5", model.ReasonReviewRequested, model.SubjectPullRequest, PriorityUrgent, nil),                 // nil Details - excluded
+		makePrioritizedItem("6", model.ReasonSubscribed, model.SubjectIssue, PriorityFYI, &model.ItemDetails{CIStatus: ""}), // Issue - excluded
 	}
 
 	tests := []struct {
@@ -378,11 +378,11 @@ func TestFilterByGreenCI(t *testing.T) {
 
 func TestFilterOutUnenriched(t *testing.T) {
 	items := []PrioritizedItem{
-		makePrioritizedItem("1", github.ReasonReviewRequested, github.SubjectPullRequest, PriorityUrgent, &github.ItemDetails{State: "open"}), // PR with Details - kept
-		makePrioritizedItem("2", github.ReasonReviewRequested, github.SubjectPullRequest, PriorityUrgent, nil),                                // PR without Details - filtered
-		makePrioritizedItem("3", github.ReasonSubscribed, github.SubjectIssue, PriorityFYI, &github.ItemDetails{State: "open"}),               // Issue with Details - kept
-		makePrioritizedItem("4", github.ReasonSubscribed, github.SubjectIssue, PriorityFYI, nil),                                              // Issue without Details - filtered
-		makePrioritizedItem("5", github.ReasonSubscribed, github.SubjectRelease, PriorityFYI, nil),                                            // Release without Details - kept (different type)
+		makePrioritizedItem("1", model.ReasonReviewRequested, model.SubjectPullRequest, PriorityUrgent, &model.ItemDetails{State: "open"}), // PR with Details - kept
+		makePrioritizedItem("2", model.ReasonReviewRequested, model.SubjectPullRequest, PriorityUrgent, nil),                                // PR without Details - filtered
+		makePrioritizedItem("3", model.ReasonSubscribed, model.SubjectIssue, PriorityFYI, &model.ItemDetails{State: "open"}),               // Issue with Details - kept
+		makePrioritizedItem("4", model.ReasonSubscribed, model.SubjectIssue, PriorityFYI, nil),                                              // Issue without Details - filtered
+		makePrioritizedItem("5", model.ReasonSubscribed, model.SubjectRelease, PriorityFYI, nil),                                            // Release without Details - kept (different type)
 	}
 
 	got := FilterOutUnenriched(items)
