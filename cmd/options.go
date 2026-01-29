@@ -16,10 +16,6 @@ type Options struct {
 	GreenCI       bool  // Filter to only show PRs with passing CI (excludes issues)
 	TUI           *bool // nil = auto-detect, true = force TUI, false = disable TUI
 
-	// Sorting options
-	SortByAge   bool // Sort by age instead of priority
-	OldestFirst bool // When sorting by age, show oldest items first
-
 	// Orphaned contribution options
 	SkipOrphaned        bool     // Skip orphaned contribution fetching (included by default)
 	OrphanedRepos       []string // Explicit repos for orphaned (overrides config)
