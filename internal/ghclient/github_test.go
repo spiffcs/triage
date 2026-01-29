@@ -8,7 +8,7 @@ import (
 	"github.com/spiffcs/triage/internal/model"
 )
 
-func TestNotificationTypes(t *testing.T) {
+func TestItemTypes(t *testing.T) {
 	// Test that notification types can be created
 	n := model.Item{
 		ID:        "123",
@@ -65,8 +65,8 @@ func TestItemDetails(t *testing.T) {
 	}
 }
 
-func TestNotificationReasons(t *testing.T) {
-	reasons := []model.NotificationReason{
+func TestItemReasons(t *testing.T) {
+	reasons := []model.ItemReason{
 		model.ReasonMention,
 		model.ReasonReviewRequested,
 		model.ReasonAuthor,

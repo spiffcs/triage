@@ -106,16 +106,16 @@ type batchResult struct {
 	issueErr     error
 }
 
-// EnrichNotificationsGraphQL enriches notifications using GraphQL batch queries.
+// EnrichItemsGraphQL enriches items using GraphQL batch queries.
 // Returns the number of successfully enriched items.
-func (c *Client) EnrichNotificationsGraphQL(notifications []model.Item, token string, onProgress func(completed, total int)) (int, error) {
+func (c *Client) EnrichItemsGraphQL(items []model.Item, token string, onProgress func(completed, total int)) (int, error) {
 	// Separate PRs and Issues, and identify items that need enrichment
-	var items []enrichmentItem
+	var enrichItems []enrichmentItem
 
-	for i := range notifications {
-		n := &notifications[i]
+	for i := range items {
+		n := &items[i]
 		if n.Subject.URL == "" {
-			log.Debug("skipping notification without model.Subject.URL", "id", n.ID)
+			log.Debug("skipping item without model.Subject.URL", "id", n.ID)
 			continue
 		}
 
@@ -131,7 +131,7 @@ func (c *Client) EnrichNotificationsGraphQL(notifications []model.Item, token st
 			continue
 		}
 
-		items = append(items, enrichmentItem{
+		enrichItems = append(enrichItems, enrichmentItem{
 			index:  i,
 			owner:  parts[0],
 			repo:   parts[1],
@@ -140,24 +140,24 @@ func (c *Client) EnrichNotificationsGraphQL(notifications []model.Item, token st
 		})
 	}
 
-	if len(items) == 0 {
+	if len(enrichItems) == 0 {
 		log.Debug("no items to enrich via GraphQL")
 		return 0, nil
 	}
 
-	log.Debug("enriching items via GraphQL", "total", len(items))
+	log.Debug("enriching items via GraphQL", "total", len(enrichItems))
 
-	total := len(items)
+	total := len(enrichItems)
 	enriched := 0
 
 	// Create batch jobs
 	var batches [][]enrichmentItem
-	for batchStart := 0; batchStart < len(items); batchStart += graphqlBatchSize {
+	for batchStart := 0; batchStart < len(enrichItems); batchStart += graphqlBatchSize {
 		batchEnd := batchStart + graphqlBatchSize
-		if batchEnd > len(items) {
-			batchEnd = len(items)
+		if batchEnd > len(enrichItems) {
+			batchEnd = len(enrichItems)
 		}
-		batches = append(batches, items[batchStart:batchEnd])
+		batches = append(batches, enrichItems[batchStart:batchEnd])
 	}
 
 	log.Debug("processing batches concurrently", "batches", len(batches), "maxConcurrent", maxConcurrentBatches)
@@ -202,7 +202,7 @@ func (c *Client) EnrichNotificationsGraphQL(notifications []model.Item, token st
 					"deletions", prResult.Deletions,
 					"reviewState", prResult.ReviewState,
 					"ciStatus", prResult.CIStatus)
-				applyPRResult(&notifications[idx], prResult)
+				applyPRResult(&items[idx], prResult)
 				enriched++
 				itemsProcessed++
 				// Report progress per item for smooth UI updates
@@ -217,7 +217,7 @@ func (c *Client) EnrichNotificationsGraphQL(notifications []model.Item, token st
 			log.Debug("GraphQL Issue enrichment failed", "batch", result.batchIdx, "error", result.issueErr)
 		} else if result.issueResults != nil {
 			for idx, issueResult := range result.issueResults {
-				applyIssueResult(&notifications[idx], issueResult)
+				applyIssueResult(&items[idx], issueResult)
 				enriched++
 				itemsProcessed++
 				// Report progress per item for smooth UI updates

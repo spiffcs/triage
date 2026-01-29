@@ -71,7 +71,7 @@ func TestHotTopicSuppression(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Build test item
 			item := triage.PrioritizedItem{
-				Notification: model.Item{
+				Item: model.Item{
 					Subject: model.Subject{
 						Title: "Test issue title",
 						Type:  model.SubjectIssue,
@@ -210,7 +210,7 @@ func TestIconPrecedenceAndAlignment(t *testing.T) {
 			}
 
 			item := triage.PrioritizedItem{
-				Notification: model.Item{
+				Item: model.Item{
 					Subject: model.Subject{
 						Title: "Test title",
 						Type:  model.SubjectPullRequest,

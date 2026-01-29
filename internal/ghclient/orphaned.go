@@ -115,7 +115,7 @@ func (c *Client) ListOrphanedContributions(opts model.OrphanedSearchOptions) ([]
 		close(results)
 	}()
 
-	var allNotifications []model.Item
+	var allItems []model.Item
 	for result := range results {
 		if result.err != nil {
 			log.Debug("failed to fetch orphaned contributions", "repo", result.repoFullName, "error", result.err)
@@ -126,12 +126,12 @@ func (c *Client) ListOrphanedContributions(opts model.OrphanedSearchOptions) ([]
 			contributions = contributions[:opts.MaxPerRepo]
 		}
 		for _, contrib := range contributions {
-			notification := orphanedToNotification(contrib)
-			allNotifications = append(allNotifications, notification)
+			item := orphanedToItem(contrib)
+			allItems = append(allItems, item)
 		}
 	}
 
-	return allNotifications, nil
+	return allItems, nil
 }
 
 // fetchOrphanedForRepo fetches orphaned contributions for a single repository
@@ -519,8 +519,8 @@ func isOrphaned(updatedAt time.Time, lastTeamActivity *time.Time, consecutiveAut
 	return false
 }
 
-// orphanedToNotification converts an model.OrphanedContribution to a model.Item
-func orphanedToNotification(contrib model.OrphanedContribution) model.Item {
+// orphanedToItem converts an model.OrphanedContribution to a model.Item
+func orphanedToItem(contrib model.OrphanedContribution) model.Item {
 	fullName := contrib.Owner + "/" + contrib.Repo
 
 	subjectType := model.SubjectIssue

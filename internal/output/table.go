@@ -62,7 +62,7 @@ func (f *TableFormatter) Format(items []triage.PrioritizedItem, w io.Writer) err
 	}
 
 	for _, item := range items {
-		n := item.Notification
+		n := item.Item
 
 		// Determine type indicator
 		typeStr := "ISS"

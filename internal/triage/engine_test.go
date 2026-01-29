@@ -6,13 +6,13 @@ import (
 	"github.com/spiffcs/triage/internal/model"
 )
 
-// Helper to create a test notification
-func makeNotification(id string, reason model.NotificationReason, subjectType model.SubjectType, details *model.ItemDetails) model.Item {
-	return makeNotificationWithRepo(id, reason, subjectType, details, "")
+// Helper to create a test item
+func makeItem(id string, reason model.ItemReason, subjectType model.SubjectType, details *model.ItemDetails) model.Item {
+	return makeItemWithRepo(id, reason, subjectType, details, "")
 }
 
-// Helper to create a test notification with repo
-func makeNotificationWithRepo(id string, reason model.NotificationReason, subjectType model.SubjectType, details *model.ItemDetails, repo string) model.Item {
+// Helper to create a test item with repo
+func makeItemWithRepo(id string, reason model.ItemReason, subjectType model.SubjectType, details *model.ItemDetails, repo string) model.Item {
 	return model.Item{
 		ID:     id,
 		Reason: reason,
@@ -27,10 +27,10 @@ func makeNotificationWithRepo(id string, reason model.NotificationReason, subjec
 }
 
 // Helper to create a prioritized item
-func makePrioritizedItem(id string, reason model.NotificationReason, subjectType model.SubjectType, priority PriorityLevel, details *model.ItemDetails) PrioritizedItem {
+func makePrioritizedItem(id string, reason model.ItemReason, subjectType model.SubjectType, priority PriorityLevel, details *model.ItemDetails) PrioritizedItem {
 	return PrioritizedItem{
-		Notification: makeNotification(id, reason, subjectType, details),
-		Priority:     priority,
+		Item:     makeItem(id, reason, subjectType, details),
+		Priority: priority,
 	}
 }
 
@@ -77,8 +77,8 @@ func TestFilterByPriority(t *testing.T) {
 				return
 			}
 			for i, item := range got {
-				if item.Notification.ID != tt.wantIDs[i] {
-					t.Errorf("FilterByPriority()[%d].ID = %s, want %s", i, item.Notification.ID, tt.wantIDs[i])
+				if item.Item.ID != tt.wantIDs[i] {
+					t.Errorf("FilterByPriority()[%d].ID = %s, want %s", i, item.Item.ID, tt.wantIDs[i])
 				}
 			}
 		})
@@ -95,22 +95,22 @@ func TestFilterByReason(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		reasons []model.NotificationReason
+		reasons []model.ItemReason
 		wantIDs []string
 	}{
 		{
 			name:    "filter by single reason",
-			reasons: []model.NotificationReason{model.ReasonReviewRequested},
+			reasons: []model.ItemReason{model.ReasonReviewRequested},
 			wantIDs: []string{"1"},
 		},
 		{
 			name:    "filter by multiple reasons",
-			reasons: []model.NotificationReason{model.ReasonReviewRequested, model.ReasonMention},
+			reasons: []model.ItemReason{model.ReasonReviewRequested, model.ReasonMention},
 			wantIDs: []string{"1", "3"},
 		},
 		{
 			name:    "empty reasons returns all",
-			reasons: []model.NotificationReason{},
+			reasons: []model.ItemReason{},
 			wantIDs: []string{"1", "2", "3", "4"},
 		},
 		{
@@ -128,8 +128,8 @@ func TestFilterByReason(t *testing.T) {
 				return
 			}
 			for i, item := range got {
-				if item.Notification.ID != tt.wantIDs[i] {
-					t.Errorf("FilterByReason()[%d].ID = %s, want %s", i, item.Notification.ID, tt.wantIDs[i])
+				if item.Item.ID != tt.wantIDs[i] {
+					t.Errorf("FilterByReason()[%d].ID = %s, want %s", i, item.Item.ID, tt.wantIDs[i])
 				}
 			}
 		})
@@ -151,8 +151,8 @@ func TestFilterOutMerged(t *testing.T) {
 		return
 	}
 	for i, item := range got {
-		if item.Notification.ID != wantIDs[i] {
-			t.Errorf("FilterOutMerged()[%d].ID = %s, want %s", i, item.Notification.ID, wantIDs[i])
+		if item.Item.ID != wantIDs[i] {
+			t.Errorf("FilterOutMerged()[%d].ID = %s, want %s", i, item.Item.ID, wantIDs[i])
 		}
 	}
 }
@@ -173,17 +173,17 @@ func TestFilterOutClosed(t *testing.T) {
 		return
 	}
 	for i, item := range got {
-		if item.Notification.ID != wantIDs[i] {
-			t.Errorf("FilterOutClosed()[%d].ID = %s, want %s", i, item.Notification.ID, wantIDs[i])
+		if item.Item.ID != wantIDs[i] {
+			t.Errorf("FilterOutClosed()[%d].ID = %s, want %s", i, item.Item.ID, wantIDs[i])
 		}
 	}
 }
 
 // Helper to create a prioritized item with repo
-func makePrioritizedItemWithRepo(id string, reason model.NotificationReason, subjectType model.SubjectType, priority PriorityLevel, details *model.ItemDetails, repo string) PrioritizedItem {
+func makePrioritizedItemWithRepo(id string, reason model.ItemReason, subjectType model.SubjectType, priority PriorityLevel, details *model.ItemDetails, repo string) PrioritizedItem {
 	return PrioritizedItem{
-		Notification: makeNotificationWithRepo(id, reason, subjectType, details, repo),
-		Priority:     priority,
+		Item:     makeItemWithRepo(id, reason, subjectType, details, repo),
+		Priority: priority,
 	}
 }
 
@@ -230,8 +230,8 @@ func TestFilterByRepo(t *testing.T) {
 				return
 			}
 			for i, item := range got {
-				if item.Notification.ID != tt.wantIDs[i] {
-					t.Errorf("FilterByRepo()[%d].ID = %s, want %s", i, item.Notification.ID, tt.wantIDs[i])
+				if item.Item.ID != tt.wantIDs[i] {
+					t.Errorf("FilterByRepo()[%d].ID = %s, want %s", i, item.Item.ID, tt.wantIDs[i])
 				}
 			}
 		})
@@ -276,8 +276,8 @@ func TestFilterByType(t *testing.T) {
 				return
 			}
 			for i, item := range got {
-				if item.Notification.ID != tt.wantIDs[i] {
-					t.Errorf("FilterByType()[%d].ID = %s, want %s", i, item.Notification.ID, tt.wantIDs[i])
+				if item.Item.ID != tt.wantIDs[i] {
+					t.Errorf("FilterByType()[%d].ID = %s, want %s", i, item.Item.ID, tt.wantIDs[i])
 				}
 			}
 		})
@@ -332,8 +332,8 @@ func TestFilterByExcludedAuthors(t *testing.T) {
 				return
 			}
 			for i, item := range got {
-				if item.Notification.ID != tt.wantIDs[i] {
-					t.Errorf("FilterByExcludedAuthors()[%d].ID = %s, want %s", i, item.Notification.ID, tt.wantIDs[i])
+				if item.Item.ID != tt.wantIDs[i] {
+					t.Errorf("FilterByExcludedAuthors()[%d].ID = %s, want %s", i, item.Item.ID, tt.wantIDs[i])
 				}
 			}
 		})
@@ -368,8 +368,8 @@ func TestFilterByGreenCI(t *testing.T) {
 				return
 			}
 			for i, item := range got {
-				if item.Notification.ID != tt.wantIDs[i] {
-					t.Errorf("FilterByGreenCI()[%d].ID = %s, want %s", i, item.Notification.ID, tt.wantIDs[i])
+				if item.Item.ID != tt.wantIDs[i] {
+					t.Errorf("FilterByGreenCI()[%d].ID = %s, want %s", i, item.Item.ID, tt.wantIDs[i])
 				}
 			}
 		})
@@ -393,8 +393,8 @@ func TestFilterOutUnenriched(t *testing.T) {
 		return
 	}
 	for i, item := range got {
-		if item.Notification.ID != wantIDs[i] {
-			t.Errorf("FilterOutUnenriched()[%d].ID = %s, want %s", i, item.Notification.ID, wantIDs[i])
+		if item.Item.ID != wantIDs[i] {
+			t.Errorf("FilterOutUnenriched()[%d].ID = %s, want %s", i, item.Item.ID, wantIDs[i])
 		}
 	}
 }

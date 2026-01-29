@@ -11,8 +11,8 @@ import (
 	"github.com/spiffcs/triage/internal/model"
 )
 
-// NotificationOptions configures notification fetching
-type NotificationOptions struct {
+// ItemOptions configures item fetching
+type ItemOptions struct {
 	All           bool                // Include read notifications
 	Since         time.Time           // Only notifications updated after this time
 	Participating bool                // Only participating notifications
@@ -20,9 +20,9 @@ type NotificationOptions struct {
 	Types         []model.SubjectType // Filter to specific subject types
 }
 
-// ListNotifications fetches notifications with optional filtering.
+// ListItems fetches items with optional filtering.
 // Uses parallel fetching when multiple pages are detected.
-func (c *Client) ListNotifications(opts NotificationOptions) ([]model.Item, error) {
+func (c *Client) ListItems(opts ItemOptions) ([]model.Item, error) {
 	listOpts := &gh.NotificationListOptions{
 		All:           opts.All,
 		Participating: opts.Participating,
@@ -42,25 +42,25 @@ func (c *Client) ListNotifications(opts NotificationOptions) ([]model.Item, erro
 	}
 
 	// Convert first page results
-	allNotifications := filterNotifications(notifications, opts)
+	allItems := filterItems(notifications, opts)
 
 	// If no more pages, return early
 	if resp.NextPage == 0 {
-		return allNotifications, nil
+		return allItems, nil
 	}
 
 	// Determine last page from response
 	lastPage := resp.LastPage
 	if lastPage == 0 {
 		// Fallback to sequential if we can't determine last page
-		return c.listNotificationsSequential(opts, allNotifications, resp.NextPage)
+		return c.listItemsSequential(opts, allItems, resp.NextPage)
 	}
 
 	// Fetch remaining pages in parallel
 	type pageResult struct {
-		page          int
-		notifications []model.Item
-		err           error
+		page  int
+		items []model.Item
+		err   error
 	}
 
 	numPages := lastPage - 1 // pages 2 through lastPage
@@ -88,7 +88,7 @@ func (c *Client) ListNotifications(opts NotificationOptions) ([]model.Item, erro
 				results <- pageResult{page: p, err: err}
 				return
 			}
-			results <- pageResult{page: p, notifications: filterNotifications(notifs, opts)}
+			results <- pageResult{page: p, items: filterItems(notifs, opts)}
 		}(page)
 	}
 
@@ -102,43 +102,43 @@ func (c *Client) ListNotifications(opts NotificationOptions) ([]model.Item, erro
 	pageResults := make([]pageResult, 0, numPages)
 	for result := range results {
 		if result.err != nil {
-			return nil, fmt.Errorf("failed to list notifications page %d: %w", result.page, result.err)
+			return nil, fmt.Errorf("failed to list items page %d: %w", result.page, result.err)
 		}
 		pageResults = append(pageResults, result)
 	}
 
-	// Combine all results (order doesn't matter for notifications)
+	// Combine all results (order doesn't matter for items)
 	for _, pr := range pageResults {
-		allNotifications = append(allNotifications, pr.notifications...)
+		allItems = append(allItems, pr.items...)
 	}
 
-	return allNotifications, nil
+	return allItems, nil
 }
 
-// filterNotifications applies type and repo filters to raw notifications
-func filterNotifications(notifications []*gh.Notification, opts NotificationOptions) []model.Item {
+// filterItems applies type and repo filters to raw notifications
+func filterItems(notifications []*gh.Notification, opts ItemOptions) []model.Item {
 	var result []model.Item
 	for _, n := range notifications {
-		notification := convertNotification(n)
+		item := convertItem(n)
 
 		// Apply type filter
-		if len(opts.Types) > 0 && !containsType(opts.Types, notification.Subject.Type) {
+		if len(opts.Types) > 0 && !containsType(opts.Types, item.Subject.Type) {
 			continue
 		}
 
 		// Apply repo filter
-		if len(opts.Repos) > 0 && !containsRepo(opts.Repos, notification.Repository.FullName) {
+		if len(opts.Repos) > 0 && !containsRepo(opts.Repos, item.Repository.FullName) {
 			continue
 		}
 
-		result = append(result, notification)
+		result = append(result, item)
 	}
 	return result
 }
 
-// listNotificationsSequential fetches remaining pages sequentially (fallback)
-func (c *Client) listNotificationsSequential(opts NotificationOptions, existing []model.Item, startPage int) ([]model.Item, error) {
-	allNotifications := existing
+// listItemsSequential fetches remaining pages sequentially (fallback)
+func (c *Client) listItemsSequential(opts ItemOptions, existing []model.Item, startPage int) ([]model.Item, error) {
+	allItems := existing
 
 	listOpts := &gh.NotificationListOptions{
 		All:           opts.All,
@@ -156,10 +156,10 @@ func (c *Client) listNotificationsSequential(opts NotificationOptions, existing 
 	for {
 		notifications, resp, err := c.client.Activity.ListNotifications(c.ctx, listOpts)
 		if err != nil {
-			return nil, fmt.Errorf("failed to list notifications: %w", err)
+			return nil, fmt.Errorf("failed to list items: %w", err)
 		}
 
-		allNotifications = append(allNotifications, filterNotifications(notifications, opts)...)
+		allItems = append(allItems, filterItems(notifications, opts)...)
 
 		if resp.NextPage == 0 {
 			break
@@ -167,12 +167,12 @@ func (c *Client) listNotificationsSequential(opts NotificationOptions, existing 
 		listOpts.Page = resp.NextPage
 	}
 
-	return allNotifications, nil
+	return allItems, nil
 }
 
-// ListUnreadNotifications fetches only unread notifications (convenience method)
-func (c *Client) ListUnreadNotifications(since time.Time) ([]model.Item, error) {
-	return c.ListNotifications(NotificationOptions{
+// ListUnreadItems fetches only unread items (convenience method)
+func (c *Client) ListUnreadItems(since time.Time) ([]model.Item, error) {
+	return c.ListItems(ItemOptions{
 		All:   false,
 		Since: since,
 		Types: []model.SubjectType{model.SubjectIssue, model.SubjectPullRequest}, // Only issues and PRs
@@ -188,18 +188,18 @@ func (c *Client) MarkAsRead(notificationID string) error {
 	return nil
 }
 
-// convertNotification converts a GitHub API notification to our type
-func convertNotification(n *gh.Notification) model.Item {
-	notification := model.Item{
+// convertItem converts a GitHub API notification to our type
+func convertItem(n *gh.Notification) model.Item {
+	item := model.Item{
 		ID:        n.GetID(),
-		Reason:    model.NotificationReason(n.GetReason()),
+		Reason:    model.ItemReason(n.GetReason()),
 		Unread:    n.GetUnread(),
 		UpdatedAt: n.GetUpdatedAt().Time,
 		URL:       n.GetURL(),
 	}
 
 	if repo := n.GetRepository(); repo != nil {
-		notification.Repository = model.Repository{
+		item.Repository = model.Repository{
 			ID:       repo.GetID(),
 			Name:     repo.GetName(),
 			FullName: repo.GetFullName(),
@@ -209,14 +209,14 @@ func convertNotification(n *gh.Notification) model.Item {
 	}
 
 	if subject := n.GetSubject(); subject != nil {
-		notification.Subject = model.Subject{
+		item.Subject = model.Subject{
 			Title: subject.GetTitle(),
 			URL:   subject.GetURL(),
 			Type:  model.SubjectType(subject.GetType()),
 		}
 	}
 
-	return notification
+	return item
 }
 
 // ExtractIssueNumber extracts the issue/PR number from the API URL

@@ -84,13 +84,13 @@ func fetchAll(ctx context.Context, client *ghclient.Client, cache *ghclient.Cach
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		notifResult, err := client.ListUnreadNotificationsCached(opts.CurrentUser, opts.Since, cache)
+		notifResult, err := client.ListUnreadItemsCached(opts.CurrentUser, opts.Since, cache)
 		if err != nil {
 			notifErr = err
 			updateFetchProgress()
 			return
 		}
-		result.Notifications = notifResult.Notifications
+		result.Notifications = notifResult.Items
 		result.NotifCached = notifResult.FromCache
 		result.NotifNewCount = notifResult.NewCount
 		updateFetchProgress()

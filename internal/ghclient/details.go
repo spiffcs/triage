@@ -17,8 +17,8 @@ type EnrichmentProgress struct {
 	Errors    int64
 }
 
-// EnrichNotification fetches additional details for a notification
-func (c *Client) EnrichNotification(n *model.Item) error {
+// EnrichItem fetches additional details for an item
+func (c *Client) EnrichItem(n *model.Item) error {
 	if n.Subject.URL == "" {
 		return nil
 	}
@@ -47,17 +47,17 @@ func (c *Client) EnrichNotification(n *model.Item) error {
 	}
 }
 
-// EnrichNotifications enriches multiple notifications sequentially (for small batches)
-func (c *Client) EnrichNotifications(notifications []model.Item) error {
-	return c.EnrichNotificationsWithProgress(notifications, nil)
+// EnrichItems enriches multiple items sequentially (for small batches)
+func (c *Client) EnrichItems(items []model.Item) error {
+	return c.EnrichItemsWithProgress(items, nil)
 }
 
-// EnrichNotificationsWithProgress enriches notifications with progress callback
-func (c *Client) EnrichNotificationsWithProgress(notifications []model.Item, onProgress func(completed, total int)) error {
-	total := len(notifications)
-	for i := range notifications {
-		if err := c.EnrichNotification(&notifications[i]); err != nil {
-			log.Warn("failed to enrich notification", "id", notifications[i].ID, "error", err)
+// EnrichItemsWithProgress enriches items with progress callback
+func (c *Client) EnrichItemsWithProgress(items []model.Item, onProgress func(completed, total int)) error {
+	total := len(items)
+	for i := range items {
+		if err := c.EnrichItem(&items[i]); err != nil {
+			log.Warn("failed to enrich item", "id", items[i].ID, "error", err)
 		}
 		if onProgress != nil {
 			onProgress(i+1, total)
@@ -66,27 +66,27 @@ func (c *Client) EnrichNotificationsWithProgress(notifications []model.Item, onP
 	return nil
 }
 
-// EnrichNotificationsConcurrent enriches notifications using GraphQL batch queries with caching.
+// EnrichItemsConcurrent enriches items using GraphQL batch queries with caching.
 // Uses GraphQL API (separate quota from Core API) for efficient batch enrichment.
 // Returns the number of cache hits and any error.
-func (c *Client) EnrichNotificationsConcurrent(notifications []model.Item, workers int, onProgress func(completed, total int)) (int, error) {
+func (c *Client) EnrichItemsConcurrent(items []model.Item, workers int, onProgress func(completed, total int)) (int, error) {
 	// Initialize cache
 	cache, cacheErr := NewCache()
 	if cacheErr != nil {
 		log.Debug("cache unavailable", "error", cacheErr)
 	}
 
-	total := len(notifications)
+	total := len(items)
 	var cacheHits int64
 
 	// First pass: check cache and build list of items needing enrichment
-	uncachedNotifications := make([]model.Item, 0, len(notifications))
-	uncachedIndices := make([]int, 0, len(notifications))
+	uncachedItems := make([]model.Item, 0, len(items))
+	uncachedIndices := make([]int, 0, len(items))
 
-	for i := range notifications {
+	for i := range items {
 		if cache != nil {
-			if details, ok := cache.Get(&notifications[i]); ok {
-				notifications[i].Details = details
+			if details, ok := cache.Get(&items[i]); ok {
+				items[i].Details = details
 				cacheHits++
 				// Report each cache hit individually for smooth progress
 				if onProgress != nil {
@@ -95,7 +95,7 @@ func (c *Client) EnrichNotificationsConcurrent(notifications []model.Item, worke
 				continue
 			}
 		}
-		uncachedNotifications = append(uncachedNotifications, notifications[i])
+		uncachedItems = append(uncachedItems, items[i])
 		uncachedIndices = append(uncachedIndices, i)
 	}
 
@@ -103,14 +103,14 @@ func (c *Client) EnrichNotificationsConcurrent(notifications []model.Item, worke
 		log.Info("cache hit", "count", cacheHits, "total", total)
 	}
 
-	if len(uncachedNotifications) == 0 {
+	if len(uncachedItems) == 0 {
 		return int(cacheHits), nil
 	}
 
 	// Use GraphQL for batch enrichment (uses GraphQL quota, not Core API)
-	log.Debug("enriching via GraphQL", "count", len(uncachedNotifications))
+	log.Debug("enriching via GraphQL", "count", len(uncachedItems))
 
-	enriched, err := c.EnrichNotificationsGraphQL(uncachedNotifications, c.token, func(delta, batchTotal int) {
+	enriched, err := c.EnrichItemsGraphQL(uncachedItems, c.token, func(delta, batchTotal int) {
 		if onProgress != nil {
 			// Pass through the delta (number of items just processed)
 			onProgress(delta, total)
@@ -123,11 +123,11 @@ func (c *Client) EnrichNotificationsConcurrent(notifications []model.Item, worke
 
 	// Copy enriched data back to original slice and cache results
 	for i, origIdx := range uncachedIndices {
-		notifications[origIdx] = uncachedNotifications[i]
+		items[origIdx] = uncachedItems[i]
 		// Log what we're copying back
-		n := &notifications[origIdx]
+		n := &items[origIdx]
 		if n.Details != nil {
-			log.Debug("enriched notification",
+			log.Debug("enriched item",
 				"id", n.ID,
 				"repo", n.Repository.FullName,
 				"isPR", n.Details.IsPR,
@@ -135,17 +135,17 @@ func (c *Client) EnrichNotificationsConcurrent(notifications []model.Item, worke
 				"deletions", n.Details.Deletions,
 				"reviewState", n.Details.ReviewState)
 		} else {
-			log.Debug("notification not enriched - Details is nil", "id", n.ID, "repo", n.Repository.FullName)
+			log.Debug("item not enriched - Details is nil", "id", n.ID, "repo", n.Repository.FullName)
 		}
 		// Cache successful enrichment
-		if cache != nil && uncachedNotifications[i].Details != nil {
-			if err := cache.Set(&notifications[origIdx], notifications[origIdx].Details); err != nil {
-				log.Debug("failed to cache notification", "id", notifications[origIdx].ID, "error", err)
+		if cache != nil && uncachedItems[i].Details != nil {
+			if err := cache.Set(&items[origIdx], items[origIdx].Details); err != nil {
+				log.Debug("failed to cache item", "id", items[origIdx].ID, "error", err)
 			}
 		}
 	}
 
-	log.Debug("GraphQL enrichment complete", "enriched", enriched, "total", len(uncachedNotifications))
+	log.Debug("GraphQL enrichment complete", "enriched", enriched, "total", len(uncachedItems))
 
 	return int(cacheHits), nil
 }

@@ -12,7 +12,7 @@ func TestBaseScore(t *testing.T) {
 	h := NewHeuristics("testuser", weights, config.DefaultQuickWinLabels())
 
 	tests := []struct {
-		reason model.NotificationReason
+		reason model.ItemReason
 		want   int
 	}{
 		{model.ReasonReviewRequested, 100},
@@ -25,7 +25,7 @@ func TestBaseScore(t *testing.T) {
 		{model.ReasonSubscribed, 10},
 		{model.ReasonCIActivity, 5},
 		// Unknown reason should default to Subscribed weight
-		{model.NotificationReason("unknown"), 10},
+		{model.ItemReason("unknown"), 10},
 	}
 
 	for _, tt := range tests {

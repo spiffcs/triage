@@ -210,10 +210,10 @@ func (m *ListModel) sortPriorityItems() {
 				less = a.Score < b.Score
 			}
 		case SortUpdated:
-			less = a.Notification.UpdatedAt.Before(b.Notification.UpdatedAt)
+			less = a.Item.UpdatedAt.Before(b.Item.UpdatedAt)
 		case SortRepo:
 			// Inverted so that descending (▼) gives A-Z order
-			less = a.Notification.Repository.FullName > b.Notification.Repository.FullName
+			less = a.Item.Repository.FullName > b.Item.Repository.FullName
 		default:
 			// Default to priority
 			if a.Priority != b.Priority {
@@ -234,10 +234,10 @@ func (m *ListModel) sortPriorityItems() {
 // daysSinceTeamActivity calculates how many days since the last team activity on an item.
 // Falls back to CreatedAt if LastTeamActivityAt is not set (matching display logic).
 func daysSinceTeamActivity(item triage.PrioritizedItem) int {
-	if item.Notification.Details == nil {
+	if item.Item.Details == nil {
 		return 0
 	}
-	d := item.Notification.Details
+	d := item.Item.Details
 	if d.LastTeamActivityAt != nil {
 		return int(time.Since(*d.LastTeamActivityAt).Hours() / 24)
 	}
@@ -262,27 +262,27 @@ func (m *ListModel) sortOrphanedItems() {
 
 		switch column {
 		case SortUpdated:
-			less = a.Notification.UpdatedAt.Before(b.Notification.UpdatedAt)
+			less = a.Item.UpdatedAt.Before(b.Item.UpdatedAt)
 		case SortAuthor:
 			// Inverted so that descending (▼) gives A-Z order
 			authorA, authorB := "", ""
-			if a.Notification.Details != nil {
-				authorA = a.Notification.Details.Author
+			if a.Item.Details != nil {
+				authorA = a.Item.Details.Author
 			}
-			if b.Notification.Details != nil {
-				authorB = b.Notification.Details.Author
+			if b.Item.Details != nil {
+				authorB = b.Item.Details.Author
 			}
 			less = authorA > authorB
 		case SortRepo:
 			// Inverted so that descending (▼) gives A-Z order
-			less = a.Notification.Repository.FullName > b.Notification.Repository.FullName
+			less = a.Item.Repository.FullName > b.Item.Repository.FullName
 		case SortComments:
 			commentsA, commentsB := 0, 0
-			if a.Notification.Details != nil {
-				commentsA = a.Notification.Details.CommentCount
+			if a.Item.Details != nil {
+				commentsA = a.Item.Details.CommentCount
 			}
-			if b.Notification.Details != nil {
-				commentsB = b.Notification.Details.CommentCount
+			if b.Item.Details != nil {
+				commentsB = b.Item.Details.CommentCount
 			}
 			less = commentsA < commentsB
 		case SortStale:
@@ -294,23 +294,23 @@ func (m *ListModel) sortOrphanedItems() {
 			// For PRs: sort by review size (additions + deletions)
 			// For issues: sort by comment count
 			sizeA, sizeB := 0, 0
-			if a.Notification.Details != nil {
-				if a.Notification.Details.IsPR {
-					sizeA = a.Notification.Details.Additions + a.Notification.Details.Deletions
+			if a.Item.Details != nil {
+				if a.Item.Details.IsPR {
+					sizeA = a.Item.Details.Additions + a.Item.Details.Deletions
 				} else {
-					sizeA = a.Notification.Details.CommentCount
+					sizeA = a.Item.Details.CommentCount
 				}
 			}
-			if b.Notification.Details != nil {
-				if b.Notification.Details.IsPR {
-					sizeB = b.Notification.Details.Additions + b.Notification.Details.Deletions
+			if b.Item.Details != nil {
+				if b.Item.Details.IsPR {
+					sizeB = b.Item.Details.Additions + b.Item.Details.Deletions
 				} else {
-					sizeB = b.Notification.Details.CommentCount
+					sizeB = b.Item.Details.CommentCount
 				}
 			}
 			less = sizeA < sizeB
 		default:
-			less = a.Notification.UpdatedAt.Before(b.Notification.UpdatedAt)
+			less = a.Item.UpdatedAt.Before(b.Item.UpdatedAt)
 		}
 
 		// Invert for descending order
@@ -449,9 +449,9 @@ func (m ListModel) markDone() (tea.Model, tea.Cmd) {
 	}
 
 	item := items[cursor]
-	n := item.Notification
+	n := item.Item
 
-	// Resolve using the notification's UpdatedAt time
+	// Resolve using the item's UpdatedAt time
 	if err := m.resolved.Resolve(n.ID, n.UpdatedAt); err != nil {
 		m.statusMsg = "Error: " + err.Error()
 		m.statusTime = time.Now()
@@ -489,10 +489,10 @@ func (m ListModel) openInBrowser() (tea.Model, tea.Cmd) {
 	item := items[cursor]
 	url := ""
 
-	if item.Notification.Details != nil && item.Notification.Details.HTMLURL != "" {
-		url = item.Notification.Details.HTMLURL
-	} else if item.Notification.Repository.HTMLURL != "" {
-		url = item.Notification.Repository.HTMLURL
+	if item.Item.Details != nil && item.Item.Details.HTMLURL != "" {
+		url = item.Item.Details.HTMLURL
+	} else if item.Item.Repository.HTMLURL != "" {
+		url = item.Item.Repository.HTMLURL
 	}
 
 	if url == "" {
@@ -652,7 +652,7 @@ func (m *ListModel) preserveCursorPosition(item *triage.PrioritizedItem) {
 
 	items := m.activeItems()
 	for i, it := range items {
-		if it.Notification.ID == item.Notification.ID {
+		if it.Item.ID == item.Item.ID {
 			m.setActiveCursor(i)
 			return
 		}

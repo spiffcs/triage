@@ -14,7 +14,7 @@ type GitHubClient interface {
 	GetAuthenticatedUser() (string, error)
 
 	// Notifications
-	ListUnreadNotifications(since time.Time) ([]model.Item, error)
+	ListUnreadItems(since time.Time) ([]model.Item, error)
 
 	// Search operations
 	ListReviewRequestedPRs(username string) ([]model.Item, error)
@@ -25,10 +25,10 @@ type GitHubClient interface {
 	ListReviewRequestedPRsCached(username string, cache *Cache) ([]model.Item, bool, error)
 	ListAuthoredPRsCached(username string, cache *Cache) ([]model.Item, bool, error)
 	ListAssignedIssuesCached(username string, cache *Cache) ([]model.Item, bool, error)
-	ListUnreadNotificationsCached(username string, since time.Time, cache *Cache) (*NotificationFetchResult, error)
+	ListUnreadItemsCached(username string, since time.Time, cache *Cache) (*ItemFetchResult, error)
 
 	// Enrichment
-	EnrichNotificationsConcurrent(notifications []model.Item, workers int, onProgress func(completed, total int)) (int, error)
+	EnrichItemsConcurrent(items []model.Item, workers int, onProgress func(completed, total int)) (int, error)
 	EnrichPRsConcurrent(notifications []model.Item, workers int, cache *Cache, onProgress func(completed, total int)) (int, error)
 }
 
@@ -44,9 +44,9 @@ type Cacher interface {
 	GetPRList(username, listType string) ([]model.Item, bool)
 	SetPRList(username, listType string, prs []model.Item) error
 
-	// Notification list cache
-	GetNotificationList(username string, sinceTime time.Time) ([]model.Item, time.Time, bool)
-	SetNotificationList(username string, notifications []model.Item, sinceTime time.Time) error
+	// Item list cache
+	GetItemList(username string, sinceTime time.Time) ([]model.Item, time.Time, bool)
+	SetItemList(username string, items []model.Item, sinceTime time.Time) error
 
 	// Stats
 	Stats() (total int, validCount int, err error)

@@ -43,7 +43,7 @@ func addListFlags(cmd *cobra.Command, opts *Options) {
 	cmd.Flags().IntVarP(&opts.Limit, "limit", "l", 0, "Limit number of results")
 	cmd.Flags().StringVarP(&opts.Since, "since", "s", "1w", "Show notifications since (e.g., 1w, 30d, 6mo)")
 	cmd.Flags().StringVarP(&opts.Priority, "priority", "p", "", "Filter by priority (urgent, important, quick-win, notable, fyi)")
-	cmd.Flags().StringVarP(&opts.Reason, "reason", "r", "", "Filter by reason ("+model.NotificationReasonsString()+")")
+	cmd.Flags().StringVarP(&opts.Reason, "reason", "r", "", "Filter by reason ("+model.ItemReasonsString()+")")
 	cmd.Flags().StringVar(&opts.Repo, "repo", "", "Filter to specific repo (owner/repo)")
 	cmd.Flags().CountVarP(&opts.Verbosity, "verbose", "v", "Increase verbosity (-v info, -vv debug, -vvv trace)")
 	cmd.Flags().IntVarP(&opts.Workers, "workers", "w", 20, "Number of concurrent workers for fetching details")
@@ -326,7 +326,7 @@ func enrichItems(
 		enrichWg.Add(1)
 		go func() {
 			defer enrichWg.Done()
-			cacheHits, err := ghClient.EnrichNotificationsConcurrent(notifications, workers, onProgress)
+			cacheHits, err := ghClient.EnrichItemsConcurrent(notifications, workers, onProgress)
 			if err != nil {
 				log.Warn("some notifications could not be enriched", "error", err)
 			}
@@ -384,7 +384,7 @@ func applyFilters(items []triage.PrioritizedItem, opts *Options, cfg *config.Con
 	}
 
 	if opts.Reason != "" {
-		items = triage.FilterByReason(items, []model.NotificationReason{model.NotificationReason(opts.Reason)})
+		items = triage.FilterByReason(items, []model.ItemReason{model.ItemReason(opts.Reason)})
 	}
 
 	if opts.Repo != "" {

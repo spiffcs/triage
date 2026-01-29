@@ -186,14 +186,14 @@ func (c *Cache) DetailedStats() (*CacheStats, error) {
 
 		name := entry.Name()
 
-		// Check if it's a notification list cache entry (starts with "notif_list_")
+		// Check if it's an item list cache entry (starts with "notif_list_")
 		if len(name) > 11 && name[:11] == "notif_list_" {
 			stats.NotifListTotal++
-			var notifEntry NotificationListCacheEntry
-			if err := json.Unmarshal(data, &notifEntry); err != nil {
+			var itemEntry ItemListCacheEntry
+			if err := json.Unmarshal(data, &itemEntry); err != nil {
 				continue
 			}
-			if now.Sub(notifEntry.CachedAt) <= NotificationListCacheTTL {
+			if now.Sub(itemEntry.CachedAt) <= ItemListCacheTTL {
 				stats.NotifListValid++
 			}
 		} else if len(name) > 14 && name[:14] == "orphaned_list_" {
@@ -243,33 +243,23 @@ type PRListCacheEntry struct {
 // but the canonical value is in the constants package.
 const PRListCacheTTL = constants.PRListCacheTTL
 
-// NotificationListCacheEntry stores cached notifications with fetch timestamp
-type NotificationListCacheEntry struct {
-	Notifications []model.Item `json:"notifications"`
+// ItemListCacheEntry stores cached items with fetch timestamp
+type ItemListCacheEntry struct {
+	Items         []model.Item `json:"items"`
 	LastFetchTime time.Time    `json:"lastFetchTime"` // When we last hit the API
 	CachedAt      time.Time    `json:"cachedAt"`
 	SinceTime     time.Time    `json:"sinceTime"` // The --since value used
 	Version       int          `json:"version"`
 }
 
-// NotificationListCacheTTL is the max age before a full refresh is required.
+// ItemListCacheTTL is the max age before a full refresh is required.
 // Note: This is kept as a package-level constant for backward compatibility,
 // but the canonical value is in the constants package.
-const NotificationListCacheTTL = constants.NotificationListCacheTTL
+const ItemListCacheTTL = constants.ItemListCacheTTL
 
 // OrphanedListCacheTTL is shorter than notifications since orphaned data changes less frequently
 // but we want relatively fresh results for proactive outreach
 const OrphanedListCacheTTL = 15 * time.Minute
-
-// DiscoveredReposCacheTTL is longer since repo access doesn't change frequently
-const DiscoveredReposCacheTTL = 1 * time.Hour
-
-// DiscoveredReposCacheEntry stores cached discovered repositories
-type DiscoveredReposCacheEntry struct {
-	Repos    []string  `json:"repos"`
-	CachedAt time.Time `json:"cachedAt"`
-	Version  int       `json:"version"`
-}
 
 // prListCacheKey generates a cache key for a PR list
 func (c *Cache) prListCacheKey(username string, listType string) string {
@@ -323,15 +313,15 @@ func (c *Cache) SetPRList(username string, listType string, prs []model.Item) er
 	return os.WriteFile(path, data, 0600)
 }
 
-// notificationListCacheKey generates a cache key for a notification list
-func (c *Cache) notificationListCacheKey(username string) string {
+// itemListCacheKey generates a cache key for an item list
+func (c *Cache) itemListCacheKey(username string) string {
 	return fmt.Sprintf("notif_list_%s.json", username)
 }
 
-// GetNotificationList retrieves cached notification list.
-// Returns: cached notifications, last fetch time, ok
-func (c *Cache) GetNotificationList(username string, sinceTime time.Time) ([]model.Item, time.Time, bool) {
-	key := c.notificationListCacheKey(username)
+// GetItemList retrieves cached item list.
+// Returns: cached items, last fetch time, ok
+func (c *Cache) GetItemList(username string, sinceTime time.Time) ([]model.Item, time.Time, bool) {
+	key := c.itemListCacheKey(username)
 	path := filepath.Join(c.dir, key)
 
 	data, err := os.ReadFile(path)
@@ -339,7 +329,7 @@ func (c *Cache) GetNotificationList(username string, sinceTime time.Time) ([]mod
 		return nil, time.Time{}, false
 	}
 
-	var entry NotificationListCacheEntry
+	var entry ItemListCacheEntry
 	if err := json.Unmarshal(data, &entry); err != nil {
 		return nil, time.Time{}, false
 	}
@@ -350,7 +340,7 @@ func (c *Cache) GetNotificationList(username string, sinceTime time.Time) ([]mod
 	}
 
 	// Check TTL - if cache is too old, require full refresh
-	if time.Since(entry.CachedAt) > NotificationListCacheTTL {
+	if time.Since(entry.CachedAt) > ItemListCacheTTL {
 		return nil, time.Time{}, false
 	}
 
@@ -360,13 +350,13 @@ func (c *Cache) GetNotificationList(username string, sinceTime time.Time) ([]mod
 		return nil, time.Time{}, false
 	}
 
-	return entry.Notifications, entry.LastFetchTime, true
+	return entry.Items, entry.LastFetchTime, true
 }
 
-// SetNotificationList caches a notification list
-func (c *Cache) SetNotificationList(username string, notifications []model.Item, sinceTime time.Time) error {
-	entry := NotificationListCacheEntry{
-		Notifications: notifications,
+// SetItemList caches an item list
+func (c *Cache) SetItemList(username string, items []model.Item, sinceTime time.Time) error {
+	entry := ItemListCacheEntry{
+		Items:         items,
 		LastFetchTime: time.Now(),
 		CachedAt:      time.Now(),
 		SinceTime:     sinceTime,
@@ -378,7 +368,7 @@ func (c *Cache) SetNotificationList(username string, notifications []model.Item,
 		return err
 	}
 
-	key := c.notificationListCacheKey(username)
+	key := c.itemListCacheKey(username)
 	path := filepath.Join(c.dir, key)
 
 	return os.WriteFile(path, data, 0600)
@@ -477,53 +467,3 @@ func stringSlicesEqual(a, b []string) bool {
 }
 
 // discoveredReposCacheKey generates a cache key for discovered repos
-func (c *Cache) discoveredReposCacheKey(username string) string {
-	return fmt.Sprintf("discovered_repos_%s.json", username)
-}
-
-// GetDiscoveredRepos retrieves cached discovered repositories
-func (c *Cache) GetDiscoveredRepos(username string) ([]string, bool) {
-	key := c.discoveredReposCacheKey(username)
-	path := filepath.Join(c.dir, key)
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, false
-	}
-
-	var entry DiscoveredReposCacheEntry
-	if err := json.Unmarshal(data, &entry); err != nil {
-		return nil, false
-	}
-
-	// Check version (invalidate old cache format)
-	if entry.Version != cacheVersion {
-		return nil, false
-	}
-
-	// Check TTL
-	if time.Since(entry.CachedAt) > DiscoveredReposCacheTTL {
-		return nil, false
-	}
-
-	return entry.Repos, true
-}
-
-// SetDiscoveredRepos caches discovered repositories
-func (c *Cache) SetDiscoveredRepos(username string, repos []string) error {
-	entry := DiscoveredReposCacheEntry{
-		Repos:    repos,
-		CachedAt: time.Now(),
-		Version:  cacheVersion,
-	}
-
-	data, err := json.Marshal(entry)
-	if err != nil {
-		return err
-	}
-
-	key := c.discoveredReposCacheKey(username)
-	path := filepath.Join(c.dir, key)
-
-	return os.WriteFile(path, data, 0600)
-}

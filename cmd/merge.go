@@ -73,10 +73,10 @@ func mergeOrphaned(notifications []model.Item, orphaned []model.Item) ([]model.I
 	return notifications, added
 }
 
-// mergeNotifications adds items that aren't already in the notifications list.
-// It filters existing notifications by subjectType and checks for duplicates
+// mergeItems adds items that aren't already in the items list.
+// It filters existing items by subjectType and checks for duplicates
 // by repo#number and Subject.URL. Returns the merged list and count of added items.
-func mergeNotifications(
+func mergeItems(
 	notifications []model.Item,
 	newItems []model.Item,
 	subjectType model.SubjectType,
@@ -120,17 +120,17 @@ func mergeNotifications(
 // mergeReviewRequests adds review-requested PRs that aren't already in notifications.
 // Returns the merged list and the count of newly added items.
 func mergeReviewRequests(notifications []model.Item, reviewPRs []model.Item) ([]model.Item, int) {
-	return mergeNotifications(notifications, reviewPRs, model.SubjectPullRequest)
+	return mergeItems(notifications, reviewPRs, model.SubjectPullRequest)
 }
 
 // mergeAuthoredPRs adds user's open PRs that aren't already in notifications.
 // Returns the merged list and the count of newly added items.
 func mergeAuthoredPRs(notifications []model.Item, authoredPRs []model.Item) ([]model.Item, int) {
-	return mergeNotifications(notifications, authoredPRs, model.SubjectPullRequest)
+	return mergeItems(notifications, authoredPRs, model.SubjectPullRequest)
 }
 
 // mergeAssignedIssues adds user's assigned issues that aren't already in notifications.
 // Returns the merged list and the count of newly added items.
 func mergeAssignedIssues(notifications []model.Item, assignedIssues []model.Item) ([]model.Item, int) {
-	return mergeNotifications(notifications, assignedIssues, model.SubjectIssue)
+	return mergeItems(notifications, assignedIssues, model.SubjectIssue)
 }

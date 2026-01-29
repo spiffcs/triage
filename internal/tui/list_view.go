@@ -214,7 +214,7 @@ func renderSeparator(hideAssignedCI, hidePriority bool) string {
 
 // renderRow renders a single item row
 func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, prSizeXS, prSizeS, prSizeM, prSizeL int, currentUser string, hideAssignedCI, hidePriority bool) string {
-	n := item.Notification
+	n := item.Item
 
 	// Cursor indicator
 	cursor := "  "

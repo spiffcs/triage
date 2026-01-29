@@ -163,9 +163,9 @@ func (c *Client) ListReviewRequestedPRs(username string) ([]model.Item, error) {
 		}
 
 		for _, issue := range result.Issues {
-			// Convert search result to notification format
-			notification := c.prToNotification(issue)
-			notifications = append(notifications, notification)
+			// Convert search result to item format
+			item := c.prToItem(issue)
+			notifications = append(notifications, item)
 		}
 
 		if resp.NextPage == 0 {
@@ -177,8 +177,8 @@ func (c *Client) ListReviewRequestedPRs(username string) ([]model.Item, error) {
 	return notifications, nil
 }
 
-// prToNotification converts a PR from search results to a model.Item
-func (c *Client) prToNotification(issue *gh.Issue) model.Item {
+// prToItem converts a PR from search results to a model.Item
+func (c *Client) prToItem(issue *gh.Issue) model.Item {
 	// Extract owner/repo from the repository URL
 	// Issue.RepositoryURL format: https://api.github.com/repos/owner/repo
 	repoURL := issue.GetRepositoryURL()
@@ -294,8 +294,8 @@ func (c *Client) ListAssignedIssues(username string) ([]model.Item, error) {
 		}
 
 		for _, issue := range result.Issues {
-			notification := c.assignedIssueToNotification(issue)
-			notifications = append(notifications, notification)
+			item := c.assignedIssueToItem(issue)
+			notifications = append(notifications, item)
 		}
 
 		if resp.NextPage == 0 {
@@ -307,8 +307,8 @@ func (c *Client) ListAssignedIssues(username string) ([]model.Item, error) {
 	return notifications, nil
 }
 
-// assignedIssueToNotification converts an assigned issue to a model.Item
-func (c *Client) assignedIssueToNotification(issue *gh.Issue) model.Item {
+// assignedIssueToItem converts an assigned issue to a model.Item
+func (c *Client) assignedIssueToItem(issue *gh.Issue) model.Item {
 	repoURL := issue.GetRepositoryURL()
 	parts := splitRepoURL(repoURL)
 	fullName := ""
@@ -380,8 +380,8 @@ func (c *Client) ListAuthoredPRs(username string) ([]model.Item, error) {
 		}
 
 		for _, issue := range result.Issues {
-			notification := c.authoredPRToNotification(issue)
-			notifications = append(notifications, notification)
+			item := c.authoredPRToItem(issue)
+			notifications = append(notifications, item)
 		}
 
 		if resp.NextPage == 0 {
@@ -393,8 +393,8 @@ func (c *Client) ListAuthoredPRs(username string) ([]model.Item, error) {
 	return notifications, nil
 }
 
-// authoredPRToNotification converts an authored PR to a model.Item
-func (c *Client) authoredPRToNotification(issue *gh.Issue) model.Item {
+// authoredPRToItem converts an authored PR to a model.Item
+func (c *Client) authoredPRToItem(issue *gh.Issue) model.Item {
 	repoURL := issue.GetRepositoryURL()
 	parts := splitRepoURL(repoURL)
 	fullName := ""
@@ -538,23 +538,23 @@ func (c *Client) ListAssignedIssuesCached(username string, cache *Cache) ([]mode
 	return issues, false, nil
 }
 
-// NotificationFetchResult contains the result of a cached notification fetch
-type NotificationFetchResult struct {
-	Notifications []model.Item
-	FromCache     bool
-	NewCount      int // Number of new notifications fetched (for incremental updates)
+// ItemFetchResult contains the result of a cached item fetch
+type ItemFetchResult struct {
+	Items     []model.Item
+	FromCache bool
+	NewCount  int // Number of new items fetched (for incremental updates)
 }
 
-// ListUnreadNotificationsCached fetches notifications with incremental caching.
-// It returns cached notifications merged with any new ones since the last fetch.
-func (c *Client) ListUnreadNotificationsCached(username string, since time.Time, cache *Cache) (*NotificationFetchResult, error) {
-	result := &NotificationFetchResult{}
+// ListUnreadItemsCached fetches items with incremental caching.
+// It returns cached items merged with any new ones since the last fetch.
+func (c *Client) ListUnreadItemsCached(username string, since time.Time, cache *Cache) (*ItemFetchResult, error) {
+	result := &ItemFetchResult{}
 
 	// Check if rate limited - return cached data if available
 	if globalRateLimitState.IsLimited() {
 		if cache != nil {
-			if cached, _, ok := cache.GetNotificationList(username, since); ok {
-				result.Notifications = cached
+			if cached, _, ok := cache.GetItemList(username, since); ok {
+				result.Items = cached
 				result.FromCache = true
 				return result, nil
 			}
@@ -564,27 +564,27 @@ func (c *Client) ListUnreadNotificationsCached(username string, since time.Time,
 
 	// Check cache
 	if cache != nil {
-		cached, lastFetch, ok := cache.GetNotificationList(username, since)
+		cached, lastFetch, ok := cache.GetItemList(username, since)
 		if ok {
-			// Fetch only NEW notifications since last fetch
-			newNotifs, err := c.ListUnreadNotifications(lastFetch)
+			// Fetch only NEW items since last fetch
+			newItems, err := c.ListUnreadItems(lastFetch)
 			if err != nil {
 				// Return cached on error
-				log.Debug("failed to fetch new notifications, using cache", "error", err)
-				result.Notifications = cached
+				log.Debug("failed to fetch new items, using cache", "error", err)
+				result.Items = cached
 				result.FromCache = true
 				return result, nil
 			}
 
-			// Merge: new notifications replace old ones by ID
-			merged := mergeNotifications(cached, newNotifs, since)
-			result.Notifications = merged
+			// Merge: new items replace old ones by ID
+			merged := mergeItems(cached, newItems, since)
+			result.Items = merged
 			result.FromCache = true
-			result.NewCount = len(newNotifs)
+			result.NewCount = len(newItems)
 
 			// Update cache with merged result
-			if err := cache.SetNotificationList(username, merged, since); err != nil {
-				log.Debug("failed to update notification cache", "error", err)
+			if err := cache.SetItemList(username, merged, since); err != nil {
+				log.Debug("failed to update item cache", "error", err)
 			}
 
 			return result, nil
@@ -592,31 +592,31 @@ func (c *Client) ListUnreadNotificationsCached(username string, since time.Time,
 	}
 
 	// No cache - full fetch
-	notifications, err := c.ListUnreadNotifications(since)
+	items, err := c.ListUnreadItems(since)
 	if err != nil {
 		return nil, err
 	}
 
-	result.Notifications = notifications
+	result.Items = items
 	result.FromCache = false
 
 	// Cache result
 	if cache != nil {
-		if err := cache.SetNotificationList(username, notifications, since); err != nil {
-			log.Debug("failed to cache notifications", "error", err)
+		if err := cache.SetItemList(username, items, since); err != nil {
+			log.Debug("failed to cache items", "error", err)
 		}
 	}
 
 	return result, nil
 }
 
-// mergeNotifications merges cached and fresh notifications.
-// Fresh notifications replace cached ones by ID. Only unread notifications
+// mergeItems merges cached and fresh items.
+// Fresh items replace cached ones by ID. Only unread items
 // within the since timeframe are kept.
-func mergeNotifications(cached, fresh []model.Item, since time.Time) []model.Item {
+func mergeItems(cached, fresh []model.Item, since time.Time) []model.Item {
 	byID := make(map[string]model.Item)
 
-	// Add cached notifications
+	// Add cached items
 	for _, n := range cached {
 		byID[n.ID] = n
 	}
@@ -629,11 +629,11 @@ func mergeNotifications(cached, fresh []model.Item, since time.Time) []model.Ite
 	// Build result, filtering appropriately
 	result := make([]model.Item, 0, len(byID))
 	for _, n := range byID {
-		// Only keep unread notifications
+		// Only keep unread items
 		if !n.Unread {
 			continue
 		}
-		// Only keep notifications within the since timeframe
+		// Only keep items within the since timeframe
 		if n.UpdatedAt.Before(since) {
 			continue
 		}
@@ -681,7 +681,7 @@ func (c *Client) EnrichPRsConcurrent(notifications []model.Item, workers int, ca
 	log.Debug("enriching PRs via GraphQL", "count", len(uncachedNotifications))
 
 	progressOffset := int(cacheHits)
-	enriched, err := c.EnrichNotificationsGraphQL(uncachedNotifications, c.token, func(completed, batchTotal int) {
+	enriched, err := c.EnrichItemsGraphQL(uncachedNotifications, c.token, func(completed, batchTotal int) {
 		if onProgress != nil {
 			onProgress(progressOffset+completed, total)
 		}

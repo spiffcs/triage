@@ -44,7 +44,7 @@ func (h *Heuristics) Score(n *model.Item) int {
 	return max(score, 0)
 }
 
-func (h *Heuristics) baseScore(reason model.NotificationReason) int {
+func (h *Heuristics) baseScore(reason model.ItemReason) int {
 	switch reason {
 	case model.ReasonReviewRequested:
 		return h.Weights.ReviewRequested

@@ -68,7 +68,7 @@ func runCacheStats(cmd *cobra.Command, args []string) error {
 	fmt.Printf("    Total: %d\n", stats.DetailTotal)
 	fmt.Printf("    Valid: %d\n", stats.DetailValid)
 	fmt.Printf("    Expired: %d\n", stats.DetailTotal-stats.DetailValid)
-	fmt.Printf("  Notification lists (TTL: 1h):\n")
+	fmt.Printf("  Item lists (TTL: 1h):\n")
 	fmt.Printf("    Total: %d\n", stats.NotifListTotal)
 	fmt.Printf("    Valid: %d\n", stats.NotifListValid)
 	fmt.Printf("    Expired: %d\n", stats.NotifListTotal-stats.NotifListValid)
