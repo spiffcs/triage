@@ -28,8 +28,7 @@ type GitHubClient interface {
 	ListUnreadItemsCached(username string, since time.Time, cache *Cache) (*ItemFetchResult, error)
 
 	// Enrichment
-	EnrichItemsConcurrent(items []model.Item, workers int, onProgress func(completed, total int)) (int, error)
-	EnrichPRsConcurrent(notifications []model.Item, workers int, cache *Cache, onProgress func(completed, total int)) (int, error)
+	EnrichItemsConcurrent(items []model.Item, workers int, cache *Cache, onProgress func(completed, total int)) (int, error)
 }
 
 // Cacher defines the interface for caching operations.

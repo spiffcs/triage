@@ -326,7 +326,7 @@ func enrichItems(
 		enrichWg.Add(1)
 		go func() {
 			defer enrichWg.Done()
-			cacheHits, err := ghClient.EnrichItemsConcurrent(notifications, workers, onProgress)
+			cacheHits, err := ghClient.EnrichItemsConcurrent(notifications, workers, nil, onProgress)
 			if err != nil {
 				log.Warn("some notifications could not be enriched", "error", err)
 			}
@@ -339,7 +339,7 @@ func enrichItems(
 		enrichWg.Add(1)
 		go func() {
 			defer enrichWg.Done()
-			cacheHits, err := ghClient.EnrichPRsConcurrent(reviewPRs, workers, prCache, onProgress)
+			cacheHits, err := ghClient.EnrichItemsConcurrent(reviewPRs, workers, prCache, onProgress)
 			if err != nil {
 				log.Warn("some review PRs could not be enriched", "error", err)
 			}
@@ -352,7 +352,7 @@ func enrichItems(
 		enrichWg.Add(1)
 		go func() {
 			defer enrichWg.Done()
-			cacheHits, err := ghClient.EnrichPRsConcurrent(authoredPRs, workers, prCache, onProgress)
+			cacheHits, err := ghClient.EnrichItemsConcurrent(authoredPRs, workers, prCache, onProgress)
 			if err != nil {
 				log.Warn("some authored PRs could not be enriched", "error", err)
 			}
