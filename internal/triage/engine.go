@@ -22,15 +22,15 @@ func NewEngine(currentUser string, weights config.ScoreWeights, quickWinLabels [
 }
 
 // Prioritize scores and sorts notifications by priority
-func (e *Engine) Prioritize(notifications []model.Item) []PrioritizedItem {
-	items := make([]PrioritizedItem, 0, len(notifications))
+func (e *Engine) Prioritize(items []model.Item) []PrioritizedItem {
+	pItems := make([]PrioritizedItem, 0, len(items))
 
-	for _, n := range notifications {
+	for _, n := range items {
 		score := e.heuristics.Score(&n)
 		priority := e.heuristics.DeterminePriority(&n, score)
 		action := e.heuristics.DetermineAction(&n)
 
-		items = append(items, PrioritizedItem{
+		pItems = append(pItems, PrioritizedItem{
 			Item:         n,
 			Score:        score,
 			Priority:     priority,
@@ -46,15 +46,16 @@ func (e *Engine) Prioritize(notifications []model.Item) []PrioritizedItem {
 		PriorityNotable:   3,
 		PriorityFYI:       4,
 	}
+
 	sort.Slice(items, func(i, j int) bool {
-		pi, pj := priorityOrder[items[i].Priority], priorityOrder[items[j].Priority]
+		pi, pj := priorityOrder[pItems[i].Priority], priorityOrder[pItems[j].Priority]
 		if pi != pj {
 			return pi < pj
 		}
-		return items[i].Score > items[j].Score
+		return pItems[i].Score > pItems[j].Score
 	})
 
-	return items
+	return pItems
 }
 
 // FilterByPriority filters items by a specific priority level

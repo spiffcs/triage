@@ -126,7 +126,7 @@ func fetchAll(_ context.Context, store *ghclient.ItemStore, opts fetchOptions) (
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			searchOpts := model.OrphanedSearchOptions{
+			searchOpts := ghclient.OrphanedSearchOptions{
 				Repos:                     opts.OrphanedRepos,
 				Since:                     opts.Since,
 				StaleDays:                 opts.StaleDays,

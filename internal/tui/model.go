@@ -46,15 +46,6 @@ func DefaultTasks() []Task {
 	}
 }
 
-// OrphanedTasks returns the task list for the orphaned command (no enrichment step).
-func OrphanedTasks() []Task {
-	return []Task{
-		NewTask(TaskAuth, "Authenticating"),
-		NewTask(TaskFetch, "Fetching data"),
-		NewTask(TaskProcess, "Processing results"),
-	}
-}
-
 // NewModel creates a new TUI model.
 func NewModel(events <-chan Event, opts ...ModelOption) Model {
 	s := spinner.New()

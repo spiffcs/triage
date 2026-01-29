@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spiffcs/triage/config"
+	"github.com/spiffcs/triage/internal/model"
 	"github.com/spiffcs/triage/internal/resolved"
 	"github.com/spiffcs/triage/internal/triage"
 )
@@ -138,7 +139,7 @@ func (m *ListModel) splitItems() {
 	m.priorityItems = nil
 	m.orphanedItems = nil
 	for _, item := range m.items {
-		if item.Priority == triage.PriorityOrphaned {
+		if item.Item.Reason == model.ReasonOrphaned {
 			m.orphanedItems = append(m.orphanedItems, item)
 		} else {
 			m.priorityItems = append(m.priorityItems, item)

@@ -145,8 +145,8 @@ func (s *ItemStore) GetUnreadItems(username string, since time.Time) (*ItemFetch
 	if s.cache != nil {
 		cached, lastFetch, ok := s.cache.GetItemList(username, since)
 		if ok {
-			// Fetch only NEW items since last fetch
-			newItems, err := s.fetcher.ListUnreadItems(lastFetch)
+			// Fetch only NEW notifications since last fetch
+			newItems, err := s.fetcher.ListUnreadNotifications(lastFetch)
 			if err != nil {
 				// Return cached on error
 				log.Debug("failed to fetch new items, using cache", "error", err)
@@ -171,7 +171,7 @@ func (s *ItemStore) GetUnreadItems(username string, since time.Time) (*ItemFetch
 	}
 
 	// No cache - full fetch
-	items, err := s.fetcher.ListUnreadItems(since)
+	items, err := s.fetcher.ListUnreadNotifications(since)
 	if err != nil {
 		return nil, err
 	}
@@ -191,7 +191,7 @@ func (s *ItemStore) GetUnreadItems(username string, since time.Time) (*ItemFetch
 
 // GetOrphanedContributions fetches orphaned contributions with caching support.
 // Returns (items, fromCache, error).
-func (s *ItemStore) GetOrphanedContributions(opts model.OrphanedSearchOptions, username string) ([]model.Item, bool, error) {
+func (s *ItemStore) GetOrphanedContributions(opts OrphanedSearchOptions, username string) ([]model.Item, bool, error) {
 	if len(opts.Repos) == 0 {
 		return nil, false, nil
 	}

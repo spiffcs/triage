@@ -11,6 +11,15 @@ import (
 	"github.com/spiffcs/triage/internal/model"
 )
 
+// OrphanedSearchOptions configures the search for orphaned contributions
+type OrphanedSearchOptions struct {
+	Repos                     []string
+	Since                     time.Time
+	StaleDays                 int
+	ConsecutiveAuthorComments int
+	MaxPerRepo                int
+}
+
 // Default values for orphaned contribution detection
 const (
 	// defaultStaleDays is the number of days without team response for a contribution
@@ -31,13 +40,13 @@ const (
 
 // orphanedRepoResult holds the result of fetching orphaned contributions for a single repo
 type orphanedRepoResult struct {
-	repoFullName  string
-	contributions []model.OrphanedContribution
-	err           error
+	repoFullName string
+	items        []model.Item
+	err          error
 }
 
 // ListOrphanedContributions finds external PRs/issues needing attention
-func (c *Client) ListOrphanedContributions(opts model.OrphanedSearchOptions) ([]model.Item, error) {
+func (c *Client) ListOrphanedContributions(opts OrphanedSearchOptions) ([]model.Item, error) {
 	if len(opts.Repos) == 0 {
 		return nil, nil
 	}
@@ -71,11 +80,11 @@ func (c *Client) ListOrphanedContributions(opts model.OrphanedSearchOptions) ([]
 			sem <- struct{}{}        // Acquire
 			defer func() { <-sem }() // Release
 
-			contributions, err := c.fetchOrphanedForRepo(owner, repo, opts)
+			items, err := c.fetchOrphanedForRepo(owner, repo, opts)
 			results <- orphanedRepoResult{
-				repoFullName:  fullName,
-				contributions: contributions,
-				err:           err,
+				repoFullName: fullName,
+				items:        items,
+				err:          err,
 			}
 		}(owner, repo, repoFullName)
 	}
@@ -91,21 +100,18 @@ func (c *Client) ListOrphanedContributions(opts model.OrphanedSearchOptions) ([]
 			log.Debug("failed to fetch orphaned contributions", "repo", result.repoFullName, "error", result.err)
 			continue
 		}
-		contributions := result.contributions
-		if len(contributions) > opts.MaxPerRepo {
-			contributions = contributions[:opts.MaxPerRepo]
+		items := result.items
+		if len(items) > opts.MaxPerRepo {
+			items = items[:opts.MaxPerRepo]
 		}
-		for _, contrib := range contributions {
-			item := orphanedToItem(contrib)
-			allItems = append(allItems, item)
-		}
+		allItems = append(allItems, items...)
 	}
 
 	return allItems, nil
 }
 
 // fetchOrphanedForRepo fetches orphaned contributions for a single repository
-func (c *Client) fetchOrphanedForRepo(owner, repo string, opts model.OrphanedSearchOptions) ([]model.OrphanedContribution, error) {
+func (c *Client) fetchOrphanedForRepo(owner, repo string, opts OrphanedSearchOptions) ([]model.Item, error) {
 	query := buildOrphanedQuery(owner, repo)
 	respData, err := c.executeGraphQL(query, c.token)
 	if err != nil {
@@ -247,14 +253,15 @@ type reviewNode struct {
 	State             string    `json:"state"`
 }
 
-// parseOrphanedResponse parses the GraphQL response and identifies orphaned contributions
-func parseOrphanedResponse(data json.RawMessage, owner, repo string, opts model.OrphanedSearchOptions) ([]model.OrphanedContribution, error) {
+// parseOrphanedResponse parses the GraphQL response and returns orphaned items
+func parseOrphanedResponse(data json.RawMessage, owner, repo string, opts OrphanedSearchOptions) ([]model.Item, error) {
 	var resp orphanedGraphQLResponse
 	if err := json.Unmarshal(data, &resp); err != nil {
 		return nil, fmt.Errorf("failed to parse orphaned response: %w", err)
 	}
 
-	var contributions []model.OrphanedContribution
+	fullName := owner + "/" + repo
+	var items []model.Item
 
 	// Process issues
 	for _, issue := range resp.Repository.Issues.Nodes {
@@ -271,30 +278,47 @@ func parseOrphanedResponse(data json.RawMessage, owner, repo string, opts model.
 		lastTeam, consecutive := analyzeComments(issue.Comments.Nodes, issue.Author.Login)
 
 		// Check if orphaned based on criteria
-		if isOrphaned(issue.UpdatedAt, lastTeam, consecutive, opts) {
-			// Extract assignee logins
-			var assignees []string
-			for _, a := range issue.Assignees.Nodes {
-				assignees = append(assignees, a.Login)
-			}
-
-			contributions = append(contributions, model.OrphanedContribution{
-				Owner:             owner,
-				Repo:              repo,
-				Number:            issue.Number,
-				Title:             issue.Title,
-				IsPR:              false,
-				Author:            issue.Author.Login,
-				AuthorAssociation: issue.AuthorAssociation,
-				CreatedAt:         issue.CreatedAt,
-				UpdatedAt:         issue.UpdatedAt,
-				LastTeamActivity:  lastTeam,
-				ConsecutiveAuthor: consecutive,
-				HTMLURL:           issue.URL,
-				CommentCount:      issue.Comments.TotalCount,
-				Assignees:         assignees,
-			})
+		if !isOrphaned(issue.UpdatedAt, lastTeam, consecutive, opts) {
+			continue
 		}
+
+		// Extract assignee logins
+		var assignees []string
+		for _, a := range issue.Assignees.Nodes {
+			assignees = append(assignees, a.Login)
+		}
+
+		items = append(items, model.Item{
+			ID:        fmt.Sprintf("orphaned-%s-%d", fullName, issue.Number),
+			Reason:    model.ReasonOrphaned,
+			Unread:    true,
+			UpdatedAt: issue.UpdatedAt,
+			Repository: model.Repository{
+				Name:     repo,
+				FullName: fullName,
+				HTMLURL:  fmt.Sprintf("https://github.com/%s", fullName),
+			},
+			Subject: model.Subject{
+				Title: issue.Title,
+				URL:   issue.URL,
+				Type:  model.SubjectIssue,
+			},
+			URL: issue.URL,
+			Details: &model.ItemDetails{
+				Number:                    issue.Number,
+				State:                     "open",
+				HTMLURL:                   issue.URL,
+				CreatedAt:                 issue.CreatedAt,
+				UpdatedAt:                 issue.UpdatedAt,
+				Author:                    issue.Author.Login,
+				Assignees:                 assignees,
+				CommentCount:              issue.Comments.TotalCount,
+				IsPR:                      false,
+				AuthorAssociation:         issue.AuthorAssociation,
+				LastTeamActivityAt:        lastTeam,
+				ConsecutiveAuthorComments: consecutive,
+			},
+		})
 	}
 
 	// Process pull requests
@@ -319,40 +343,56 @@ func parseOrphanedResponse(data json.RawMessage, owner, repo string, opts model.
 		}
 
 		// Check if orphaned based on criteria
-		if isOrphaned(pr.UpdatedAt, lastTeam, consecutive, opts) {
-			// Determine review state from reviews
-			reviewState := determineReviewState(pr.Reviews.Nodes, pr.ReviewDecision)
-
-			// Extract assignee logins
-			var assignees []string
-			for _, a := range pr.Assignees.Nodes {
-				assignees = append(assignees, a.Login)
-			}
-
-			contributions = append(contributions, model.OrphanedContribution{
-				Owner:             owner,
-				Repo:              repo,
-				Number:            pr.Number,
-				Title:             pr.Title,
-				IsPR:              true,
-				Author:            pr.Author.Login,
-				AuthorAssociation: pr.AuthorAssociation,
-				CreatedAt:         pr.CreatedAt,
-				UpdatedAt:         pr.UpdatedAt,
-				LastTeamActivity:  lastTeam,
-				ConsecutiveAuthor: consecutive,
-				HTMLURL:           pr.URL,
-				CommentCount:      pr.Comments.TotalCount,
-				Assignees:         assignees,
-				Additions:         pr.Additions,
-				Deletions:         pr.Deletions,
-				ReviewDecision:    pr.ReviewDecision,
-				ReviewState:       reviewState,
-			})
+		if !isOrphaned(pr.UpdatedAt, lastTeam, consecutive, opts) {
+			continue
 		}
+
+		// Determine review state from reviews
+		reviewState := determineReviewState(pr.Reviews.Nodes, pr.ReviewDecision)
+
+		// Extract assignee logins
+		var assignees []string
+		for _, a := range pr.Assignees.Nodes {
+			assignees = append(assignees, a.Login)
+		}
+
+		items = append(items, model.Item{
+			ID:        fmt.Sprintf("orphaned-%s-%d", fullName, pr.Number),
+			Reason:    model.ReasonOrphaned,
+			Unread:    true,
+			UpdatedAt: pr.UpdatedAt,
+			Repository: model.Repository{
+				Name:     repo,
+				FullName: fullName,
+				HTMLURL:  fmt.Sprintf("https://github.com/%s", fullName),
+			},
+			Subject: model.Subject{
+				Title: pr.Title,
+				URL:   pr.URL,
+				Type:  model.SubjectPullRequest,
+			},
+			URL: pr.URL,
+			Details: &model.ItemDetails{
+				Number:                    pr.Number,
+				State:                     "open",
+				HTMLURL:                   pr.URL,
+				CreatedAt:                 pr.CreatedAt,
+				UpdatedAt:                 pr.UpdatedAt,
+				Author:                    pr.Author.Login,
+				Assignees:                 assignees,
+				CommentCount:              pr.Comments.TotalCount,
+				IsPR:                      true,
+				AuthorAssociation:         pr.AuthorAssociation,
+				LastTeamActivityAt:        lastTeam,
+				ConsecutiveAuthorComments: consecutive,
+				Additions:                 pr.Additions,
+				Deletions:                 pr.Deletions,
+				ReviewState:               reviewState,
+			},
+		})
 	}
 
-	return contributions, nil
+	return items, nil
 }
 
 // IsTeamMember checks if a user is a collaborator based on authorAssociation
@@ -462,7 +502,7 @@ func determineReviewState(reviews []reviewNode, reviewDecision string) string {
 }
 
 // isOrphaned determines if a contribution should be flagged as orphaned
-func isOrphaned(updatedAt time.Time, lastTeamActivity *time.Time, consecutiveAuthor int, opts model.OrphanedSearchOptions) bool {
+func isOrphaned(updatedAt time.Time, lastTeamActivity *time.Time, consecutiveAuthor int, opts OrphanedSearchOptions) bool {
 	now := time.Now()
 
 	// Check if stale (no activity in StaleDays)
@@ -487,57 +527,4 @@ func isOrphaned(updatedAt time.Time, lastTeamActivity *time.Time, consecutiveAut
 	}
 
 	return false
-}
-
-// orphanedToItem converts an model.OrphanedContribution to a model.Item
-func orphanedToItem(contrib model.OrphanedContribution) model.Item {
-	fullName := contrib.Owner + "/" + contrib.Repo
-
-	subjectType := model.SubjectIssue
-	if contrib.IsPR {
-		subjectType = model.SubjectPullRequest
-	}
-
-	details := &model.ItemDetails{
-		Number:                    contrib.Number,
-		State:                     "open",
-		HTMLURL:                   contrib.HTMLURL,
-		CreatedAt:                 contrib.CreatedAt,
-		UpdatedAt:                 contrib.UpdatedAt,
-		Author:                    contrib.Author,
-		Assignees:                 contrib.Assignees,
-		CommentCount:              contrib.CommentCount,
-		IsPR:                      contrib.IsPR,
-		AuthorAssociation:         contrib.AuthorAssociation,
-		LastTeamActivityAt:        contrib.LastTeamActivity,
-		ConsecutiveAuthorComments: contrib.ConsecutiveAuthor,
-	}
-
-	// Add PR-specific fields
-	if contrib.IsPR {
-		details.Additions = contrib.Additions
-		details.Deletions = contrib.Deletions
-		details.ReviewState = contrib.ReviewState
-	}
-
-	n := model.Item{
-		ID:        fmt.Sprintf("orphaned-%s-%d", fullName, contrib.Number),
-		Reason:    model.ReasonOrphaned,
-		Unread:    true,
-		UpdatedAt: contrib.UpdatedAt,
-		Repository: model.Repository{
-			Name:     contrib.Repo,
-			FullName: fullName,
-			HTMLURL:  fmt.Sprintf("https://github.com/%s", fullName),
-		},
-		Subject: model.Subject{
-			Title: contrib.Title,
-			URL:   contrib.HTMLURL,
-			Type:  subjectType,
-		},
-		URL:     contrib.HTMLURL,
-		Details: details,
-	}
-
-	return n
 }

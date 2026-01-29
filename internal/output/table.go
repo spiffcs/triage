@@ -154,7 +154,7 @@ func (f *TableFormatter) Format(items []triage.PrioritizedItem, w io.Writer) err
 		assigned = format.PadRight(assigned, assignedWidth, constants.ColAssigned)
 
 		// Build status column (review state, PR size, or comment count)
-		statusRes := f.formatStatus(n, item)
+		statusRes := f.formatStatus(n)
 		statusText := statusRes.text
 		statusWidth := statusRes.visibleWidth
 		if statusWidth > constants.ColStatus {
@@ -190,7 +190,7 @@ type statusResult struct {
 
 // formatStatus builds the status column showing review state, PR size, or activity
 // Returns the formatted string and its visible width (excluding ANSI codes)
-func (f *TableFormatter) formatStatus(n model.Item, _ triage.PrioritizedItem) statusResult {
+func (f *TableFormatter) formatStatus(n model.Item) statusResult {
 	if n.Details == nil {
 		reason := string(n.Reason)
 		return statusResult{reason, len(reason)}

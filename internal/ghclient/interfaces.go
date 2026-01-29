@@ -15,7 +15,7 @@ type GitHubFetcher interface {
 	GetAuthenticatedUser() (string, error)
 
 	// Notifications
-	ListUnreadItems(since time.Time) ([]model.Item, error)
+	ListUnreadNotifications(since time.Time) ([]model.Item, error)
 
 	// Search operations
 	ListReviewRequestedPRs(username string) ([]model.Item, error)
@@ -23,7 +23,7 @@ type GitHubFetcher interface {
 	ListAssignedIssues(username string) ([]model.Item, error)
 
 	// Orphaned contributions
-	ListOrphanedContributions(opts model.OrphanedSearchOptions) ([]model.Item, error)
+	ListOrphanedContributions(opts OrphanedSearchOptions) ([]model.Item, error)
 
 	// GraphQL enrichment (used by Enricher)
 	EnrichItemsGraphQL(items []model.Item, token string, onProgress func(completed, total int)) (int, error)

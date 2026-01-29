@@ -1,6 +1,6 @@
 # triage
 
-A terminal UI that helps you prioritize GitHub work. It pulls together unread notifications, PRs awaiting your review, PRs you've authored, issues assigned to you, and orphaned worke. It then scores and ranks them so you can focus on what matters most.
+A terminal UI that helps you prioritize GitHub work. It pulls together unread notifications, PRs awaiting your review, PRs you've authored, issues assigned to you, and orphaned work. It then scores and ranks them so you can focus on what matters most.
 
 ![Demo](.github/demo.png)
 
@@ -110,42 +110,6 @@ triage -l 20         # Show only first 20 items
 
 Find external contributions (PRs and issues from non-team members) that haven't received team engagement. This helps teams identify community contributions that may be falling through the cracks.
 
-```bash
-# Auto-discover repos where you have write access (default behavior)
-triage orphaned
-
-# Search specific repositories
-triage orphaned --repos anchore/vunnel,anchore/grype
-
-# Use config file settings (see Configuration section)
-triage orphaned
-
-# Customize detection thresholds
-triage orphaned --repos myorg/myrepo --stale-days 14 --consecutive 3
-
-# Look back further in time
-triage orphaned --repos myorg/myrepo --since 60d
-
-# Output as JSON for scripting
-triage orphaned --repos myorg/myrepo -f json
-
-# Verbose mode (disables TUI, shows logs)
-triage orphaned --repos myorg/myrepo -v
-```
-
-**Flags:**
-
-| Flag | Default | Description |
-|------|---------|-------------|
-| `--repos` | | Repositories to monitor (owner/repo) |
-| `--since` | `30d` | Look back period for contributions |
-| `--stale-days` | `7` | Days without team activity to be considered orphaned |
-| `--consecutive` | `2` | Consecutive author comments without response to flag |
-| `--limit` | `50` | Maximum results to display |
-| `-f, --format` | `table` | Output format (table, json) |
-| `-v, --verbose` | `0` | Increase verbosity (-v info, -vv debug) |
-| `--tui` | `auto` | Enable/disable TUI (true, false, auto) |
-
 **Detection criteria:**
 
 An item is flagged as orphaned when:
@@ -153,12 +117,6 @@ An item is flagged as orphaned when:
 - The author has posted multiple consecutive comments without a team response (`--consecutive`)
 
 External contributors are identified by their author association (not MEMBER, OWNER, or COLLABORATOR).
-
-**Interactive TUI:**
-
-The orphaned command uses the same interactive TUI as the main `triage` command, with a customized layout:
-- **Signal column** shows why each item needs attention (e.g., "3 unanswered", "No response 14d")
-- Keyboard navigation, mark as done, and open in browser work the same way
 
 ### Cache Management
 

@@ -25,7 +25,7 @@ func NewHeuristics(currentUser string, weights config.ScoreWeights, quickWinLabe
 	}
 }
 
-// Score calculates the priority score for a notification
+// Score calculates the priority score for an item
 func (h *Heuristics) Score(n *model.Item) int {
 	score := h.baseScore(n.Reason)
 
@@ -165,11 +165,6 @@ func (h *Heuristics) isLowHangingFruit(d *model.ItemDetails) bool {
 // DeterminePriority determines the priority for a notification (displayed in table)
 func (h *Heuristics) DeterminePriority(n *model.Item, score int) PriorityLevel {
 	reason := n.Reason
-
-	// Orphaned contributions get their own priority level
-	if reason == model.ReasonOrphaned {
-		return PriorityOrphaned
-	}
 
 	// Urgent: review requests (if enabled)
 	if reason == model.ReasonReviewRequested && h.Weights.ReviewRequestedIsUrgent {

@@ -9,7 +9,7 @@ import (
 // This interface enables mocking the prioritization engine in unit tests.
 type Prioritizer interface {
 	// Prioritize scores and sorts notifications by priority.
-	Prioritize(notifications []model.Item) []PrioritizedItem
+	Prioritize(items []model.Item) []PrioritizedItem
 }
 
 // Scorer defines the interface for scoring individual notifications.
