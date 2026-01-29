@@ -11,6 +11,7 @@ import (
 	"github.com/spiffcs/triage/internal/ghclient"
 	"github.com/spiffcs/triage/internal/log"
 	"github.com/spiffcs/triage/internal/model"
+	"github.com/spiffcs/triage/internal/service"
 	"github.com/spiffcs/triage/internal/tui"
 	"golang.org/x/sync/errgroup"
 )
@@ -53,7 +54,7 @@ type fetchOptions struct {
 }
 
 // fetchAll fetches all data sources in parallel using errgroup for context propagation.
-func fetchAll(ctx context.Context, store *ghclient.ItemStore, opts fetchOptions) (*fetchResult, error) {
+func fetchAll(ctx context.Context, svc *service.ItemService, opts fetchOptions) (*fetchResult, error) {
 	totalFetches := 5
 	if !opts.IncludeOrphaned || len(opts.OrphanedRepos) == 0 {
 		totalFetches = 4
@@ -82,7 +83,7 @@ func fetchAll(ctx context.Context, store *ghclient.ItemStore, opts fetchOptions)
 
 	// Fetch notifications (with caching)
 	g.Go(func() error {
-		notifResult, err := store.GetUnreadItems(gctx, opts.CurrentUser, opts.Since)
+		notifResult, err := svc.GetUnreadItems(gctx, opts.CurrentUser, opts.Since)
 		if err != nil {
 			if errors.Is(err, ghclient.ErrRateLimited) {
 				mu.Lock()
@@ -105,7 +106,7 @@ func fetchAll(ctx context.Context, store *ghclient.ItemStore, opts fetchOptions)
 
 	// Fetch review-requested PRs
 	g.Go(func() error {
-		prs, cached, err := store.GetReviewRequestedPRs(gctx, opts.CurrentUser)
+		prs, cached, err := svc.GetReviewRequestedPRs(gctx, opts.CurrentUser)
 		if err != nil {
 			if errors.Is(err, ghclient.ErrRateLimited) {
 				mu.Lock()
@@ -127,7 +128,7 @@ func fetchAll(ctx context.Context, store *ghclient.ItemStore, opts fetchOptions)
 
 	// Fetch authored PRs
 	g.Go(func() error {
-		prs, cached, err := store.GetAuthoredPRs(gctx, opts.CurrentUser)
+		prs, cached, err := svc.GetAuthoredPRs(gctx, opts.CurrentUser)
 		if err != nil {
 			if errors.Is(err, ghclient.ErrRateLimited) {
 				mu.Lock()
@@ -149,7 +150,7 @@ func fetchAll(ctx context.Context, store *ghclient.ItemStore, opts fetchOptions)
 
 	// Fetch assigned issues
 	g.Go(func() error {
-		issues, cached, err := store.GetAssignedIssues(gctx, opts.CurrentUser)
+		issues, cached, err := svc.GetAssignedIssues(gctx, opts.CurrentUser)
 		if err != nil {
 			if errors.Is(err, ghclient.ErrRateLimited) {
 				mu.Lock()
@@ -179,7 +180,7 @@ func fetchAll(ctx context.Context, store *ghclient.ItemStore, opts fetchOptions)
 				ConsecutiveAuthorComments: opts.ConsecutiveComments,
 				MaxPerRepo:                50,
 			}
-			orphaned, cached, err := store.GetOrphanedContributions(gctx, searchOpts, opts.CurrentUser)
+			orphaned, cached, err := svc.GetOrphanedContributions(gctx, searchOpts, opts.CurrentUser)
 			if err != nil {
 				if errors.Is(err, ghclient.ErrRateLimited) {
 					mu.Lock()

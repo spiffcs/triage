@@ -19,6 +19,7 @@ import (
 	"github.com/spiffcs/triage/internal/model"
 	"github.com/spiffcs/triage/internal/output"
 	"github.com/spiffcs/triage/internal/resolved"
+	"github.com/spiffcs/triage/internal/service"
 	"github.com/spiffcs/triage/internal/triage"
 	"github.com/spiffcs/triage/internal/tui"
 )
@@ -60,11 +61,10 @@ type authContext struct {
 	currentUser   string
 }
 
-// dataPipeline bundles store, enricher, and time information for data operations.
+// dataPipeline bundles service and time information for data operations.
 type dataPipeline struct {
-	store    *ghclient.ItemStore
-	enricher *ghclient.Enricher
-	since    time.Time
+	svc   *service.ItemService
+	since time.Time
 }
 
 // NewCmdList creates the list command.
@@ -124,13 +124,13 @@ func runList(cmd *cobra.Command, opts *Options) error {
 
 	// Fetch
 	fetchOpts := buildFetchOptions(auth.cfg, pipeline.since, auth.currentUser, opts.Since, rt.events)
-	result, err := fetchAll(ctx, pipeline.store, fetchOpts)
+	result, err := fetchAll(ctx, pipeline.svc, fetchOpts)
 	if err != nil {
 		log.Warn("some fetches failed", "error", err)
 	}
 
 	// Enrich
-	runEnrichment(ctx, pipeline.enricher, result, rt)
+	runEnrichment(ctx, pipeline.svc, result, rt)
 
 	// Process
 	if len(result.Notifications) == 0 {
@@ -203,7 +203,7 @@ func loadConfigAndAuth(ctx context.Context, rt *listRuntime) (*authContext, erro
 	}, nil
 }
 
-// initializeDataPipeline creates the store and enricher for data operations.
+// initializeDataPipeline creates the service for data operations.
 func initializeDataPipeline(ghClient *ghclient.Client, sinceStr string) (*dataPipeline, error) {
 	since, err := duration.Parse(sinceStr)
 	if err != nil {
@@ -217,13 +217,11 @@ func initializeDataPipeline(ghClient *ghclient.Client, sinceStr string) (*dataPi
 		log.Warn("failed to initialize cache", "error", cacheErr)
 	}
 
-	store := ghclient.NewItemStore(ghClient, c)
-	enricher := ghclient.NewEnricher(ghClient, c)
+	svc := service.New(ghClient, c)
 
 	return &dataPipeline{
-		store:    store,
-		enricher: enricher,
-		since:    since,
+		svc:   svc,
+		since: since,
 	}, nil
 }
 
@@ -250,7 +248,7 @@ func buildFetchOptions(cfg *config.Config, since time.Time, currentUser, sinceLa
 }
 
 // runEnrichment enriches all fetched items and sends TUI events.
-func runEnrichment(ctx context.Context, enricher *ghclient.Enricher, result *fetchResult, rt *listRuntime) {
+func runEnrichment(ctx context.Context, svc *service.ItemService, result *fetchResult, rt *listRuntime) {
 	rt.sendEvent(tui.TaskEnrich, tui.StatusRunning)
 
 	totalToEnrich := len(result.Notifications) + len(result.ReviewPRs) + len(result.AuthoredPRs)
@@ -258,7 +256,7 @@ func runEnrichment(ctx context.Context, enricher *ghclient.Enricher, result *fet
 	var totalCompleted int64
 
 	if totalToEnrich > 0 {
-		enrichItems(ctx, enricher, result.Notifications, result.ReviewPRs, result.AuthoredPRs, rt.useTUI, rt.events, totalToEnrich, &totalCompleted, &totalCacheHits)
+		enrichItems(ctx, svc, result.Notifications, result.ReviewPRs, result.AuthoredPRs, rt.useTUI, rt.events, totalToEnrich, &totalCompleted, &totalCacheHits)
 	}
 
 	enrichCompleteMsg := fmt.Sprintf("%d/%d", totalCompleted, totalToEnrich)
@@ -327,10 +325,10 @@ func renderOutput(items []triage.PrioritizedItem, opts *Options, cfg *config.Con
 	return formatter.Format(items, os.Stdout)
 }
 
-// enrichItems enriches notifications and PRs concurrently using the Enricher.
+// enrichItems enriches notifications and PRs concurrently using the ItemService.
 func enrichItems(
 	ctx context.Context,
-	enricher *ghclient.Enricher,
+	svc *service.ItemService,
 	notifications, reviewPRs, authoredPRs []model.Item,
 	useTUI bool,
 	events chan tui.Event,
@@ -380,7 +378,7 @@ func enrichItems(
 		enrichWg.Add(1)
 		go func() {
 			defer enrichWg.Done()
-			cacheHits, err := enricher.Enrich(ctx, notifications, onProgress)
+			cacheHits, err := svc.Enrich(ctx, notifications, onProgress)
 			if err != nil {
 				log.Warn("some notifications could not be enriched", "error", err)
 			}
@@ -393,7 +391,7 @@ func enrichItems(
 		enrichWg.Add(1)
 		go func() {
 			defer enrichWg.Done()
-			cacheHits, err := enricher.Enrich(ctx, reviewPRs, onProgress)
+			cacheHits, err := svc.Enrich(ctx, reviewPRs, onProgress)
 			if err != nil {
 				log.Warn("some review PRs could not be enriched", "error", err)
 			}
@@ -406,7 +404,7 @@ func enrichItems(
 		enrichWg.Add(1)
 		go func() {
 			defer enrichWg.Done()
-			cacheHits, err := enricher.Enrich(ctx, authoredPRs, onProgress)
+			cacheHits, err := svc.Enrich(ctx, authoredPRs, onProgress)
 			if err != nil {
 				log.Warn("some authored PRs could not be enriched", "error", err)
 			}

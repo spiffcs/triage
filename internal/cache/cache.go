@@ -12,15 +12,22 @@ import (
 	"github.com/spiffcs/triage/internal/constants"
 	"github.com/spiffcs/triage/internal/log"
 	"github.com/spiffcs/triage/internal/model"
-	"github.com/spiffcs/triage/internal/urlutil"
 )
+
+// CacheKey uniquely identifies an item in the cache.
+// The caller is responsible for extracting the number from the API URL.
+type CacheKey struct {
+	RepoFullName string
+	SubjectType  model.SubjectType
+	Number       int
+}
 
 // Cacher defines the interface for caching operations.
 // This interface enables mocking the cache in unit tests.
 type Cacher interface {
 	// Item details cache
-	Get(n *model.Item) (*model.ItemDetails, bool)
-	Set(n *model.Item, details *model.ItemDetails) error
+	Get(key CacheKey, updatedAt time.Time) (*model.ItemDetails, bool)
+	Set(key CacheKey, updatedAt time.Time, details *model.ItemDetails) error
 	Clear() error
 
 	// PR list cache
@@ -59,30 +66,26 @@ func NewCache() (*Cache, error) {
 	return &Cache{dir: cacheDir}, nil
 }
 
-// cacheKey generates a cache key for a notification
-func (c *Cache) cacheKey(repoFullName string, subjectType model.SubjectType, number int) string {
+// cacheKeyString generates a file name for a cache key
+func (c *Cache) cacheKeyString(key CacheKey) string {
 	// Replace slashes with underscores to avoid path issues while preserving uniqueness
-	safeName := strings.ReplaceAll(repoFullName, "/", "_")
+	safeName := strings.ReplaceAll(key.RepoFullName, "/", "_")
 	return fmt.Sprintf("%s_%s_%d.json",
 		safeName,
-		subjectType,
-		number,
+		key.SubjectType,
+		key.Number,
 	)
 }
 
-// Get retrieves cached details for a notification
-func (c *Cache) Get(n *model.Item) (*model.ItemDetails, bool) {
-	if n.Subject.URL == "" {
+// Get retrieves cached details for an item.
+// The caller provides the cache key and the item's updated time for invalidation.
+func (c *Cache) Get(key CacheKey, updatedAt time.Time) (*model.ItemDetails, bool) {
+	if key.Number == 0 {
 		return nil, false
 	}
 
-	number, err := urlutil.ExtractIssueNumber(n.Subject.URL)
-	if err != nil {
-		return nil, false
-	}
-
-	key := c.cacheKey(n.Repository.FullName, n.Subject.Type, number)
-	path := filepath.Join(c.dir, key)
+	keyStr := c.cacheKeyString(key)
+	path := filepath.Join(c.dir, keyStr)
 
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -96,12 +99,12 @@ func (c *Cache) Get(n *model.Item) (*model.ItemDetails, bool) {
 
 	// Invalidate if cache version doesn't match (format/schema changed)
 	if entry.Version != cacheVersion {
-		log.Debug("cache version mismatch", "cached", entry.Version, "current", cacheVersion, "key", key)
+		log.Debug("cache version mismatch", "cached", entry.Version, "current", cacheVersion, "key", keyStr)
 		return nil, false
 	}
 
-	// Invalidate if notification was updated after cache
-	if n.UpdatedAt.After(entry.UpdatedAt) {
+	// Invalidate if item was updated after cache
+	if updatedAt.After(entry.UpdatedAt) {
 		return nil, false
 	}
 
@@ -113,21 +116,17 @@ func (c *Cache) Get(n *model.Item) (*model.ItemDetails, bool) {
 	return entry.Details, true
 }
 
-// Set caches details for a notification
-func (c *Cache) Set(n *model.Item, details *model.ItemDetails) error {
-	if n.Subject.URL == "" || details == nil {
+// Set caches details for an item.
+// The caller provides the cache key and the item's updated time.
+func (c *Cache) Set(key CacheKey, updatedAt time.Time, details *model.ItemDetails) error {
+	if key.Number == 0 || details == nil {
 		return nil
-	}
-
-	number, err := urlutil.ExtractIssueNumber(n.Subject.URL)
-	if err != nil {
-		return err
 	}
 
 	entry := CacheEntry{
 		Details:   details,
 		CachedAt:  time.Now(),
-		UpdatedAt: n.UpdatedAt,
+		UpdatedAt: updatedAt,
 		Version:   cacheVersion,
 	}
 
@@ -136,8 +135,8 @@ func (c *Cache) Set(n *model.Item, details *model.ItemDetails) error {
 		return err
 	}
 
-	key := c.cacheKey(n.Repository.FullName, n.Subject.Type, number)
-	path := filepath.Join(c.dir, key)
+	keyStr := c.cacheKeyString(key)
+	path := filepath.Join(c.dir, keyStr)
 
 	return os.WriteFile(path, data, 0600)
 }

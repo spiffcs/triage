@@ -1,5 +1,5 @@
-// Package urlutil provides URL parsing utilities.
-package urlutil
+// Package service provides orchestration between GitHub API and caching layers.
+package service
 
 import (
 	"fmt"
@@ -7,10 +7,10 @@ import (
 	"strings"
 )
 
-// ExtractIssueNumber extracts the issue/PR number from the API URL.
+// ExtractIssueNumber extracts the issue/PR number from a GitHub API URL.
+// URL format: https://api.github.com/repos/owner/repo/issues/123
+// or: https://api.github.com/repos/owner/repo/pulls/123
 func ExtractIssueNumber(apiURL string) (int, error) {
-	// URL format: https://api.github.com/repos/owner/repo/issues/123
-	// or: https://api.github.com/repos/owner/repo/pulls/123
 	parts := strings.Split(apiURL, "/")
 	if len(parts) < 2 {
 		return 0, fmt.Errorf("invalid API URL format: %s", apiURL)
