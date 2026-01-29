@@ -64,10 +64,10 @@ func TestTruncateToWidth(t *testing.T) {
 	}{
 		{"no truncation needed", "hello", 10, "hello", 5},
 		{"exact fit", "hello", 5, "hello", 5},
-		{"truncate ascii", "hello world", 8, "hello...\x1b[0m", 8},
-		{"truncate with emoji", "🔥 fire", 5, "🔥...\x1b[0m", 5},
+		{"truncate ascii", "hello world", 8, "hello...", 8},
+		{"truncate with emoji", "🔥 fire", 5, "🔥...", 5},
 		{"preserve ansi", "\x1b[31mred text\x1b[0m", 6, "\x1b[31mred...\x1b[0m", 6},
-		{"very short max", "hello", 3, "...\x1b[0m", 3},
+		{"very short max", "hello", 3, "...", 3},
 	}
 
 	for _, tt := range tests {
