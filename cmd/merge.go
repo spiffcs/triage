@@ -15,24 +15,24 @@ type mergeResult struct {
 }
 
 // mergeAll merges all additional data sources into the notifications list.
-// It returns the merged list and counts of items added from each source.
-func mergeAll(notifications []model.Item, reviewPRs, authoredPRs, assignedIssues, orphaned []model.Item) ([]model.Item, mergeResult) {
-	result := mergeResult{}
+// It updates result.Notifications in place and returns counts of items added from each source.
+func mergeAll(result *fetchResult) mergeResult {
+	res := mergeResult{}
 
-	if len(reviewPRs) > 0 {
-		notifications, result.ReviewPRsAdded = mergeReviewRequests(notifications, reviewPRs)
+	if len(result.ReviewPRs) > 0 {
+		result.Notifications, res.ReviewPRsAdded = mergeReviewRequests(result.Notifications, result.ReviewPRs)
 	}
-	if len(authoredPRs) > 0 {
-		notifications, result.AuthoredPRsAdded = mergeAuthoredPRs(notifications, authoredPRs)
+	if len(result.AuthoredPRs) > 0 {
+		result.Notifications, res.AuthoredPRsAdded = mergeAuthoredPRs(result.Notifications, result.AuthoredPRs)
 	}
-	if len(assignedIssues) > 0 {
-		notifications, result.AssignedIssuesAdded = mergeAssignedIssues(notifications, assignedIssues)
+	if len(result.AssignedIssues) > 0 {
+		result.Notifications, res.AssignedIssuesAdded = mergeAssignedIssues(result.Notifications, result.AssignedIssues)
 	}
-	if len(orphaned) > 0 {
-		notifications, result.OrphanedAdded = mergeOrphaned(notifications, orphaned)
+	if len(result.Orphaned) > 0 {
+		result.Notifications, res.OrphanedAdded = mergeOrphaned(result.Notifications, result.Orphaned)
 	}
 
-	return notifications, result
+	return res
 }
 
 // mergeOrphaned adds orphaned contributions that aren't already in notifications.

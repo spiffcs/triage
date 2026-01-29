@@ -41,9 +41,9 @@ const (
 	// PR lists change more frequently).
 	PRListCacheTTL = 5 * time.Minute
 
-	// ItemListCacheTTL is the maximum age before a full
-	// item list refresh is required.
-	ItemListCacheTTL = 1 * time.Hour
+	// NotificationsCacheTTL is the maximum age before a full
+	// notification list refresh is required.
+	NotificationsCacheTTL = 1 * time.Hour
 )
 
 // Review state constants

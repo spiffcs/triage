@@ -189,11 +189,11 @@ func (c *Cache) DetailedStats() (*CacheStats, error) {
 		// Check if it's an item list cache entry (starts with "notif_list_")
 		if len(name) > 11 && name[:11] == "notif_list_" {
 			stats.NotifListTotal++
-			var itemEntry ItemListCacheEntry
-			if err := json.Unmarshal(data, &itemEntry); err != nil {
+			var notifEntry NotificationsCacheEntry
+			if err := json.Unmarshal(data, &notifEntry); err != nil {
 				continue
 			}
-			if now.Sub(itemEntry.CachedAt) <= ItemListCacheTTL {
+			if now.Sub(notifEntry.CachedAt) <= NotificationsCacheTTL {
 				stats.NotifListValid++
 			}
 		} else if len(name) > 14 && name[:14] == "orphaned_list_" {
@@ -243,8 +243,8 @@ type PRListCacheEntry struct {
 // but the canonical value is in the constants package.
 const PRListCacheTTL = constants.PRListCacheTTL
 
-// ItemListCacheEntry stores cached items with fetch timestamp
-type ItemListCacheEntry struct {
+// NotificationsCacheEntry stores cached notifications with fetch timestamp
+type NotificationsCacheEntry struct {
 	Items         []model.Item `json:"items"`
 	LastFetchTime time.Time    `json:"lastFetchTime"` // When we last hit the API
 	CachedAt      time.Time    `json:"cachedAt"`
@@ -252,10 +252,10 @@ type ItemListCacheEntry struct {
 	Version       int          `json:"version"`
 }
 
-// ItemListCacheTTL is the max age before a full refresh is required.
+// NotificationsCacheTTL is the max age before a full refresh is required.
 // Note: This is kept as a package-level constant for backward compatibility,
 // but the canonical value is in the constants package.
-const ItemListCacheTTL = constants.ItemListCacheTTL
+const NotificationsCacheTTL = constants.NotificationsCacheTTL
 
 // OrphanedListCacheTTL is shorter than notifications since orphaned data changes less frequently
 // but we want relatively fresh results for proactive outreach
@@ -329,7 +329,7 @@ func (c *Cache) GetItemList(username string, sinceTime time.Time) ([]model.Item,
 		return nil, time.Time{}, false
 	}
 
-	var entry ItemListCacheEntry
+	var entry NotificationsCacheEntry
 	if err := json.Unmarshal(data, &entry); err != nil {
 		return nil, time.Time{}, false
 	}
@@ -340,7 +340,7 @@ func (c *Cache) GetItemList(username string, sinceTime time.Time) ([]model.Item,
 	}
 
 	// Check TTL - if cache is too old, require full refresh
-	if time.Since(entry.CachedAt) > ItemListCacheTTL {
+	if time.Since(entry.CachedAt) > NotificationsCacheTTL {
 		return nil, time.Time{}, false
 	}
 
@@ -355,7 +355,7 @@ func (c *Cache) GetItemList(username string, sinceTime time.Time) ([]model.Item,
 
 // SetItemList caches an item list
 func (c *Cache) SetItemList(username string, items []model.Item, sinceTime time.Time) error {
-	entry := ItemListCacheEntry{
+	entry := NotificationsCacheEntry{
 		Items:         items,
 		LastFetchTime: time.Now(),
 		CachedAt:      time.Now(),

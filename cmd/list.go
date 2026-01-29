@@ -180,21 +180,15 @@ func runList(cmd *cobra.Command, _ []string, opts *Options) error {
 		log.Warn("some fetches failed", "error", err)
 	}
 
-	notifications := fetchResult.Notifications
-	reviewPRs := fetchResult.ReviewPRs
-	authoredPRs := fetchResult.AuthoredPRs
-	assignedIssues := fetchResult.AssignedIssues
-	orphaned := fetchResult.Orphaned
-
 	// Enrich all items concurrently
 	sendTaskEvent(events, tui.TaskEnrich, tui.StatusRunning)
 
-	totalToEnrich := len(notifications) + len(reviewPRs) + len(authoredPRs)
+	totalToEnrich := len(fetchResult.Notifications) + len(fetchResult.ReviewPRs) + len(fetchResult.AuthoredPRs)
 	var totalCacheHits int64
 	var totalCompleted int64
 
 	if totalToEnrich > 0 {
-		enrichItems(ghClient, notifications, reviewPRs, authoredPRs, prCache, opts.Workers, useTUI, events, totalToEnrich, &totalCompleted, &totalCacheHits)
+		enrichItems(ghClient, fetchResult.Notifications, fetchResult.ReviewPRs, fetchResult.AuthoredPRs, prCache, opts.Workers, useTUI, events, totalToEnrich, &totalCompleted, &totalCacheHits)
 	}
 
 	enrichCompleteMsg := fmt.Sprintf("%d/%d", totalCompleted, totalToEnrich)
@@ -204,21 +198,21 @@ func runList(cmd *cobra.Command, _ []string, opts *Options) error {
 	sendTaskEvent(events, tui.TaskEnrich, tui.StatusComplete, tui.WithMessage(enrichCompleteMsg))
 
 	// Merge all additional data sources into notifications
-	notifications, mergeResult := mergeAll(notifications, reviewPRs, authoredPRs, assignedIssues, orphaned)
-	if mergeResult.ReviewPRsAdded > 0 {
-		log.Info("PRs awaiting your review", "count", mergeResult.ReviewPRsAdded)
+	mergeRes := mergeAll(fetchResult)
+	if mergeRes.ReviewPRsAdded > 0 {
+		log.Info("PRs awaiting your review", "count", mergeRes.ReviewPRsAdded)
 	}
-	if mergeResult.AuthoredPRsAdded > 0 {
-		log.Info("your open PRs", "count", mergeResult.AuthoredPRsAdded)
+	if mergeRes.AuthoredPRsAdded > 0 {
+		log.Info("your open PRs", "count", mergeRes.AuthoredPRsAdded)
 	}
-	if mergeResult.AssignedIssuesAdded > 0 {
-		log.Info("issues assigned to you", "count", mergeResult.AssignedIssuesAdded)
+	if mergeRes.AssignedIssuesAdded > 0 {
+		log.Info("issues assigned to you", "count", mergeRes.AssignedIssuesAdded)
 	}
-	if mergeResult.OrphanedAdded > 0 {
-		log.Info("orphaned contributions", "count", mergeResult.OrphanedAdded)
+	if mergeRes.OrphanedAdded > 0 {
+		log.Info("orphaned contributions", "count", mergeRes.OrphanedAdded)
 	}
 
-	if len(notifications) == 0 {
+	if len(fetchResult.Notifications) == 0 {
 		closeTUI(events, tuiDone)
 		fmt.Println("No unread notifications, pending reviews, or open PRs found.")
 		return nil
@@ -233,18 +227,18 @@ func runList(cmd *cobra.Command, _ []string, opts *Options) error {
 
 	// Debug: log state of notifications before prioritization
 	var withDetails, withoutDetails int
-	for _, n := range notifications {
+	for _, n := range fetchResult.Notifications {
 		if n.Details != nil {
 			withDetails++
 		} else {
 			withoutDetails++
 		}
 	}
-	log.Debug("notifications before prioritization", "total", len(notifications), "withDetails", withDetails, "withoutDetails", withoutDetails)
+	log.Debug("notifications before prioritization", "total", len(fetchResult.Notifications), "withDetails", withDetails, "withoutDetails", withoutDetails)
 
 	// Prioritize
 	engine := triage.NewEngine(currentUser, weights, quickWinLabels)
-	items := engine.Prioritize(notifications)
+	items := engine.Prioritize(fetchResult.Notifications)
 
 	// Apply filters
 	items = applyFilters(items, opts, cfg, resolvedStore)
