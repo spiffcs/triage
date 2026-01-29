@@ -12,6 +12,7 @@ import (
 	"github.com/spiffcs/triage/internal/log"
 	"github.com/spiffcs/triage/internal/model"
 	"github.com/spiffcs/triage/internal/tui"
+	"golang.org/x/sync/errgroup"
 )
 
 // fetchResult contains all data fetched from GitHub.
@@ -51,11 +52,11 @@ type fetchOptions struct {
 	ConsecutiveComments int
 }
 
-// fetchAll fetches all data sources in parallel.
-func fetchAll(_ context.Context, store *ghclient.ItemStore, opts fetchOptions) (*fetchResult, error) {
-	totalFetches := 4
-	if len(opts.OrphanedRepos) > 0 {
-		totalFetches = 5
+// fetchAll fetches all data sources in parallel using errgroup for context propagation.
+func fetchAll(ctx context.Context, store *ghclient.ItemStore, opts fetchOptions) (*fetchResult, error) {
+	totalFetches := 5
+	if !opts.IncludeOrphaned || len(opts.OrphanedRepos) == 0 {
+		totalFetches = 4
 	}
 
 	// Track progress of parallel fetches
@@ -74,58 +75,103 @@ func fetchAll(_ context.Context, store *ghclient.ItemStore, opts fetchOptions) (
 		tui.WithProgress(0.0),
 		tui.WithMessage(fmt.Sprintf("for the past %s (0/%d sources)", opts.SinceLabel, totalFetches)))
 
-	var wg sync.WaitGroup
 	result := &fetchResult{}
+	var mu sync.Mutex
 
-	// Error tracking
-	var notifErr, reviewErr, authoredErr, assignedErr error
+	g, gctx := errgroup.WithContext(ctx)
 
 	// Fetch notifications (with caching)
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		notifResult, err := store.GetUnreadItems(opts.CurrentUser, opts.Since)
+	g.Go(func() error {
+		notifResult, err := store.GetUnreadItems(gctx, opts.CurrentUser, opts.Since)
 		if err != nil {
-			notifErr = err
+			if errors.Is(err, ghclient.ErrRateLimited) {
+				mu.Lock()
+				result.RateLimited = true
+				mu.Unlock()
+				updateFetchProgress()
+				return nil
+			}
 			updateFetchProgress()
-			return
+			return fmt.Errorf("notifications: %w", err)
 		}
+		mu.Lock()
 		result.Notifications = notifResult.Items
 		result.NotifCached = notifResult.FromCache
 		result.NotifNewCount = notifResult.NewCount
+		mu.Unlock()
 		updateFetchProgress()
-	}()
+		return nil
+	})
 
 	// Fetch review-requested PRs
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		result.ReviewPRs, result.ReviewCached, reviewErr = store.GetReviewRequestedPRs(opts.CurrentUser)
+	g.Go(func() error {
+		prs, cached, err := store.GetReviewRequestedPRs(gctx, opts.CurrentUser)
+		if err != nil {
+			if errors.Is(err, ghclient.ErrRateLimited) {
+				mu.Lock()
+				result.RateLimited = true
+				mu.Unlock()
+				updateFetchProgress()
+				return nil
+			}
+			updateFetchProgress()
+			return fmt.Errorf("review-requested PRs: %w", err)
+		}
+		mu.Lock()
+		result.ReviewPRs = prs
+		result.ReviewCached = cached
+		mu.Unlock()
 		updateFetchProgress()
-	}()
+		return nil
+	})
 
 	// Fetch authored PRs
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		result.AuthoredPRs, result.AuthoredCached, authoredErr = store.GetAuthoredPRs(opts.CurrentUser)
+	g.Go(func() error {
+		prs, cached, err := store.GetAuthoredPRs(gctx, opts.CurrentUser)
+		if err != nil {
+			if errors.Is(err, ghclient.ErrRateLimited) {
+				mu.Lock()
+				result.RateLimited = true
+				mu.Unlock()
+				updateFetchProgress()
+				return nil
+			}
+			updateFetchProgress()
+			return fmt.Errorf("authored PRs: %w", err)
+		}
+		mu.Lock()
+		result.AuthoredPRs = prs
+		result.AuthoredCached = cached
+		mu.Unlock()
 		updateFetchProgress()
-	}()
+		return nil
+	})
 
 	// Fetch assigned issues
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		result.AssignedIssues, result.AssignedCached, assignedErr = store.GetAssignedIssues(opts.CurrentUser)
+	g.Go(func() error {
+		issues, cached, err := store.GetAssignedIssues(gctx, opts.CurrentUser)
+		if err != nil {
+			if errors.Is(err, ghclient.ErrRateLimited) {
+				mu.Lock()
+				result.RateLimited = true
+				mu.Unlock()
+				updateFetchProgress()
+				return nil
+			}
+			updateFetchProgress()
+			return fmt.Errorf("assigned issues: %w", err)
+		}
+		mu.Lock()
+		result.AssignedIssues = issues
+		result.AssignedCached = cached
+		mu.Unlock()
 		updateFetchProgress()
-	}()
+		return nil
+	})
 
 	// Fetch orphaned contributions (if enabled)
-	var orphanedErr error
 	if len(opts.OrphanedRepos) > 0 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		g.Go(func() error {
 			searchOpts := ghclient.OrphanedSearchOptions{
 				Repos:                     opts.OrphanedRepos,
 				Since:                     opts.Since,
@@ -133,41 +179,29 @@ func fetchAll(_ context.Context, store *ghclient.ItemStore, opts fetchOptions) (
 				ConsecutiveAuthorComments: opts.ConsecutiveComments,
 				MaxPerRepo:                50,
 			}
-			result.Orphaned, result.OrphanedCached, orphanedErr = store.GetOrphanedContributions(searchOpts, opts.CurrentUser)
+			orphaned, cached, err := store.GetOrphanedContributions(gctx, searchOpts, opts.CurrentUser)
+			if err != nil {
+				if errors.Is(err, ghclient.ErrRateLimited) {
+					mu.Lock()
+					result.RateLimited = true
+					mu.Unlock()
+					updateFetchProgress()
+					return nil
+				}
+				updateFetchProgress()
+				return fmt.Errorf("orphaned contributions: %w", err)
+			}
+			mu.Lock()
+			result.Orphaned = orphaned
+			result.OrphanedCached = cached
+			mu.Unlock()
 			updateFetchProgress()
-		}()
+			return nil
+		})
 	}
 
-	wg.Wait()
-
-	// Handle fetch errors - check for rate limiting
-	if notifErr != nil {
-		if errors.Is(notifErr, ghclient.ErrRateLimited) {
-			result.RateLimited = true
-		} else {
-			sendTaskEvent(opts.Events, tui.TaskFetch, tui.StatusError, tui.WithError(notifErr))
-			return nil, fmt.Errorf("failed to fetch notifications: %w", notifErr)
-		}
-	}
-	var fetchErrs []error
-	for _, fe := range []struct {
-		err error
-		msg string
-	}{
-		{reviewErr, "review-requested PRs"},
-		{authoredErr, "authored PRs"},
-		{assignedErr, "assigned issues"},
-		{orphanedErr, "orphaned contributions"},
-	} {
-		if fe.err == nil {
-			continue
-		}
-		if errors.Is(fe.err, ghclient.ErrRateLimited) {
-			result.RateLimited = true
-			continue
-		}
-		fetchErrs = append(fetchErrs, fmt.Errorf("%s: %w", fe.msg, fe.err))
-	}
+	// Wait for all goroutines and collect errors
+	err := g.Wait()
 
 	// Send rate limit event to TUI if rate limited
 	if result.RateLimited && opts.Events != nil {
@@ -185,7 +219,12 @@ func fetchAll(_ context.Context, store *ghclient.ItemStore, opts fetchOptions) (
 	} else if result.NotifCached {
 		fetchMsg = fmt.Sprintf("for the past %s (%d items, cached)", opts.SinceLabel, totalFetched)
 	}
-	sendTaskEvent(opts.Events, tui.TaskFetch, tui.StatusComplete, tui.WithMessage(fetchMsg))
+
+	if err != nil {
+		sendTaskEvent(opts.Events, tui.TaskFetch, tui.StatusError, tui.WithError(err))
+	} else {
+		sendTaskEvent(opts.Events, tui.TaskFetch, tui.StatusComplete, tui.WithMessage(fetchMsg))
+	}
 
 	log.Info("fetched data",
 		"notifications", len(result.Notifications),
@@ -200,5 +239,5 @@ func fetchAll(_ context.Context, store *ghclient.ItemStore, opts fetchOptions) (
 		"assignedCached", result.AssignedCached,
 		"orphanedCached", result.OrphanedCached)
 
-	return result, errors.Join(fetchErrs...)
+	return result, err
 }

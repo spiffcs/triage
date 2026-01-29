@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -29,8 +30,8 @@ func NewCmdList(opts *Options) *cobra.Command {
 		Short: "List prioritized GitHub notifications(same as root triage)",
 		Long: `Fetches your unread GitHub notifications, enriches them with
 issue/PR details, and displays them sorted by priority.`,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runList(cmd, args, opts)
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runList(cmd, opts)
 		},
 	}
 
@@ -40,34 +41,20 @@ issue/PR details, and displays them sorted by priority.`,
 
 // addListFlags adds the list-specific flags to a command.
 func addListFlags(cmd *cobra.Command, opts *Options) {
-	cmd.Flags().StringVarP(&opts.Format, "format", "f", "", "Output format (table, json)")
-	cmd.Flags().IntVarP(&opts.Limit, "limit", "l", 0, "Limit number of results")
+	cmd.Flags().StringVarP(&opts.Format, "output", "o", "", "Output format (table, json)")
 	cmd.Flags().StringVarP(&opts.Since, "since", "s", "1w", "Show notifications since (e.g., 1w, 30d, 6mo)")
-	cmd.Flags().StringVarP(&opts.Priority, "priority", "p", "", "Filter by priority (urgent, important, quick-win, notable, fyi)")
-	cmd.Flags().StringVarP(&opts.Reason, "reason", "r", "", "Filter by reason ("+model.ItemReasonsString()+")")
-	cmd.Flags().StringVar(&opts.Repo, "repo", "", "Filter to specific repo (owner/repo)")
 	cmd.Flags().CountVarP(&opts.Verbosity, "verbose", "v", "Increase verbosity (-v info, -vv debug, -vvv trace)")
-	cmd.Flags().IntVarP(&opts.Workers, "workers", "w", 20, "Number of concurrent workers for fetching details")
-	cmd.Flags().BoolVar(&opts.IncludeMerged, "include-merged", false, "Include notifications for merged PRs")
-	cmd.Flags().BoolVar(&opts.IncludeClosed, "include-closed", false, "Include notifications for closed issues/PRs")
-	cmd.Flags().BoolVar(&opts.GreenCI, "green-ci", false, "Only show PRs with passing CI status (excludes issues)")
-	cmd.Flags().StringVarP(&opts.Type, "type", "t", "", "Filter by type (pr, issue)")
 
 	// TUI flag with tri-state: nil = auto, true = force, false = disable
 	cmd.Flags().Var(newTUIFlag(opts), "tui", "Enable/disable TUI progress (default: auto-detect)")
 
-	// Orphaned contribution flags
-	cmd.Flags().BoolVar(&opts.SkipOrphaned, "skip-orphaned", false, "Skip fetching orphaned contributions (included by default)")
-	cmd.Flags().StringSliceVar(&opts.OrphanedRepos, "orphaned-repos", nil, "Repositories to check for orphaned contributions (owner/repo)")
-	cmd.Flags().IntVar(&opts.StaleDays, "stale-days", 7, "Days without team response to be considered orphaned")
-	cmd.Flags().IntVar(&opts.ConsecutiveComments, "consecutive", 2, "Consecutive author comments without response to be considered orphaned")
 	// Profiling flags
 	cmd.Flags().StringVar(&opts.CPUProfile, "cpuprofile", "", "Write CPU profile to file")
 	cmd.Flags().StringVar(&opts.MemProfile, "memprofile", "", "Write memory profile to file")
 	cmd.Flags().StringVar(&opts.Trace, "trace", "", "Write execution trace to file")
 }
 
-func runList(cmd *cobra.Command, _ []string, opts *Options) error {
+func runList(cmd *cobra.Command, opts *Options) error {
 	ctx := cmd.Context()
 
 	// Set up profiling
@@ -104,7 +91,7 @@ func runList(cmd *cobra.Command, _ []string, opts *Options) error {
 		return fmt.Errorf("GitHub token not configured. Set the GITHUB_TOKEN environment variable")
 	}
 
-	ghClient, err := ghclient.NewClient(ctx, token)
+	ghClient, err := ghclient.NewClient(token)
 	if err != nil {
 		return err
 	}
@@ -123,7 +110,7 @@ func runList(cmd *cobra.Command, _ []string, opts *Options) error {
 
 	// Get current user for heuristics
 	sendTaskEvent(events, tui.TaskAuth, tui.StatusRunning)
-	currentUser, err := ghClient.GetAuthenticatedUser()
+	currentUser, err := ghClient.GetAuthenticatedUser(ctx)
 	if err != nil {
 		sendTaskEvent(events, tui.TaskAuth, tui.StatusError, tui.WithError(err))
 		closeTUI(events, tuiDone)
@@ -152,23 +139,13 @@ func runList(cmd *cobra.Command, _ []string, opts *Options) error {
 	// Create Enricher for GraphQL-based enrichment
 	enricher := ghclient.NewEnricher(ghClient, c)
 
-	// Determine orphaned settings - enabled by default unless explicitly skipped
-	orphanedEnabled := !opts.SkipOrphaned
-	orphanedRepos := opts.OrphanedRepos
-	staleDays := opts.StaleDays
-	consecutiveComments := opts.ConsecutiveComments
-
-	// Apply config defaults for orphaned if not set via flags
+	// Orphaned is always enabled if repos are configured
+	var orphanedRepos []string
+	var staleDays, consecutiveComments int
 	if cfg.Orphaned != nil {
-		if len(orphanedRepos) == 0 {
-			orphanedRepos = cfg.Orphaned.Repos
-		}
-		if staleDays == 7 && cfg.Orphaned.StaleDays > 0 {
-			staleDays = cfg.Orphaned.StaleDays
-		}
-		if consecutiveComments == 2 && cfg.Orphaned.ConsecutiveAuthorComments > 0 {
-			consecutiveComments = cfg.Orphaned.ConsecutiveAuthorComments
-		}
+		orphanedRepos = cfg.Orphaned.Repos
+		staleDays = cfg.Orphaned.StaleDays
+		consecutiveComments = cfg.Orphaned.ConsecutiveAuthorComments
 	}
 
 	// Fetch all data sources in parallel
@@ -177,7 +154,7 @@ func runList(cmd *cobra.Command, _ []string, opts *Options) error {
 		SinceLabel:          opts.Since,
 		CurrentUser:         currentUser,
 		Events:              events,
-		IncludeOrphaned:     orphanedEnabled && len(orphanedRepos) > 0,
+		IncludeOrphaned:     len(orphanedRepos) > 0,
 		OrphanedRepos:       orphanedRepos,
 		StaleDays:           staleDays,
 		ConsecutiveComments: consecutiveComments,
@@ -195,7 +172,7 @@ func runList(cmd *cobra.Command, _ []string, opts *Options) error {
 	var totalCompleted int64
 
 	if totalToEnrich > 0 {
-		enrichItems(enricher, fetchResult.Notifications, fetchResult.ReviewPRs, fetchResult.AuthoredPRs, useTUI, events, totalToEnrich, &totalCompleted, &totalCacheHits)
+		enrichItems(ctx, enricher, fetchResult.Notifications, fetchResult.ReviewPRs, fetchResult.AuthoredPRs, useTUI, events, totalToEnrich, &totalCompleted, &totalCacheHits)
 	}
 
 	enrichCompleteMsg := fmt.Sprintf("%d/%d", totalCompleted, totalToEnrich)
@@ -248,7 +225,7 @@ func runList(cmd *cobra.Command, _ []string, opts *Options) error {
 	items := engine.Prioritize(fetchResult.Notifications)
 
 	// Apply filters
-	items = applyFilters(items, opts, cfg, resolvedStore)
+	items = applyFilters(items, cfg, resolvedStore)
 
 	sendTaskEvent(events, tui.TaskProcess, tui.StatusComplete, tui.WithCount(len(items)))
 
@@ -275,6 +252,7 @@ func runList(cmd *cobra.Command, _ []string, opts *Options) error {
 
 // enrichItems enriches notifications and PRs concurrently using the Enricher.
 func enrichItems(
+	ctx context.Context,
 	enricher *ghclient.Enricher,
 	notifications, reviewPRs, authoredPRs []model.Item,
 	useTUI bool,
@@ -325,7 +303,7 @@ func enrichItems(
 		enrichWg.Add(1)
 		go func() {
 			defer enrichWg.Done()
-			cacheHits, err := enricher.Enrich(notifications, onProgress)
+			cacheHits, err := enricher.Enrich(ctx, notifications, onProgress)
 			if err != nil {
 				log.Warn("some notifications could not be enriched", "error", err)
 			}
@@ -338,7 +316,7 @@ func enrichItems(
 		enrichWg.Add(1)
 		go func() {
 			defer enrichWg.Done()
-			cacheHits, err := enricher.Enrich(reviewPRs, onProgress)
+			cacheHits, err := enricher.Enrich(ctx, reviewPRs, onProgress)
 			if err != nil {
 				log.Warn("some review PRs could not be enriched", "error", err)
 			}
@@ -351,7 +329,7 @@ func enrichItems(
 		enrichWg.Add(1)
 		go func() {
 			defer enrichWg.Done()
-			cacheHits, err := enricher.Enrich(authoredPRs, onProgress)
+			cacheHits, err := enricher.Enrich(ctx, authoredPRs, onProgress)
 			if err != nil {
 				log.Warn("some authored PRs could not be enriched", "error", err)
 			}
@@ -367,60 +345,22 @@ func enrichItems(
 }
 
 // applyFilters applies all configured filters to the items.
-func applyFilters(items []triage.PrioritizedItem, opts *Options, cfg *config.Config, resolvedStore *resolved.Store) []triage.PrioritizedItem {
-	if !opts.IncludeMerged {
-		items = triage.FilterOutMerged(items)
-	}
-	if !opts.IncludeClosed {
-		items = triage.FilterOutClosed(items)
-	}
+func applyFilters(items []triage.PrioritizedItem, cfg *config.Config, resolvedStore *resolved.Store) []triage.PrioritizedItem {
+	// Filter out merged and closed items by default
+	items = triage.FilterOutMerged(items)
+	items = triage.FilterOutClosed(items)
 
 	// Filter out unenriched (inaccessible) items - always applied
 	items = triage.FilterOutUnenriched(items)
-
-	if opts.Priority != "" {
-		items = triage.FilterByPriority(items, triage.PriorityLevel(opts.Priority))
-	}
-
-	if opts.Reason != "" {
-		items = triage.FilterByReason(items, []model.ItemReason{model.ItemReason(opts.Reason)})
-	}
-
-	if opts.Repo != "" {
-		items = triage.FilterByRepo(items, opts.Repo)
-	}
-
-	if opts.Type != "" {
-		var subjectType model.SubjectType
-		switch opts.Type {
-		case "pr", "PR", "pullrequest", "PullRequest":
-			subjectType = model.SubjectPullRequest
-		case "issue", "Issue":
-			subjectType = model.SubjectIssue
-		}
-		if subjectType != "" {
-			items = triage.FilterByType(items, subjectType)
-		}
-	}
 
 	// Filter out excluded authors (bots like dependabot, renovate, etc.)
 	if len(cfg.ExcludeAuthors) > 0 {
 		items = triage.FilterByExcludedAuthors(items, cfg.ExcludeAuthors)
 	}
 
-	// Filter to only show PRs with green CI
-	if opts.GreenCI {
-		items = triage.FilterByGreenCI(items)
-	}
-
 	// Filter out resolved items (that haven't had new activity)
 	if resolvedStore != nil {
 		items = triage.FilterResolved(items, resolvedStore)
-	}
-
-	// Apply limit
-	if opts.Limit > 0 && len(items) > opts.Limit {
-		items = items[:opts.Limit]
 	}
 
 	return items

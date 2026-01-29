@@ -84,13 +84,11 @@ func parseRateLimitHeaders(resp *http.Response) (remaining, limit int, resetAt t
 // Client wraps the GitHub API client
 type Client struct {
 	client *gh.Client
-	ctx    context.Context
 	token  string
 }
 
 // NewClient creates a new GitHub client using a personal access token.
-// The context is used for all API requests and enables graceful cancellation.
-func NewClient(ctx context.Context, token string) (*Client, error) {
+func NewClient(token string) (*Client, error) {
 	if token == "" {
 		token = os.Getenv("GITHUB_TOKEN")
 	}
@@ -101,7 +99,7 @@ func NewClient(ctx context.Context, token string) (*Client, error) {
 	ts := oauth2.StaticTokenSource(
 		&oauth2.Token{AccessToken: token},
 	)
-	tc := oauth2.NewClient(ctx, ts)
+	tc := oauth2.NewClient(context.Background(), ts)
 
 	// Wrap transport with rate limit handling
 	tc.Transport = &rateLimitTransport{
@@ -112,14 +110,13 @@ func NewClient(ctx context.Context, token string) (*Client, error) {
 
 	return &Client{
 		client: client,
-		ctx:    ctx,
 		token:  token,
 	}, nil
 }
 
 // GetAuthenticatedUser returns the authenticated user's login
-func (c *Client) GetAuthenticatedUser() (string, error) {
-	user, _, err := c.client.Users.Get(c.ctx, "")
+func (c *Client) GetAuthenticatedUser(ctx context.Context) (string, error) {
+	user, _, err := c.client.Users.Get(ctx, "")
 	if err != nil {
 		return "", fmt.Errorf("failed to get authenticated user: %w", err)
 	}
@@ -131,18 +128,13 @@ func (c *Client) RawClient() *gh.Client {
 	return c.client
 }
 
-// Context returns the client's context
-func (c *Client) Context() context.Context {
-	return c.ctx
-}
-
 // Token returns the GitHub token for GraphQL API calls
 func (c *Client) Token() string {
 	return c.token
 }
 
 // ListReviewRequestedPRs fetches open PRs where the user is a requested reviewer
-func (c *Client) ListReviewRequestedPRs(username string) ([]model.Item, error) {
+func (c *Client) ListReviewRequestedPRs(ctx context.Context, username string) ([]model.Item, error) {
 	query := fmt.Sprintf("is:pr is:open review-requested:%s", username)
 
 	opts := &gh.SearchOptions{
@@ -156,7 +148,7 @@ func (c *Client) ListReviewRequestedPRs(username string) ([]model.Item, error) {
 	var notifications []model.Item
 
 	for {
-		result, resp, err := c.client.Search.Issues(c.ctx, query, opts)
+		result, resp, err := c.client.Search.Issues(ctx, query, opts)
 		if err != nil {
 			return nil, fmt.Errorf("failed to search for review-requested PRs: %w", err)
 		}
@@ -273,7 +265,7 @@ func splitBySlash(s string) []string {
 }
 
 // ListAssignedIssues fetches open issues assigned to the user
-func (c *Client) ListAssignedIssues(username string) ([]model.Item, error) {
+func (c *Client) ListAssignedIssues(ctx context.Context, username string) ([]model.Item, error) {
 	query := fmt.Sprintf("is:issue is:open assignee:%s", username)
 
 	opts := &gh.SearchOptions{
@@ -287,7 +279,7 @@ func (c *Client) ListAssignedIssues(username string) ([]model.Item, error) {
 	var notifications []model.Item
 
 	for {
-		result, resp, err := c.client.Search.Issues(c.ctx, query, opts)
+		result, resp, err := c.client.Search.Issues(ctx, query, opts)
 		if err != nil {
 			return nil, fmt.Errorf("failed to search for assigned issues: %w", err)
 		}
@@ -359,7 +351,7 @@ func (c *Client) assignedIssueToItem(issue *gh.Issue) model.Item {
 }
 
 // ListAuthoredPRs fetches open PRs authored by the user
-func (c *Client) ListAuthoredPRs(username string) ([]model.Item, error) {
+func (c *Client) ListAuthoredPRs(ctx context.Context, username string) ([]model.Item, error) {
 	query := fmt.Sprintf("is:pr is:open author:%s", username)
 
 	opts := &gh.SearchOptions{
@@ -373,7 +365,7 @@ func (c *Client) ListAuthoredPRs(username string) ([]model.Item, error) {
 	var notifications []model.Item
 
 	for {
-		result, resp, err := c.client.Search.Issues(c.ctx, query, opts)
+		result, resp, err := c.client.Search.Issues(ctx, query, opts)
 		if err != nil {
 			return nil, fmt.Errorf("failed to search for authored PRs: %w", err)
 		}

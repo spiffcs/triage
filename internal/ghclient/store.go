@@ -1,6 +1,7 @@
 package ghclient
 
 import (
+	"context"
 	"time"
 
 	"github.com/spiffcs/triage/internal/cache"
@@ -34,7 +35,7 @@ type ItemFetchResult struct {
 
 // GetReviewRequestedPRs fetches PRs with caching support.
 // Returns (items, fromCache, error).
-func (s *ItemStore) GetReviewRequestedPRs(username string) ([]model.Item, bool, error) {
+func (s *ItemStore) GetReviewRequestedPRs(ctx context.Context, username string) ([]model.Item, bool, error) {
 	// Check cache first
 	if s.cache != nil {
 		if prs, ok := s.cache.GetPRList(username, "review-requested"); ok {
@@ -48,7 +49,7 @@ func (s *ItemStore) GetReviewRequestedPRs(username string) ([]model.Item, bool, 
 	}
 
 	// Fetch from API
-	prs, err := s.fetcher.ListReviewRequestedPRs(username)
+	prs, err := s.fetcher.ListReviewRequestedPRs(ctx, username)
 	if err != nil {
 		return nil, false, err
 	}
@@ -65,7 +66,7 @@ func (s *ItemStore) GetReviewRequestedPRs(username string) ([]model.Item, bool, 
 
 // GetAuthoredPRs fetches authored PRs with caching support.
 // Returns (items, fromCache, error).
-func (s *ItemStore) GetAuthoredPRs(username string) ([]model.Item, bool, error) {
+func (s *ItemStore) GetAuthoredPRs(ctx context.Context, username string) ([]model.Item, bool, error) {
 	// Check cache first
 	if s.cache != nil {
 		if prs, ok := s.cache.GetPRList(username, "authored"); ok {
@@ -79,7 +80,7 @@ func (s *ItemStore) GetAuthoredPRs(username string) ([]model.Item, bool, error) 
 	}
 
 	// Fetch from API
-	prs, err := s.fetcher.ListAuthoredPRs(username)
+	prs, err := s.fetcher.ListAuthoredPRs(ctx, username)
 	if err != nil {
 		return nil, false, err
 	}
@@ -96,7 +97,7 @@ func (s *ItemStore) GetAuthoredPRs(username string) ([]model.Item, bool, error) 
 
 // GetAssignedIssues fetches assigned issues with caching support.
 // Returns (items, fromCache, error).
-func (s *ItemStore) GetAssignedIssues(username string) ([]model.Item, bool, error) {
+func (s *ItemStore) GetAssignedIssues(ctx context.Context, username string) ([]model.Item, bool, error) {
 	// Check cache first
 	if s.cache != nil {
 		if issues, ok := s.cache.GetPRList(username, "assigned-issues"); ok {
@@ -110,7 +111,7 @@ func (s *ItemStore) GetAssignedIssues(username string) ([]model.Item, bool, erro
 	}
 
 	// Fetch from API
-	issues, err := s.fetcher.ListAssignedIssues(username)
+	issues, err := s.fetcher.ListAssignedIssues(ctx, username)
 	if err != nil {
 		return nil, false, err
 	}
@@ -127,7 +128,7 @@ func (s *ItemStore) GetAssignedIssues(username string) ([]model.Item, bool, erro
 
 // GetUnreadItems fetches items with incremental caching.
 // It returns cached items merged with any new ones since the last fetch.
-func (s *ItemStore) GetUnreadItems(username string, since time.Time) (*ItemFetchResult, error) {
+func (s *ItemStore) GetUnreadItems(ctx context.Context, username string, since time.Time) (*ItemFetchResult, error) {
 	result := &ItemFetchResult{}
 
 	// Check if rate limited - return cached data if available
@@ -147,7 +148,7 @@ func (s *ItemStore) GetUnreadItems(username string, since time.Time) (*ItemFetch
 		cached, lastFetch, ok := s.cache.GetItemList(username, since)
 		if ok {
 			// Fetch only NEW notifications since last fetch
-			newItems, err := s.fetcher.ListUnreadNotifications(lastFetch)
+			newItems, err := s.fetcher.ListUnreadNotifications(ctx, lastFetch)
 			if err != nil {
 				// Return cached on error
 				log.Debug("failed to fetch new items, using cache", "error", err)
@@ -172,7 +173,7 @@ func (s *ItemStore) GetUnreadItems(username string, since time.Time) (*ItemFetch
 	}
 
 	// No cache - full fetch
-	items, err := s.fetcher.ListUnreadNotifications(since)
+	items, err := s.fetcher.ListUnreadNotifications(ctx, since)
 	if err != nil {
 		return nil, err
 	}
@@ -192,7 +193,7 @@ func (s *ItemStore) GetUnreadItems(username string, since time.Time) (*ItemFetch
 
 // GetOrphanedContributions fetches orphaned contributions with caching support.
 // Returns (items, fromCache, error).
-func (s *ItemStore) GetOrphanedContributions(opts OrphanedSearchOptions, username string) ([]model.Item, bool, error) {
+func (s *ItemStore) GetOrphanedContributions(ctx context.Context, opts OrphanedSearchOptions, username string) ([]model.Item, bool, error) {
 	if len(opts.Repos) == 0 {
 		return nil, false, nil
 	}
@@ -205,7 +206,7 @@ func (s *ItemStore) GetOrphanedContributions(opts OrphanedSearchOptions, usernam
 	}
 
 	// Fetch fresh data
-	orphaned, err := s.fetcher.ListOrphanedContributions(opts)
+	orphaned, err := s.fetcher.ListOrphanedContributions(ctx, opts)
 	if err != nil {
 		return nil, false, err
 	}

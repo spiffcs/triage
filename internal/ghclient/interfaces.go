@@ -2,6 +2,7 @@
 package ghclient
 
 import (
+	"context"
 	"time"
 
 	"github.com/spiffcs/triage/internal/model"
@@ -12,21 +13,21 @@ import (
 // without any caching logic. Use ItemStore for cache-aware fetching.
 type GitHubFetcher interface {
 	// Authentication
-	GetAuthenticatedUser() (string, error)
+	GetAuthenticatedUser(ctx context.Context) (string, error)
 
 	// Notifications
-	ListUnreadNotifications(since time.Time) ([]model.Item, error)
+	ListUnreadNotifications(ctx context.Context, since time.Time) ([]model.Item, error)
 
 	// Search operations
-	ListReviewRequestedPRs(username string) ([]model.Item, error)
-	ListAuthoredPRs(username string) ([]model.Item, error)
-	ListAssignedIssues(username string) ([]model.Item, error)
+	ListReviewRequestedPRs(ctx context.Context, username string) ([]model.Item, error)
+	ListAuthoredPRs(ctx context.Context, username string) ([]model.Item, error)
+	ListAssignedIssues(ctx context.Context, username string) ([]model.Item, error)
 
 	// Orphaned contributions
-	ListOrphanedContributions(opts OrphanedSearchOptions) ([]model.Item, error)
+	ListOrphanedContributions(ctx context.Context, opts OrphanedSearchOptions) ([]model.Item, error)
 
 	// GraphQL enrichment (used by Enricher)
-	EnrichItemsGraphQL(items []model.Item, token string, onProgress func(completed, total int)) (int, error)
+	EnrichItemsGraphQL(ctx context.Context, items []model.Item, token string, onProgress func(completed, total int)) (int, error)
 
 	// Token access (needed for GraphQL operations)
 	Token() string

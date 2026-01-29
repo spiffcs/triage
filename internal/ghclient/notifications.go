@@ -1,6 +1,7 @@
 package ghclient
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"sync"
@@ -21,7 +22,7 @@ type NotificationOptions struct {
 
 // ListNotifications fetches notifications with optional filtering.
 // Uses parallel fetching when multiple pages are detected.
-func (c *Client) ListNotifications(opts NotificationOptions) ([]model.Item, error) {
+func (c *Client) ListNotifications(ctx context.Context, opts NotificationOptions) ([]model.Item, error) {
 	listOpts := &gh.NotificationListOptions{
 		All:           opts.All,
 		Participating: opts.Participating,
@@ -35,7 +36,7 @@ func (c *Client) ListNotifications(opts NotificationOptions) ([]model.Item, erro
 	}
 
 	// Fetch first page to get pagination info
-	notifications, resp, err := c.client.Activity.ListNotifications(c.ctx, listOpts)
+	notifications, resp, err := c.client.Activity.ListNotifications(ctx, listOpts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list notifications: %w", err)
 	}
@@ -52,7 +53,7 @@ func (c *Client) ListNotifications(opts NotificationOptions) ([]model.Item, erro
 	lastPage := resp.LastPage
 	if lastPage == 0 {
 		// Fallback to sequential if we can't determine last page
-		return c.listNotificationsSequential(opts, allItems, resp.NextPage)
+		return c.listNotificationsSequential(ctx, opts, allItems, resp.NextPage)
 	}
 
 	// Fetch remaining pages in parallel
@@ -82,7 +83,7 @@ func (c *Client) ListNotifications(opts NotificationOptions) ([]model.Item, erro
 				pageOpts.Since = opts.Since
 			}
 
-			notifs, _, err := c.client.Activity.ListNotifications(c.ctx, pageOpts)
+			notifs, _, err := c.client.Activity.ListNotifications(ctx, pageOpts)
 			if err != nil {
 				results <- pageResult{page: p, err: err}
 				return
@@ -136,7 +137,7 @@ func filterNotifications(notifications []*gh.Notification, opts NotificationOpti
 }
 
 // listNotificationsSequential fetches remaining pages sequentially (fallback)
-func (c *Client) listNotificationsSequential(opts NotificationOptions, existing []model.Item, startPage int) ([]model.Item, error) {
+func (c *Client) listNotificationsSequential(ctx context.Context, opts NotificationOptions, existing []model.Item, startPage int) ([]model.Item, error) {
 	allItems := existing
 
 	listOpts := &gh.NotificationListOptions{
@@ -153,7 +154,7 @@ func (c *Client) listNotificationsSequential(opts NotificationOptions, existing 
 	}
 
 	for {
-		notifications, resp, err := c.client.Activity.ListNotifications(c.ctx, listOpts)
+		notifications, resp, err := c.client.Activity.ListNotifications(ctx, listOpts)
 		if err != nil {
 			return nil, fmt.Errorf("failed to list items: %w", err)
 		}
@@ -170,8 +171,8 @@ func (c *Client) listNotificationsSequential(opts NotificationOptions, existing 
 }
 
 // ListUnreadNotifications fetches only unread notifications (convenience method)
-func (c *Client) ListUnreadNotifications(since time.Time) ([]model.Item, error) {
-	return c.ListNotifications(NotificationOptions{
+func (c *Client) ListUnreadNotifications(ctx context.Context, since time.Time) ([]model.Item, error) {
+	return c.ListNotifications(ctx, NotificationOptions{
 		All:   false,
 		Since: since,
 		Types: []model.SubjectType{model.SubjectIssue, model.SubjectPullRequest}, // Only issues and PRs
@@ -179,8 +180,8 @@ func (c *Client) ListUnreadNotifications(since time.Time) ([]model.Item, error) 
 }
 
 // MarkAsRead marks a notification as read
-func (c *Client) MarkAsRead(notificationID string) error {
-	_, err := c.client.Activity.MarkThreadRead(c.ctx, notificationID)
+func (c *Client) MarkAsRead(ctx context.Context, notificationID string) error {
+	_, err := c.client.Activity.MarkThreadRead(ctx, notificationID)
 	if err != nil {
 		return fmt.Errorf("failed to mark notification as read: %w", err)
 	}

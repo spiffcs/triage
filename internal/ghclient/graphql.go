@@ -2,6 +2,7 @@ package ghclient
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -109,7 +110,7 @@ type batchResult struct {
 
 // EnrichItemsGraphQL enriches items using GraphQL batch queries.
 // Returns the number of successfully enriched items.
-func (c *Client) EnrichItemsGraphQL(items []model.Item, token string, onProgress func(completed, total int)) (int, error) {
+func (c *Client) EnrichItemsGraphQL(ctx context.Context, items []model.Item, token string, onProgress func(completed, total int)) (int, error) {
 	// Separate PRs and Issues, and identify items that need enrichment
 	var enrichItems []enrichmentItem
 
@@ -175,7 +176,7 @@ func (c *Client) EnrichItemsGraphQL(items []model.Item, token string, onProgress
 			sem <- struct{}{}        // Acquire semaphore
 			defer func() { <-sem }() // Release semaphore
 
-			result := c.processBatch(b, token)
+			result := c.processBatch(ctx, b, token)
 			result.batchIdx = idx
 			result.batchSize = len(b)
 			results <- result
@@ -239,7 +240,7 @@ func (c *Client) EnrichItemsGraphQL(items []model.Item, token string, onProgress
 }
 
 // processBatch processes a single batch, fetching PRs and Issues in parallel.
-func (c *Client) processBatch(batch []enrichmentItem, token string) batchResult {
+func (c *Client) processBatch(ctx context.Context, batch []enrichmentItem, token string) batchResult {
 	var prItems, issueItems []enrichmentItem
 	for _, item := range batch {
 		if item.isPR {
@@ -260,7 +261,7 @@ func (c *Client) processBatch(batch []enrichmentItem, token string) batchResult 
 		go func() {
 			defer wg.Done()
 			log.Debug("enriching PRs via GraphQL", "count", len(prItems))
-			prResults, prErr = c.batchEnrichPRs(prItems, token)
+			prResults, prErr = c.batchEnrichPRs(ctx, prItems, token)
 			if prErr == nil {
 				log.Debug("GraphQL PR enrichment returned", "results", len(prResults))
 			}
@@ -271,7 +272,7 @@ func (c *Client) processBatch(batch []enrichmentItem, token string) batchResult 
 		go func() {
 			defer wg.Done()
 			log.Debug("enriching Issues via GraphQL", "count", len(issueItems))
-			issueResults, issueErr = c.batchEnrichIssues(issueItems, token)
+			issueResults, issueErr = c.batchEnrichIssues(ctx, issueItems, token)
 		}()
 	}
 	wg.Wait()
@@ -285,13 +286,13 @@ func (c *Client) processBatch(batch []enrichmentItem, token string) batchResult 
 }
 
 // batchEnrichPRs fetches PR details for multiple items in a single GraphQL query.
-func (c *Client) batchEnrichPRs(items []enrichmentItem, token string) (map[int]*PRGraphQLResult, error) {
+func (c *Client) batchEnrichPRs(ctx context.Context, items []enrichmentItem, token string) (map[int]*PRGraphQLResult, error) {
 	if len(items) == 0 {
 		return nil, nil
 	}
 
 	query := buildPRQuery(items)
-	respData, err := c.executeGraphQL(query, token)
+	respData, err := c.executeGraphQL(ctx, query, token)
 	if err != nil {
 		return nil, err
 	}
@@ -300,13 +301,13 @@ func (c *Client) batchEnrichPRs(items []enrichmentItem, token string) (map[int]*
 }
 
 // batchEnrichIssues fetches Issue details for multiple items in a single GraphQL query.
-func (c *Client) batchEnrichIssues(items []enrichmentItem, token string) (map[int]*IssueGraphQLResult, error) {
+func (c *Client) batchEnrichIssues(ctx context.Context, items []enrichmentItem, token string) (map[int]*IssueGraphQLResult, error) {
 	if len(items) == 0 {
 		return nil, nil
 	}
 
 	query := buildIssueQuery(items)
-	respData, err := c.executeGraphQL(query, token)
+	respData, err := c.executeGraphQL(ctx, query, token)
 	if err != nil {
 		return nil, err
 	}
@@ -315,14 +316,14 @@ func (c *Client) batchEnrichIssues(items []enrichmentItem, token string) (map[in
 }
 
 // executeGraphQL executes a GraphQL query against GitHub's API.
-func (c *Client) executeGraphQL(query string, token string) (json.RawMessage, error) {
+func (c *Client) executeGraphQL(ctx context.Context, query string, token string) (json.RawMessage, error) {
 	reqBody := graphqlRequest{Query: query}
 	bodyBytes, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal GraphQL request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(c.ctx, "POST", graphqlEndpoint, bytes.NewReader(bodyBytes))
+	req, err := http.NewRequestWithContext(ctx, "POST", graphqlEndpoint, bytes.NewReader(bodyBytes))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create GraphQL request: %w", err)
 	}

@@ -1,6 +1,7 @@
 package ghclient
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -46,7 +47,7 @@ type orphanedRepoResult struct {
 }
 
 // ListOrphanedContributions finds external PRs/issues needing attention
-func (c *Client) ListOrphanedContributions(opts OrphanedSearchOptions) ([]model.Item, error) {
+func (c *Client) ListOrphanedContributions(ctx context.Context, opts OrphanedSearchOptions) ([]model.Item, error) {
 	if len(opts.Repos) == 0 {
 		return nil, nil
 	}
@@ -77,10 +78,20 @@ func (c *Client) ListOrphanedContributions(opts OrphanedSearchOptions) ([]model.
 		wg.Add(1)
 		go func(owner, repo, fullName string) {
 			defer wg.Done()
-			sem <- struct{}{}        // Acquire
+
+			// Check for context cancellation before acquiring semaphore
+			select {
+			case <-ctx.Done():
+				results <- orphanedRepoResult{
+					repoFullName: fullName,
+					err:          ctx.Err(),
+				}
+				return
+			case sem <- struct{}{}: // Acquire
+			}
 			defer func() { <-sem }() // Release
 
-			items, err := c.fetchOrphanedForRepo(owner, repo, opts)
+			items, err := c.fetchOrphanedForRepo(ctx, owner, repo, opts)
 			results <- orphanedRepoResult{
 				repoFullName: fullName,
 				items:        items,
@@ -111,9 +122,9 @@ func (c *Client) ListOrphanedContributions(opts OrphanedSearchOptions) ([]model.
 }
 
 // fetchOrphanedForRepo fetches orphaned contributions for a single repository
-func (c *Client) fetchOrphanedForRepo(owner, repo string, opts OrphanedSearchOptions) ([]model.Item, error) {
+func (c *Client) fetchOrphanedForRepo(ctx context.Context, owner, repo string, opts OrphanedSearchOptions) ([]model.Item, error) {
 	query := buildOrphanedQuery(owner, repo)
-	respData, err := c.executeGraphQL(query, c.token)
+	respData, err := c.executeGraphQL(ctx, query, c.token)
 	if err != nil {
 		return nil, err
 	}

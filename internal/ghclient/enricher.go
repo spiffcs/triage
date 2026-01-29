@@ -1,6 +1,8 @@
 package ghclient
 
 import (
+	"context"
+
 	"github.com/spiffcs/triage/internal/cache"
 	"github.com/spiffcs/triage/internal/log"
 	"github.com/spiffcs/triage/internal/model"
@@ -25,7 +27,7 @@ func NewEnricher(fetcher GitHubFetcher, c *cache.Cache) *Enricher {
 // Enrich enriches items using GraphQL batch queries with caching.
 // Uses GraphQL API (separate quota from Core API) for efficient batch enrichment.
 // Returns the number of cache hits and any error.
-func (e *Enricher) Enrich(items []model.Item, onProgress func(completed, total int)) (int, error) {
+func (e *Enricher) Enrich(ctx context.Context, items []model.Item, onProgress func(completed, total int)) (int, error) {
 	// Use provided cache or create one internally
 	c := e.cache
 	if c == nil {
@@ -70,7 +72,7 @@ func (e *Enricher) Enrich(items []model.Item, onProgress func(completed, total i
 	// Use GraphQL for batch enrichment (uses GraphQL quota, not Core API)
 	log.Debug("enriching via GraphQL", "count", len(uncachedItems))
 
-	enriched, err := e.fetcher.EnrichItemsGraphQL(uncachedItems, e.fetcher.Token(), func(delta, batchTotal int) {
+	enriched, err := e.fetcher.EnrichItemsGraphQL(ctx, uncachedItems, e.fetcher.Token(), func(delta, batchTotal int) {
 		if onProgress != nil {
 			// Pass through the delta (number of items just processed)
 			onProgress(delta, total)

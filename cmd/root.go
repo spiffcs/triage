@@ -14,8 +14,8 @@ func New(options ...Option) *cobra.Command {
 		Short: "GitHub notification triage manager",
 		Long: `A CLI tool that analyzes your GitHub notifications to help you
 triage your work. It uses heuristics to score notifications.`,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runList(cmd, args, opts)
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runList(cmd, opts)
 		},
 		CompletionOptions: cobra.CompletionOptions{
 			DisableDefaultCmd: true,

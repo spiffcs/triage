@@ -67,9 +67,7 @@ func TestOptions(t *testing.T) {
 	opts := &Options{
 		Format:    "json",
 		Since:     "1w",
-		Priority:  "urgent",
 		Verbosity: 1,
-		Workers:   10,
 	}
 	if opts.Format != "json" {
 		t.Errorf("expected Format to be 'json', got %q", opts.Format)
@@ -81,9 +79,6 @@ func TestNewOptionsDefaults(t *testing.T) {
 	if opts.Since != "1w" {
 		t.Errorf("expected default Since '1w', got %q", opts.Since)
 	}
-	if opts.Workers != 20 {
-		t.Errorf("expected default Workers 20, got %d", opts.Workers)
-	}
 	if opts.Format != "" {
 		t.Errorf("expected default Format empty, got %q", opts.Format)
 	}
@@ -94,16 +89,7 @@ func TestNewOptionsWithOptions(t *testing.T) {
 	opts := NewOptions(
 		WithFormat("json"),
 		WithSince("30d"),
-		WithPriority("urgent"),
-		WithReason("mention"),
-		WithRepo("owner/repo"),
-		WithType("pr"),
-		WithLimit(50),
 		WithVerbosity(2),
-		WithWorkers(10),
-		WithIncludeMerged(true),
-		WithIncludeClosed(true),
-		WithGreenCI(true),
 		WithTUI(&tui),
 		WithCPUProfile("cpu.prof"),
 		WithMemProfile("mem.prof"),
@@ -116,35 +102,8 @@ func TestNewOptionsWithOptions(t *testing.T) {
 	if opts.Since != "30d" {
 		t.Errorf("expected Since '30d', got %q", opts.Since)
 	}
-	if opts.Priority != "urgent" {
-		t.Errorf("expected Priority 'urgent', got %q", opts.Priority)
-	}
-	if opts.Reason != "mention" {
-		t.Errorf("expected Reason 'mention', got %q", opts.Reason)
-	}
-	if opts.Repo != "owner/repo" {
-		t.Errorf("expected Repo 'owner/repo', got %q", opts.Repo)
-	}
-	if opts.Type != "pr" {
-		t.Errorf("expected Type 'pr', got %q", opts.Type)
-	}
-	if opts.Limit != 50 {
-		t.Errorf("expected Limit 50, got %d", opts.Limit)
-	}
 	if opts.Verbosity != 2 {
 		t.Errorf("expected Verbosity 2, got %d", opts.Verbosity)
-	}
-	if opts.Workers != 10 {
-		t.Errorf("expected Workers 10, got %d", opts.Workers)
-	}
-	if !opts.IncludeMerged {
-		t.Error("expected IncludeMerged true")
-	}
-	if !opts.IncludeClosed {
-		t.Error("expected IncludeClosed true")
-	}
-	if !opts.GreenCI {
-		t.Error("expected GreenCI true")
 	}
 	if opts.TUI == nil || !*opts.TUI {
 		t.Error("expected TUI true")
@@ -162,7 +121,7 @@ func TestNewOptionsWithOptions(t *testing.T) {
 
 func TestNewWithOptions(t *testing.T) {
 	// Test that New() accepts options and passes them through
-	cmd := New(WithFormat("json"), WithWorkers(5))
+	cmd := New(WithFormat("json"))
 	if cmd == nil {
 		t.Fatal("New() returned nil")
 	}
