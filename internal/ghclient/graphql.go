@@ -1,7 +1,6 @@
 package ghclient
 
 import (
-	"github.com/spiffcs/triage/internal/model"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -12,6 +11,7 @@ import (
 	"time"
 
 	"github.com/spiffcs/triage/internal/log"
+	"github.com/spiffcs/triage/internal/model"
 )
 
 const (

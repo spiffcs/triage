@@ -1,7 +1,6 @@
 package ghclient
 
 import (
-	"github.com/spiffcs/triage/internal/model"
 	"fmt"
 	"strconv"
 	"strings"
@@ -9,14 +8,15 @@ import (
 	"time"
 
 	gh "github.com/google/go-github/v57/github"
+	"github.com/spiffcs/triage/internal/model"
 )
 
 // NotificationOptions configures notification fetching
 type NotificationOptions struct {
-	All           bool          // Include read notifications
-	Since         time.Time     // Only notifications updated after this time
-	Participating bool          // Only participating notifications
-	Repos         []string      // Filter to specific repos (owner/repo format)
+	All           bool                // Include read notifications
+	Since         time.Time           // Only notifications updated after this time
+	Participating bool                // Only participating notifications
+	Repos         []string            // Filter to specific repos (owner/repo format)
 	Types         []model.SubjectType // Filter to specific subject types
 }
 

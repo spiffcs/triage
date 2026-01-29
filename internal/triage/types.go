@@ -38,8 +38,8 @@ func (p PriorityLevel) Display() string {
 
 // PrioritizedItem wraps a notification with priority information
 type PrioritizedItem struct {
-	Notification model.Item `json:"notification"`
-	Score        int                 `json:"score"`
-	Priority     PriorityLevel       `json:"priority"`
-	ActionNeeded string              `json:"actionNeeded"`
+	Notification model.Item    `json:"notification"`
+	Score        int           `json:"score"`
+	Priority     PriorityLevel `json:"priority"`
+	ActionNeeded string        `json:"actionNeeded"`
 }

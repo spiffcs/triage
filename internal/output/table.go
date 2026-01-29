@@ -2,7 +2,6 @@ package output
 
 import (
 	"fmt"
-	"github.com/spiffcs/triage/internal/model"
 	"io"
 	"os"
 	"strings"
@@ -12,6 +11,7 @@ import (
 	"github.com/spiffcs/triage/internal/constants"
 	"github.com/spiffcs/triage/internal/format"
 	"github.com/spiffcs/triage/internal/log"
+	"github.com/spiffcs/triage/internal/model"
 	"github.com/spiffcs/triage/internal/triage"
 	"golang.org/x/term"
 )

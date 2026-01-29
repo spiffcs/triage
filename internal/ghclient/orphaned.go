@@ -1,7 +1,6 @@
 package ghclient
 
 import (
-	"github.com/spiffcs/triage/internal/model"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -9,6 +8,7 @@ import (
 	"time"
 
 	"github.com/spiffcs/triage/internal/log"
+	"github.com/spiffcs/triage/internal/model"
 )
 
 // Default values for orphaned contribution detection

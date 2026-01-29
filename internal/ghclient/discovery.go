@@ -3,7 +3,6 @@ package ghclient
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/spiffcs/triage/internal/log"
@@ -208,27 +207,4 @@ func (c *Client) DiscoverMaintainableReposCached(username string, opts Discovery
 	}
 
 	return repos, false, nil
-}
-
-// repoNamesToStrings extracts full names from DiscoveredRepo slice
-func repoNamesToStrings(repos []DiscoveredRepo) []string {
-	names := make([]string, len(repos))
-	for i, r := range repos {
-		names[i] = r.FullName
-	}
-	return names
-}
-
-// formatDiscoveredRepos returns a human-readable summary of discovered repos
-func formatDiscoveredRepos(repos []DiscoveredRepo) string {
-	if len(repos) == 0 {
-		return "no repositories discovered"
-	}
-
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("discovered %d repositories:\n", len(repos)))
-	for _, r := range repos {
-		sb.WriteString(fmt.Sprintf("  - %s (%s)\n", r.FullName, r.Permission))
-	}
-	return sb.String()
 }

@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"github.com/spiffcs/triage/internal/model"
 	"fmt"
 	"io"
 	"os"
@@ -15,6 +14,7 @@ import (
 	"github.com/spiffcs/triage/internal/duration"
 	"github.com/spiffcs/triage/internal/ghclient"
 	"github.com/spiffcs/triage/internal/log"
+	"github.com/spiffcs/triage/internal/model"
 	"github.com/spiffcs/triage/internal/output"
 	"github.com/spiffcs/triage/internal/resolved"
 	"github.com/spiffcs/triage/internal/triage"
@@ -445,4 +445,3 @@ func closeTUI(events chan tui.Event, tuiDone chan error) {
 		<-tuiDone
 	}
 }
-

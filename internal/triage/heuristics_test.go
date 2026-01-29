@@ -2,9 +2,9 @@ package triage
 
 import (
 	"testing"
-	"github.com/spiffcs/triage/internal/model"
 
 	"github.com/spiffcs/triage/config"
+	"github.com/spiffcs/triage/internal/model"
 )
 
 func TestBaseScore(t *testing.T) {

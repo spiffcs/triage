@@ -63,26 +63,24 @@ const (
 
 // ListModel is the Bubble Tea model for the interactive notification list
 type ListModel struct {
-	items               []triage.PrioritizedItem
-	priorityItems       []triage.PrioritizedItem // Items excluding orphaned
-	orphanedItems       []triage.PrioritizedItem // Only orphaned items
-	activePane          pane                     // Which pane is focused
-	priorityCursor      int                      // Cursor for priority pane
-	orphanedCursor      int                      // Cursor for orphaned pane
-	resolved            *resolved.Store
-	windowWidth         int
-	windowHeight        int
-	statusMsg           string
-	statusTime          time.Time
-	quitting            bool
-	hotTopicThreshold   int
-	prSizeXS            int
-	prSizeS             int
-	prSizeM             int
-	prSizeL             int
-	currentUser         string
-	hideAssignedCI bool // Hide Assigned and CI columns (for orphaned view)
-	hidePriority   bool // Hide Priority column (for orphaned view)
+	items             []triage.PrioritizedItem
+	priorityItems     []triage.PrioritizedItem // Items excluding orphaned
+	orphanedItems     []triage.PrioritizedItem // Only orphaned items
+	activePane        pane                     // Which pane is focused
+	priorityCursor    int                      // Cursor for priority pane
+	orphanedCursor    int                      // Cursor for orphaned pane
+	resolved          *resolved.Store
+	windowWidth       int
+	windowHeight      int
+	statusMsg         string
+	statusTime        time.Time
+	quitting          bool
+	hotTopicThreshold int
+	prSizeXS          int
+	prSizeS           int
+	prSizeM           int
+	prSizeL           int
+	currentUser       string
 
 	// Sort state per pane
 	prioritySortColumn SortColumn

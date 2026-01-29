@@ -1,9 +1,9 @@
 package cmd
 
 import (
-	"github.com/spiffcs/triage/internal/model"
 	"fmt"
 
+	"github.com/spiffcs/triage/internal/model"
 )
 
 // mergeResult contains the counts of items added during merge operations.

@@ -1,7 +1,6 @@
 package ghclient
 
 import (
-	"github.com/spiffcs/triage/internal/model"
 	"context"
 	"fmt"
 	"net/http"
@@ -13,6 +12,7 @@ import (
 	gh "github.com/google/go-github/v57/github"
 	"github.com/spiffcs/triage/internal/constants"
 	"github.com/spiffcs/triage/internal/log"
+	"github.com/spiffcs/triage/internal/model"
 	"golang.org/x/oauth2"
 )
 

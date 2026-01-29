@@ -2,13 +2,13 @@ package tui
 
 import (
 	"fmt"
-	"github.com/spiffcs/triage/internal/model"
 	"strings"
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spiffcs/triage/internal/constants"
 	"github.com/spiffcs/triage/internal/format"
+	"github.com/spiffcs/triage/internal/model"
 	"github.com/spiffcs/triage/internal/triage"
 )
 

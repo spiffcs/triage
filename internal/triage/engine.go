@@ -2,11 +2,11 @@ package triage
 
 import (
 	"sort"
-	"github.com/spiffcs/triage/internal/model"
 	"time"
 
 	"github.com/spiffcs/triage/config"
 	"github.com/spiffcs/triage/internal/constants"
+	"github.com/spiffcs/triage/internal/model"
 )
 
 // Engine orchestrates the prioritization process

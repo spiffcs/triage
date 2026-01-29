@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"github.com/spiffcs/triage/internal/model"
 	"context"
 	"errors"
 	"fmt"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/spiffcs/triage/internal/ghclient"
 	"github.com/spiffcs/triage/internal/log"
+	"github.com/spiffcs/triage/internal/model"
 	"github.com/spiffcs/triage/internal/tui"
 )
 
@@ -30,28 +30,6 @@ type fetchResult struct {
 	AuthoredCached bool
 	AssignedCached bool
 	OrphanedCached bool
-}
-
-// fetchCacheStats returns a summary of cache usage.
-type fetchCacheStats struct {
-	NotifCached    bool
-	NotifNewCount  int
-	ReviewCached   bool
-	AuthoredCached bool
-	AssignedCached bool
-	OrphanedCached bool
-}
-
-// cacheStats returns the cache statistics from the fetch result.
-func (r *fetchResult) cacheStats() fetchCacheStats {
-	return fetchCacheStats{
-		NotifCached:    r.NotifCached,
-		NotifNewCount:  r.NotifNewCount,
-		ReviewCached:   r.ReviewCached,
-		AuthoredCached: r.AuthoredCached,
-		AssignedCached: r.AssignedCached,
-		OrphanedCached: r.OrphanedCached,
-	}
 }
 
 // totalFetched returns the total number of items fetched.

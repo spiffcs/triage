@@ -2,8 +2,8 @@ package triage
 
 import (
 	"testing"
-	"github.com/spiffcs/triage/internal/model"
 
+	"github.com/spiffcs/triage/internal/model"
 )
 
 // Helper to create a test notification
@@ -346,7 +346,7 @@ func TestFilterByGreenCI(t *testing.T) {
 		makePrioritizedItem("2", model.ReasonReviewRequested, model.SubjectPullRequest, PriorityUrgent, &model.ItemDetails{CIStatus: "failure"}),
 		makePrioritizedItem("3", model.ReasonReviewRequested, model.SubjectPullRequest, PriorityUrgent, &model.ItemDetails{CIStatus: "pending"}),
 		makePrioritizedItem("4", model.ReasonReviewRequested, model.SubjectPullRequest, PriorityUrgent, &model.ItemDetails{CIStatus: ""}),
-		makePrioritizedItem("5", model.ReasonReviewRequested, model.SubjectPullRequest, PriorityUrgent, nil),                 // nil Details - excluded
+		makePrioritizedItem("5", model.ReasonReviewRequested, model.SubjectPullRequest, PriorityUrgent, nil),                // nil Details - excluded
 		makePrioritizedItem("6", model.ReasonSubscribed, model.SubjectIssue, PriorityFYI, &model.ItemDetails{CIStatus: ""}), // Issue - excluded
 	}
 
@@ -379,10 +379,10 @@ func TestFilterByGreenCI(t *testing.T) {
 func TestFilterOutUnenriched(t *testing.T) {
 	items := []PrioritizedItem{
 		makePrioritizedItem("1", model.ReasonReviewRequested, model.SubjectPullRequest, PriorityUrgent, &model.ItemDetails{State: "open"}), // PR with Details - kept
-		makePrioritizedItem("2", model.ReasonReviewRequested, model.SubjectPullRequest, PriorityUrgent, nil),                                // PR without Details - filtered
+		makePrioritizedItem("2", model.ReasonReviewRequested, model.SubjectPullRequest, PriorityUrgent, nil),                               // PR without Details - filtered
 		makePrioritizedItem("3", model.ReasonSubscribed, model.SubjectIssue, PriorityFYI, &model.ItemDetails{State: "open"}),               // Issue with Details - kept
-		makePrioritizedItem("4", model.ReasonSubscribed, model.SubjectIssue, PriorityFYI, nil),                                              // Issue without Details - filtered
-		makePrioritizedItem("5", model.ReasonSubscribed, model.SubjectRelease, PriorityFYI, nil),                                            // Release without Details - kept (different type)
+		makePrioritizedItem("4", model.ReasonSubscribed, model.SubjectIssue, PriorityFYI, nil),                                             // Issue without Details - filtered
+		makePrioritizedItem("5", model.ReasonSubscribed, model.SubjectRelease, PriorityFYI, nil),                                           // Release without Details - kept (different type)
 	}
 
 	got := FilterOutUnenriched(items)

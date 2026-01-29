@@ -52,7 +52,7 @@ type BaseScoreOverrides struct {
 	Comment         *int `yaml:"comment,omitempty"`
 	StateChange     *int `yaml:"state_change,omitempty"`
 	Subscribed      *int `yaml:"subscribed,omitempty"`
-	CIActivity *int `yaml:"ci_activity,omitempty"`
+	CIActivity      *int `yaml:"ci_activity,omitempty"`
 }
 
 // ScoringOverrides - general scoring modifiers
@@ -104,9 +104,9 @@ type ScoreWeights struct {
 	Author          int
 	Assign          int
 	Comment         int
-	Subscribed  int
-	StateChange int
-	CIActivity  int
+	Subscribed      int
+	StateChange     int
+	CIActivity      int
 
 	OldUnreadBonus              int
 	HotTopicBonus               int
@@ -154,8 +154,8 @@ func DefaultScoreWeights() ScoreWeights {
 	return ScoreWeights{
 		ReviewRequested: 100,
 		Mention:         90,
-		TeamMention: 85,
-		Author:      70,
+		TeamMention:     85,
+		Author:          70,
 		Assign:          60,
 		Comment:         30,
 		StateChange:     25,
@@ -362,12 +362,6 @@ func configPath() string {
 // localConfigPath returns the path to the local config file in the current directory
 func localConfigPath() string {
 	return ".triage.yaml"
-}
-
-// configFileExists returns true if the config file exists on disk
-func configFileExists() bool {
-	_, err := os.Stat(configPath())
-	return err == nil
 }
 
 // Load loads the configuration from disk.
@@ -731,8 +725,8 @@ func DefaultConfig() *Config {
 			Assign:          &weights.Assign,
 			Comment:         &weights.Comment,
 			StateChange:     &weights.StateChange,
-			Subscribed: &weights.Subscribed,
-			CIActivity: &weights.CIActivity,
+			Subscribed:      &weights.Subscribed,
+			CIActivity:      &weights.CIActivity,
 		},
 		Scoring: &ScoringOverrides{
 			OldUnreadBonus:              &weights.OldUnreadBonus,

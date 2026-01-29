@@ -2,11 +2,11 @@ package output
 
 import (
 	"strings"
-	"github.com/spiffcs/triage/internal/model"
 	"testing"
 	"time"
 
 	"github.com/spiffcs/triage/internal/format"
+	"github.com/spiffcs/triage/internal/model"
 	"github.com/spiffcs/triage/internal/triage"
 )
 

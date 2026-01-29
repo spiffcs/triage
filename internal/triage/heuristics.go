@@ -2,11 +2,11 @@ package triage
 
 import (
 	"strings"
-	"github.com/spiffcs/triage/internal/model"
 	"time"
 
 	"github.com/spiffcs/triage/config"
 	"github.com/spiffcs/triage/internal/constants"
+	"github.com/spiffcs/triage/internal/model"
 )
 
 // Heuristics implements rule-based priority scoring

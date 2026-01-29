@@ -1,13 +1,13 @@
 package ghclient
 
 import (
-	"github.com/spiffcs/triage/internal/model"
 	"fmt"
 	"strings"
 	"sync"
 
 	"github.com/google/go-github/v57/github"
 	"github.com/spiffcs/triage/internal/log"
+	"github.com/spiffcs/triage/internal/model"
 )
 
 // EnrichmentProgress tracks enrichment progress

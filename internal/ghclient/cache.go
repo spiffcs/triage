@@ -25,9 +25,9 @@ const cacheVersion = 2
 // CacheEntry represents a cached notification with its details
 type CacheEntry struct {
 	Details   *model.ItemDetails `json:"details"`
-	CachedAt  time.Time    `json:"cachedAt"`
-	UpdatedAt time.Time    `json:"updatedAt"` // model.Item's UpdatedAt for invalidation
-	Version   int          `json:"version"`   // Cache version for invalidation
+	CachedAt  time.Time          `json:"cachedAt"`
+	UpdatedAt time.Time          `json:"updatedAt"` // model.Item's UpdatedAt for invalidation
+	Version   int                `json:"version"`   // Cache version for invalidation
 }
 
 // NewCache creates a new cache instance
@@ -234,8 +234,8 @@ func (c *Cache) DetailedStats() (*CacheStats, error) {
 // PRListCacheEntry represents a cached list of PRs
 type PRListCacheEntry struct {
 	PRs      []model.Item `json:"prs"`
-	CachedAt time.Time      `json:"cachedAt"`
-	Version  int            `json:"version"`
+	CachedAt time.Time    `json:"cachedAt"`
+	Version  int          `json:"version"`
 }
 
 // PRListCacheTTL is shorter than details cache since PR lists change more frequently.
@@ -246,10 +246,10 @@ const PRListCacheTTL = constants.PRListCacheTTL
 // NotificationListCacheEntry stores cached notifications with fetch timestamp
 type NotificationListCacheEntry struct {
 	Notifications []model.Item `json:"notifications"`
-	LastFetchTime time.Time      `json:"lastFetchTime"` // When we last hit the API
-	CachedAt      time.Time      `json:"cachedAt"`
-	SinceTime     time.Time      `json:"sinceTime"` // The --since value used
-	Version       int            `json:"version"`
+	LastFetchTime time.Time    `json:"lastFetchTime"` // When we last hit the API
+	CachedAt      time.Time    `json:"cachedAt"`
+	SinceTime     time.Time    `json:"sinceTime"` // The --since value used
+	Version       int          `json:"version"`
 }
 
 // NotificationListCacheTTL is the max age before a full refresh is required.
@@ -387,10 +387,10 @@ func (c *Cache) SetNotificationList(username string, notifications []model.Item,
 // OrphanedListCacheEntry stores cached orphaned contributions
 type OrphanedListCacheEntry struct {
 	Orphaned  []model.Item `json:"orphaned"`
-	Repos     []string       `json:"repos"`
-	CachedAt  time.Time      `json:"cachedAt"`
-	SinceTime time.Time      `json:"sinceTime"`
-	Version   int            `json:"version"`
+	Repos     []string     `json:"repos"`
+	CachedAt  time.Time    `json:"cachedAt"`
+	SinceTime time.Time    `json:"sinceTime"`
+	Version   int          `json:"version"`
 }
 
 // orphanedListCacheKey generates a cache key for orphaned contributions
