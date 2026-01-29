@@ -88,7 +88,7 @@ type Client struct {
 }
 
 // NewClient creates a new GitHub client using a personal access token.
-func NewClient(token string) (*Client, error) {
+func NewClient(ctx context.Context, token string) (*Client, error) {
 	if token == "" {
 		token = os.Getenv("GITHUB_TOKEN")
 	}
@@ -99,7 +99,7 @@ func NewClient(token string) (*Client, error) {
 	ts := oauth2.StaticTokenSource(
 		&oauth2.Token{AccessToken: token},
 	)
-	tc := oauth2.NewClient(context.Background(), ts)
+	tc := oauth2.NewClient(ctx, ts)
 
 	// Wrap transport with rate limit handling
 	tc.Transport = &rateLimitTransport{

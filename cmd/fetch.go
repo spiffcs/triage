@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/spiffcs/triage/internal/ghclient"
 	"github.com/spiffcs/triage/internal/log"
@@ -41,10 +40,8 @@ func (r *fetchResult) totalFetched() int {
 
 // fetchOptions configures the fetch operation.
 type fetchOptions struct {
-	Since       time.Time
-	SinceLabel  string // Human-readable label like "1w"
-	CurrentUser string
-	Events      chan tui.Event
+	SinceLabel string // Human-readable label like "1w"
+	Events     chan tui.Event
 
 	// Orphaned contribution options
 	IncludeOrphaned     bool
@@ -83,7 +80,7 @@ func fetchAll(ctx context.Context, svc *service.ItemService, opts fetchOptions) 
 
 	// Fetch notifications (with caching)
 	g.Go(func() error {
-		notifResult, err := svc.GetUnreadItems(gctx, opts.CurrentUser, opts.Since)
+		notifResult, err := svc.GetUnreadItems(gctx)
 		if err != nil {
 			if errors.Is(err, ghclient.ErrRateLimited) {
 				mu.Lock()
@@ -106,7 +103,7 @@ func fetchAll(ctx context.Context, svc *service.ItemService, opts fetchOptions) 
 
 	// Fetch review-requested PRs
 	g.Go(func() error {
-		prs, cached, err := svc.GetReviewRequestedPRs(gctx, opts.CurrentUser)
+		prs, cached, err := svc.GetReviewRequestedPRs(gctx)
 		if err != nil {
 			if errors.Is(err, ghclient.ErrRateLimited) {
 				mu.Lock()
@@ -128,7 +125,7 @@ func fetchAll(ctx context.Context, svc *service.ItemService, opts fetchOptions) 
 
 	// Fetch authored PRs
 	g.Go(func() error {
-		prs, cached, err := svc.GetAuthoredPRs(gctx, opts.CurrentUser)
+		prs, cached, err := svc.GetAuthoredPRs(gctx)
 		if err != nil {
 			if errors.Is(err, ghclient.ErrRateLimited) {
 				mu.Lock()
@@ -150,7 +147,7 @@ func fetchAll(ctx context.Context, svc *service.ItemService, opts fetchOptions) 
 
 	// Fetch assigned issues
 	g.Go(func() error {
-		issues, cached, err := svc.GetAssignedIssues(gctx, opts.CurrentUser)
+		issues, cached, err := svc.GetAssignedIssues(gctx)
 		if err != nil {
 			if errors.Is(err, ghclient.ErrRateLimited) {
 				mu.Lock()
@@ -175,12 +172,11 @@ func fetchAll(ctx context.Context, svc *service.ItemService, opts fetchOptions) 
 		g.Go(func() error {
 			searchOpts := ghclient.OrphanedSearchOptions{
 				Repos:                     opts.OrphanedRepos,
-				Since:                     opts.Since,
 				StaleDays:                 opts.StaleDays,
 				ConsecutiveAuthorComments: opts.ConsecutiveComments,
 				MaxPerRepo:                50,
 			}
-			orphaned, cached, err := svc.GetOrphanedContributions(gctx, searchOpts, opts.CurrentUser)
+			orphaned, cached, err := svc.GetOrphanedContributions(gctx, searchOpts)
 			if err != nil {
 				if errors.Is(err, ghclient.ErrRateLimited) {
 					mu.Lock()

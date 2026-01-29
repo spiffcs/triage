@@ -16,17 +16,26 @@ import (
 // ItemService orchestrates data flow between GitHub API and cache.
 // It combines the functionality of ItemStore and Enricher.
 type ItemService struct {
-	fetcher ghclient.GitHubFetcher
-	cache   *cache.Cache
+	fetcher     ghclient.GitHubFetcher
+	cache       *cache.Cache
+	currentUser string
+	since       time.Time
 }
 
 // New creates a new ItemService with the given fetcher and cache.
 // If cache is nil, caching is disabled.
-func New(fetcher ghclient.GitHubFetcher, c *cache.Cache) *ItemService {
+func New(fetcher ghclient.GitHubFetcher, c *cache.Cache, currentUser string, since time.Time) *ItemService {
 	return &ItemService{
-		fetcher: fetcher,
-		cache:   c,
+		fetcher:     fetcher,
+		cache:       c,
+		currentUser: currentUser,
+		since:       since,
 	}
+}
+
+// CurrentUser returns the authenticated user's username.
+func (s *ItemService) CurrentUser() string {
+	return s.currentUser
 }
 
 // ItemFetchResult contains the result of a cached item fetch.
@@ -38,10 +47,10 @@ type ItemFetchResult struct {
 
 // GetReviewRequestedPRs fetches PRs with caching support.
 // Returns (items, fromCache, error).
-func (s *ItemService) GetReviewRequestedPRs(ctx context.Context, username string) ([]model.Item, bool, error) {
+func (s *ItemService) GetReviewRequestedPRs(ctx context.Context) ([]model.Item, bool, error) {
 	// Check cache first
 	if s.cache != nil {
-		if prs, ok := s.cache.GetPRList(username, "review-requested"); ok {
+		if prs, ok := s.cache.GetPRList(s.currentUser, "review-requested"); ok {
 			return prs, true, nil
 		}
 	}
@@ -52,14 +61,14 @@ func (s *ItemService) GetReviewRequestedPRs(ctx context.Context, username string
 	}
 
 	// Fetch from API
-	prs, err := s.fetcher.ListReviewRequestedPRs(ctx, username)
+	prs, err := s.fetcher.ListReviewRequestedPRs(ctx, s.currentUser)
 	if err != nil {
 		return nil, false, err
 	}
 
 	// Cache the result
 	if s.cache != nil {
-		if err := s.cache.SetPRList(username, "review-requested", prs); err != nil {
+		if err := s.cache.SetPRList(s.currentUser, "review-requested", prs); err != nil {
 			log.Debug("failed to cache review-requested PRs", "error", err)
 		}
 	}
@@ -69,10 +78,10 @@ func (s *ItemService) GetReviewRequestedPRs(ctx context.Context, username string
 
 // GetAuthoredPRs fetches authored PRs with caching support.
 // Returns (items, fromCache, error).
-func (s *ItemService) GetAuthoredPRs(ctx context.Context, username string) ([]model.Item, bool, error) {
+func (s *ItemService) GetAuthoredPRs(ctx context.Context) ([]model.Item, bool, error) {
 	// Check cache first
 	if s.cache != nil {
-		if prs, ok := s.cache.GetPRList(username, "authored"); ok {
+		if prs, ok := s.cache.GetPRList(s.currentUser, "authored"); ok {
 			return prs, true, nil
 		}
 	}
@@ -83,14 +92,14 @@ func (s *ItemService) GetAuthoredPRs(ctx context.Context, username string) ([]mo
 	}
 
 	// Fetch from API
-	prs, err := s.fetcher.ListAuthoredPRs(ctx, username)
+	prs, err := s.fetcher.ListAuthoredPRs(ctx, s.currentUser)
 	if err != nil {
 		return nil, false, err
 	}
 
 	// Cache the result
 	if s.cache != nil {
-		if err := s.cache.SetPRList(username, "authored", prs); err != nil {
+		if err := s.cache.SetPRList(s.currentUser, "authored", prs); err != nil {
 			log.Debug("failed to cache authored PRs", "error", err)
 		}
 	}
@@ -100,10 +109,10 @@ func (s *ItemService) GetAuthoredPRs(ctx context.Context, username string) ([]mo
 
 // GetAssignedIssues fetches assigned issues with caching support.
 // Returns (items, fromCache, error).
-func (s *ItemService) GetAssignedIssues(ctx context.Context, username string) ([]model.Item, bool, error) {
+func (s *ItemService) GetAssignedIssues(ctx context.Context) ([]model.Item, bool, error) {
 	// Check cache first
 	if s.cache != nil {
-		if issues, ok := s.cache.GetPRList(username, "assigned-issues"); ok {
+		if issues, ok := s.cache.GetPRList(s.currentUser, "assigned-issues"); ok {
 			return issues, true, nil
 		}
 	}
@@ -114,14 +123,14 @@ func (s *ItemService) GetAssignedIssues(ctx context.Context, username string) ([
 	}
 
 	// Fetch from API
-	issues, err := s.fetcher.ListAssignedIssues(ctx, username)
+	issues, err := s.fetcher.ListAssignedIssues(ctx, s.currentUser)
 	if err != nil {
 		return nil, false, err
 	}
 
 	// Cache the result
 	if s.cache != nil {
-		if err := s.cache.SetPRList(username, "assigned-issues", issues); err != nil {
+		if err := s.cache.SetPRList(s.currentUser, "assigned-issues", issues); err != nil {
 			log.Debug("failed to cache assigned issues", "error", err)
 		}
 	}
@@ -131,13 +140,13 @@ func (s *ItemService) GetAssignedIssues(ctx context.Context, username string) ([
 
 // GetUnreadItems fetches items with incremental caching.
 // It returns cached items merged with any new ones since the last fetch.
-func (s *ItemService) GetUnreadItems(ctx context.Context, username string, since time.Time) (*ItemFetchResult, error) {
+func (s *ItemService) GetUnreadItems(ctx context.Context) (*ItemFetchResult, error) {
 	result := &ItemFetchResult{}
 
 	// Check if rate limited - return cached data if available
 	if ghclient.IsRateLimited() {
 		if s.cache != nil {
-			if cached, _, ok := s.cache.GetItemList(username, since); ok {
+			if cached, _, ok := s.cache.GetItemList(s.currentUser, s.since); ok {
 				result.Items = cached
 				result.FromCache = true
 				return result, nil
@@ -148,7 +157,7 @@ func (s *ItemService) GetUnreadItems(ctx context.Context, username string, since
 
 	// Check cache
 	if s.cache != nil {
-		cached, lastFetch, ok := s.cache.GetItemList(username, since)
+		cached, lastFetch, ok := s.cache.GetItemList(s.currentUser, s.since)
 		if ok {
 			// Fetch only NEW notifications since last fetch
 			newItems, err := s.fetcher.ListUnreadNotifications(ctx, lastFetch)
@@ -161,13 +170,13 @@ func (s *ItemService) GetUnreadItems(ctx context.Context, username string, since
 			}
 
 			// Merge: new items replace old ones by ID
-			merged := mergeItems(cached, newItems, since)
+			merged := mergeItems(cached, newItems, s.since)
 			result.Items = merged
 			result.FromCache = true
 			result.NewCount = len(newItems)
 
 			// Update cache with merged result
-			if err := s.cache.SetItemList(username, merged, since); err != nil {
+			if err := s.cache.SetItemList(s.currentUser, merged, s.since); err != nil {
 				log.Debug("failed to update item cache", "error", err)
 			}
 
@@ -176,7 +185,7 @@ func (s *ItemService) GetUnreadItems(ctx context.Context, username string, since
 	}
 
 	// No cache - full fetch
-	items, err := s.fetcher.ListUnreadNotifications(ctx, since)
+	items, err := s.fetcher.ListUnreadNotifications(ctx, s.since)
 	if err != nil {
 		return nil, err
 	}
@@ -186,7 +195,7 @@ func (s *ItemService) GetUnreadItems(ctx context.Context, username string, since
 
 	// Cache result
 	if s.cache != nil {
-		if err := s.cache.SetItemList(username, items, since); err != nil {
+		if err := s.cache.SetItemList(s.currentUser, items, s.since); err != nil {
 			log.Debug("failed to cache items", "error", err)
 		}
 	}
@@ -196,14 +205,20 @@ func (s *ItemService) GetUnreadItems(ctx context.Context, username string, since
 
 // GetOrphanedContributions fetches orphaned contributions with caching support.
 // Returns (items, fromCache, error).
-func (s *ItemService) GetOrphanedContributions(ctx context.Context, opts ghclient.OrphanedSearchOptions, username string) ([]model.Item, bool, error) {
+func (s *ItemService) GetOrphanedContributions(ctx context.Context, opts ghclient.OrphanedSearchOptions) ([]model.Item, bool, error) {
 	if len(opts.Repos) == 0 {
 		return nil, false, nil
 	}
 
+	// Use service's since if opts.Since is zero
+	since := opts.Since
+	if since.IsZero() {
+		since = s.since
+	}
+
 	// Try cache first
 	if s.cache != nil {
-		if cached, ok := s.cache.GetOrphanedList(username, opts.Repos, opts.Since); ok {
+		if cached, ok := s.cache.GetOrphanedList(s.currentUser, opts.Repos, since); ok {
 			return cached, true, nil
 		}
 	}
@@ -216,7 +231,7 @@ func (s *ItemService) GetOrphanedContributions(ctx context.Context, opts ghclien
 
 	// Cache the result
 	if s.cache != nil {
-		if cacheErr := s.cache.SetOrphanedList(username, orphaned, opts.Repos, opts.Since); cacheErr != nil {
+		if cacheErr := s.cache.SetOrphanedList(s.currentUser, orphaned, opts.Repos, since); cacheErr != nil {
 			log.Debug("failed to cache orphaned list", "error", cacheErr)
 		}
 	}

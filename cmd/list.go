@@ -53,19 +53,6 @@ func (rt *listRuntime) sendEvent(task tui.TaskID, status tui.TaskStatus, opts ..
 	sendTaskEvent(rt.events, task, status, opts...)
 }
 
-// authContext bundles config, client, and user information.
-type authContext struct {
-	cfg           *config.Config
-	resolvedStore *resolved.Store
-	ghClient      *ghclient.Client
-	currentUser   string
-}
-
-// dataPipeline bundles service and time information for data operations.
-type dataPipeline struct {
-	svc   *service.ItemService
-	since time.Time
-}
 
 // NewCmdList creates the list command.
 func NewCmdList(opts *Options) *cobra.Command {
@@ -109,28 +96,29 @@ func runList(cmd *cobra.Command, opts *Options) error {
 	defer cleanup()
 	rt.startTUI()
 
-	// Initialize
-	auth, err := loadConfigAndAuth(ctx, rt)
+	// Load config (separate from service)
+	cfg, resolvedStore, err := loadConfig()
 	if err != nil {
 		rt.close()
 		return err
 	}
 
-	pipeline, err := initializeDataPipeline(auth.ghClient, opts.Since)
+	// Create service (combines auth + data pipeline)
+	svc, err := initializeService(ctx, cfg, opts.Since, rt)
 	if err != nil {
 		rt.close()
 		return err
 	}
 
 	// Fetch
-	fetchOpts := buildFetchOptions(auth.cfg, pipeline.since, auth.currentUser, opts.Since, rt.events)
-	result, err := fetchAll(ctx, pipeline.svc, fetchOpts)
+	fetchOpts := buildFetchOptions(cfg, opts.Since, rt.events)
+	result, err := fetchAll(ctx, svc, fetchOpts)
 	if err != nil {
 		log.Warn("some fetches failed", "error", err)
 	}
 
 	// Enrich
-	runEnrichment(ctx, pipeline.svc, result, rt)
+	runEnrichment(ctx, svc, result, rt)
 
 	// Process
 	if len(result.Notifications) == 0 {
@@ -138,11 +126,11 @@ func runList(cmd *cobra.Command, opts *Options) error {
 		fmt.Println("No unread notifications, pending reviews, or open PRs found.")
 		return nil
 	}
-	items := processResults(result, auth.cfg, auth.currentUser, auth.resolvedStore, rt.events)
+	items := processResults(result, cfg, svc.CurrentUser(), resolvedStore, rt.events)
 
 	// Output
 	rt.close()
-	return renderOutput(items, opts, auth.cfg, auth.currentUser, auth.resolvedStore)
+	return renderOutput(items, opts, cfg, svc.CurrentUser(), resolvedStore)
 }
 
 // setupRuntime creates the runtime struct and returns a cleanup function for profiling.
@@ -165,11 +153,11 @@ func setupRuntime(opts *Options) (*listRuntime, func(), error) {
 	return rt, profiler.Stop, nil
 }
 
-// loadConfigAndAuth loads configuration and authenticates with GitHub.
-func loadConfigAndAuth(ctx context.Context, rt *listRuntime) (*authContext, error) {
+// loadConfig loads configuration and resolved store.
+func loadConfig() (*config.Config, *resolved.Store, error) {
 	cfg, err := config.Load()
 	if err != nil {
-		return nil, fmt.Errorf("failed to load config: %w", err)
+		return nil, nil, fmt.Errorf("failed to load config: %w", err)
 	}
 
 	resolvedStore, err := resolved.NewStore()
@@ -177,12 +165,24 @@ func loadConfigAndAuth(ctx context.Context, rt *listRuntime) (*authContext, erro
 		log.Warn("could not load resolved store", "error", err)
 	}
 
+	return cfg, resolvedStore, nil
+}
+
+// initializeService creates the ItemService with user context.
+func initializeService(ctx context.Context, cfg *config.Config, sinceStr string, rt *listRuntime) (*service.ItemService, error) {
+	since, err := duration.Parse(sinceStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid duration: %w", err)
+	}
+
+	log.Info("fetching notifications", "since", sinceStr)
+
 	token := cfg.GetGitHubToken()
 	if token == "" {
 		return nil, fmt.Errorf("GitHub token not configured. Set the GITHUB_TOKEN environment variable")
 	}
 
-	ghClient, err := ghclient.NewClient(token)
+	ghClient, err := ghclient.NewClient(ctx, token)
 	if err != nil {
 		return nil, err
 	}
@@ -195,38 +195,16 @@ func loadConfigAndAuth(ctx context.Context, rt *listRuntime) (*authContext, erro
 	}
 	rt.sendEvent(tui.TaskAuth, tui.StatusComplete, tui.WithMessage(currentUser))
 
-	return &authContext{
-		cfg:           cfg,
-		resolvedStore: resolvedStore,
-		ghClient:      ghClient,
-		currentUser:   currentUser,
-	}, nil
-}
-
-// initializeDataPipeline creates the service for data operations.
-func initializeDataPipeline(ghClient *ghclient.Client, sinceStr string) (*dataPipeline, error) {
-	since, err := duration.Parse(sinceStr)
-	if err != nil {
-		return nil, fmt.Errorf("invalid duration: %w", err)
-	}
-
-	log.Info("fetching notifications", "since", sinceStr)
-
 	c, cacheErr := cache.NewCache()
 	if cacheErr != nil {
 		log.Warn("failed to initialize cache", "error", cacheErr)
 	}
 
-	svc := service.New(ghClient, c)
-
-	return &dataPipeline{
-		svc:   svc,
-		since: since,
-	}, nil
+	return service.New(ghClient, c, currentUser, since), nil
 }
 
 // buildFetchOptions constructs fetchOptions from config and parameters.
-func buildFetchOptions(cfg *config.Config, since time.Time, currentUser, sinceLabel string, events chan tui.Event) fetchOptions {
+func buildFetchOptions(cfg *config.Config, sinceLabel string, events chan tui.Event) fetchOptions {
 	var orphanedRepos []string
 	var staleDays, consecutiveComments int
 	if cfg.Orphaned != nil {
@@ -236,9 +214,7 @@ func buildFetchOptions(cfg *config.Config, since time.Time, currentUser, sinceLa
 	}
 
 	return fetchOptions{
-		Since:               since,
 		SinceLabel:          sinceLabel,
-		CurrentUser:         currentUser,
 		Events:              events,
 		IncludeOrphaned:     len(orphanedRepos) > 0,
 		OrphanedRepos:       orphanedRepos,

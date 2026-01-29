@@ -43,7 +43,7 @@ func runRateLimitStatus(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("GitHub token not configured. Set the GITHUB_TOKEN environment variable")
 	}
 
-	client, err := ghclient.NewClient(token)
+	client, err := ghclient.NewClient(ctx, token)
 	if err != nil {
 		return err
 	}

@@ -1,6 +1,7 @@
 package ghclient
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -127,7 +128,7 @@ func TestSplitRepoURL(t *testing.T) {
 
 func TestNewClientRequiresToken(t *testing.T) {
 	// Don't actually modify env in tests - just test with empty string
-	_, err := NewClient("")
+	_, err := NewClient(context.Background(), "")
 	if err == nil {
 		t.Error("expected error when creating client without token")
 	}
