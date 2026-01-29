@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spiffcs/triage/config"
+	"github.com/spiffcs/triage/internal/cache"
 	"github.com/spiffcs/triage/internal/constants"
 	"github.com/spiffcs/triage/internal/duration"
 	"github.com/spiffcs/triage/internal/ghclient"
@@ -140,16 +141,16 @@ func runList(cmd *cobra.Command, _ []string, opts *Options) error {
 	log.Info("fetching notifications", "since", opts.Since)
 
 	// Create cache for item storage
-	cache, cacheErr := ghclient.NewCache()
+	c, cacheErr := cache.NewCache()
 	if cacheErr != nil {
 		log.Warn("failed to initialize cache", "error", cacheErr)
 	}
 
 	// Create ItemStore for cache-aware fetching
-	store := ghclient.NewItemStore(ghClient, cache)
+	store := ghclient.NewItemStore(ghClient, c)
 
 	// Create Enricher for GraphQL-based enrichment
-	enricher := ghclient.NewEnricher(ghClient, cache)
+	enricher := ghclient.NewEnricher(ghClient, c)
 
 	// Determine orphaned settings - enabled by default unless explicitly skipped
 	orphanedEnabled := !opts.SkipOrphaned

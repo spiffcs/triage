@@ -1,4 +1,5 @@
-package ghclient
+// Package cache provides caching functionality for GitHub API responses.
+package cache
 
 import (
 	"encoding/json"
@@ -11,23 +12,36 @@ import (
 	"github.com/spiffcs/triage/internal/constants"
 	"github.com/spiffcs/triage/internal/log"
 	"github.com/spiffcs/triage/internal/model"
+	"github.com/spiffcs/triage/internal/urlutil"
 )
+
+// Cacher defines the interface for caching operations.
+// This interface enables mocking the cache in unit tests.
+type Cacher interface {
+	// Item details cache
+	Get(n *model.Item) (*model.ItemDetails, bool)
+	Set(n *model.Item, details *model.ItemDetails) error
+	Clear() error
+
+	// PR list cache
+	GetPRList(username, listType string) ([]model.Item, bool)
+	SetPRList(username, listType string, prs []model.Item) error
+
+	// Item list cache
+	GetItemList(username string, sinceTime time.Time) ([]model.Item, time.Time, bool)
+	SetItemList(username string, items []model.Item, sinceTime time.Time) error
+
+	// Stats
+	Stats() (total int, validCount int, err error)
+	DetailedStats() (*CacheStats, error)
+}
+
+// Ensure Cache implements Cacher interface.
+var _ Cacher = (*Cache)(nil)
 
 // Cache stores notification details to avoid repeated API calls
 type Cache struct {
 	dir string
-}
-
-// cacheVersion should be incremented when the cache format changes
-// or when enrichment data structure changes to invalidate old entries
-const cacheVersion = 2
-
-// CacheEntry represents a cached notification with its details
-type CacheEntry struct {
-	Details   *model.ItemDetails `json:"details"`
-	CachedAt  time.Time          `json:"cachedAt"`
-	UpdatedAt time.Time          `json:"updatedAt"` // model.Item's UpdatedAt for invalidation
-	Version   int                `json:"version"`   // Cache version for invalidation
 }
 
 // NewCache creates a new cache instance
@@ -62,7 +76,7 @@ func (c *Cache) Get(n *model.Item) (*model.ItemDetails, bool) {
 		return nil, false
 	}
 
-	number, err := ExtractIssueNumber(n.Subject.URL)
+	number, err := urlutil.ExtractIssueNumber(n.Subject.URL)
 	if err != nil {
 		return nil, false
 	}
@@ -105,7 +119,7 @@ func (c *Cache) Set(n *model.Item, details *model.ItemDetails) error {
 		return nil
 	}
 
-	number, err := ExtractIssueNumber(n.Subject.URL)
+	number, err := urlutil.ExtractIssueNumber(n.Subject.URL)
 	if err != nil {
 		return err
 	}
@@ -142,18 +156,6 @@ func (c *Cache) Clear() error {
 	}
 
 	return nil
-}
-
-// CacheStats contains detailed cache statistics
-type CacheStats struct {
-	DetailTotal       int
-	DetailValid       int
-	PRListTotal       int
-	PRListValid       int
-	NotifListTotal    int
-	NotifListValid    int
-	OrphanedListTotal int
-	OrphanedListValid int
 }
 
 // Stats returns cache statistics
@@ -230,36 +232,6 @@ func (c *Cache) DetailedStats() (*CacheStats, error) {
 
 	return stats, nil
 }
-
-// PRListCacheEntry represents a cached list of PRs
-type PRListCacheEntry struct {
-	PRs      []model.Item `json:"prs"`
-	CachedAt time.Time    `json:"cachedAt"`
-	Version  int          `json:"version"`
-}
-
-// PRListCacheTTL is shorter than details cache since PR lists change more frequently.
-// Note: This is kept as a package-level constant for backward compatibility,
-// but the canonical value is in the constants package.
-const PRListCacheTTL = constants.PRListCacheTTL
-
-// NotificationsCacheEntry stores cached notifications with fetch timestamp
-type NotificationsCacheEntry struct {
-	Items         []model.Item `json:"items"`
-	LastFetchTime time.Time    `json:"lastFetchTime"` // When we last hit the API
-	CachedAt      time.Time    `json:"cachedAt"`
-	SinceTime     time.Time    `json:"sinceTime"` // The --since value used
-	Version       int          `json:"version"`
-}
-
-// NotificationsCacheTTL is the max age before a full refresh is required.
-// Note: This is kept as a package-level constant for backward compatibility,
-// but the canonical value is in the constants package.
-const NotificationsCacheTTL = constants.NotificationsCacheTTL
-
-// OrphanedListCacheTTL is shorter than notifications since orphaned data changes less frequently
-// but we want relatively fresh results for proactive outreach
-const OrphanedListCacheTTL = 15 * time.Minute
 
 // prListCacheKey generates a cache key for a PR list
 func (c *Cache) prListCacheKey(username string, listType string) string {
@@ -374,15 +346,6 @@ func (c *Cache) SetItemList(username string, items []model.Item, sinceTime time.
 	return os.WriteFile(path, data, 0600)
 }
 
-// OrphanedListCacheEntry stores cached orphaned contributions
-type OrphanedListCacheEntry struct {
-	Orphaned  []model.Item `json:"orphaned"`
-	Repos     []string     `json:"repos"`
-	CachedAt  time.Time    `json:"cachedAt"`
-	SinceTime time.Time    `json:"sinceTime"`
-	Version   int          `json:"version"`
-}
-
 // orphanedListCacheKey generates a cache key for orphaned contributions
 func (c *Cache) orphanedListCacheKey(username string) string {
 	return fmt.Sprintf("orphaned_list_%s.json", username)
@@ -465,5 +428,3 @@ func stringSlicesEqual(a, b []string) bool {
 	}
 	return true
 }
-
-// discoveredReposCacheKey generates a cache key for discovered repos

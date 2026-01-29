@@ -12,6 +12,7 @@ import (
 
 	"github.com/spiffcs/triage/internal/log"
 	"github.com/spiffcs/triage/internal/model"
+	"github.com/spiffcs/triage/internal/urlutil"
 )
 
 const (
@@ -119,7 +120,7 @@ func (c *Client) EnrichItemsGraphQL(items []model.Item, token string, onProgress
 			continue
 		}
 
-		number, err := ExtractIssueNumber(n.Subject.URL)
+		number, err := urlutil.ExtractIssueNumber(n.Subject.URL)
 		if err != nil {
 			log.Debug("failed to extract issue number", "url", n.Subject.URL, "error", err)
 			continue

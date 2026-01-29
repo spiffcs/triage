@@ -3,6 +3,7 @@ package ghclient
 import (
 	"time"
 
+	"github.com/spiffcs/triage/internal/cache"
 	"github.com/spiffcs/triage/internal/log"
 	"github.com/spiffcs/triage/internal/model"
 )
@@ -12,12 +13,12 @@ import (
 // of GitHub API responses.
 type ItemStore struct {
 	fetcher GitHubFetcher
-	cache   *Cache
+	cache   *cache.Cache
 }
 
 // NewItemStore creates a new ItemStore with the given fetcher and cache.
 // If cache is nil, caching is disabled.
-func NewItemStore(fetcher GitHubFetcher, cache *Cache) *ItemStore {
+func NewItemStore(fetcher GitHubFetcher, cache *cache.Cache) *ItemStore {
 	return &ItemStore{
 		fetcher: fetcher,
 		cache:   cache,
