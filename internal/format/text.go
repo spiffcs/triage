@@ -45,7 +45,8 @@ func DisplayWidth(s string) int {
 // TruncateToWidth truncates a string to fit within maxWidth display columns.
 // It handles ANSI escape sequences by preserving them in the output.
 // Returns the truncated string and its visible width.
-// If truncation occurs, "..." is appended along with an ANSI reset code.
+// If truncation occurs, "..." is appended. An ANSI reset code is only added
+// if the input contained ANSI sequences.
 func TruncateToWidth(s string, maxWidth int) (string, int) {
 	width := DisplayWidth(s)
 
@@ -116,8 +117,11 @@ func TruncateToWidth(s string, maxWidth int) (string, int) {
 		pos += size
 	}
 
-	// Add ellipsis and reset code (in case we were in the middle of a color)
-	result.WriteString("...\033[0m")
+	// Add ellipsis, and reset code only if input had ANSI codes
+	result.WriteString("...")
+	if len(matches) > 0 {
+		result.WriteString("\033[0m")
+	}
 
 	return result.String(), maxWidth
 }

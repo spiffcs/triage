@@ -197,19 +197,21 @@ func renderHeader(hideAssignedCI, hidePriority bool) string {
 	))
 }
 
-// renderSeparator renders the header separator line
-func renderSeparator(hideAssignedCI, hidePriority bool) string {
-	var width int
+// tableWidth calculates the width of the table based on column visibility
+func tableWidth(hideAssignedCI, hidePriority bool) int {
 	priorityWidth := constants.ColPriority + 2 // column + spacing
 	if hidePriority {
 		priorityWidth = 0
 	}
 	if hideAssignedCI {
-		width = 2 + priorityWidth + constants.ColType + 2 + constants.ColAuthor + 2 + constants.ColRepo + 2 + constants.ColTitle + 2 + constants.ColStatus + 2 + colSignal + 2 + constants.ColAge
-	} else {
-		width = 2 + priorityWidth + constants.ColType + 2 + constants.ColAssigned + 2 + constants.ColCI + 2 + constants.ColRepo + 2 + constants.ColTitle + 2 + constants.ColStatus + 2 + constants.ColAge
+		return 2 + priorityWidth + constants.ColType + 2 + constants.ColAuthor + 2 + constants.ColRepo + 2 + constants.ColTitle + 2 + constants.ColStatus + 2 + colSignal + 2 + constants.ColAge
 	}
-	return listSeparatorStyle.Render(strings.Repeat("─", width))
+	return 2 + priorityWidth + constants.ColType + 2 + constants.ColAssigned + 2 + constants.ColCI + 2 + constants.ColRepo + 2 + constants.ColTitle + 2 + constants.ColStatus + 2 + constants.ColAge
+}
+
+// renderSeparator renders the header separator line
+func renderSeparator(hideAssignedCI, hidePriority bool) string {
+	return listSeparatorStyle.Render(strings.Repeat("─", tableWidth(hideAssignedCI, hidePriority)))
 }
 
 // renderRow renders a single item row
@@ -219,17 +221,17 @@ func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, pr
 	// Cursor indicator
 	cursor := "  "
 	if selected {
-		cursor = listCursorStyle.Render("> ")
+		cursor = applyStyle(listCursorStyle, "> ", selected)
 	}
 
 	// Type with color
 	isPR := (n.Details != nil && n.Details.IsPR) || n.Subject.Type == "PullRequest"
 	var typeStr string
 	if isPR {
-		typeStr = listTypePRStyle.Render("PR")
+		typeStr = applyStyle(listTypePRStyle, "PR", selected)
 		typeStr = format.PadRight(typeStr, 2, constants.ColType)
 	} else {
-		typeStr = listTypeISSStyle.Render("ISS")
+		typeStr = applyStyle(listTypeISSStyle, "ISS", selected)
 		typeStr = format.PadRight(typeStr, 3, constants.ColType)
 	}
 
@@ -237,7 +239,7 @@ func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, pr
 	priority := ""
 	if !hidePriority {
 		var priorityWidth int
-		priority, priorityWidth = renderPriority(item.Priority)
+		priority, priorityWidth = renderPriority(item.Priority, selected)
 		priority = format.PadRight(priority, priorityWidth, constants.ColPriority)
 		priority += "  " // spacing
 	}
@@ -265,7 +267,7 @@ func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, pr
 		titleIcon = format.HotTopicIcon + " "
 		iconDisplayWidth = format.IconWidth
 	case format.IconQuickWin:
-		titleIcon = listQuickWinIconStyle.Render(format.QuickWinIcon) + " "
+		titleIcon = applyStyle(listQuickWinIconStyle, format.QuickWinIcon, selected) + " "
 		iconDisplayWidth = format.IconWidth
 	default:
 		titleIcon = "   " // 3 spaces
@@ -283,19 +285,20 @@ func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, pr
 	repo = format.PadRight(repo, repoWidth, constants.ColRepo)
 
 	// Status with colors
-	status, statusWidth := renderStatus(n, prSizeXS, prSizeS, prSizeM, prSizeL)
+	status, statusWidth := renderStatus(n, prSizeXS, prSizeS, prSizeM, prSizeL, selected)
 	if statusWidth > constants.ColStatus {
 		status, statusWidth = format.TruncateToWidth(status, constants.ColStatus)
 	}
 	status = format.PadRight(status, statusWidth, constants.ColStatus)
 
 	// Age using shared logic with color coding
-	age := renderAge(time.Since(n.UpdatedAt))
+	age, ageWidth := renderAge(time.Since(n.UpdatedAt), selected)
+	age = format.PadRight(age, ageWidth, constants.ColAge)
 
 	var row string
 	if hideAssignedCI {
 		// Orphaned view: no Assigned/CI, but add Signal and Author columns
-		signal, signalWidth := renderSignal(n.Details)
+		signal, signalWidth := renderSignal(n.Details, selected)
 		signal = format.PadRight(signal, signalWidth, colSignal)
 
 		author := "─"
@@ -317,10 +320,10 @@ func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, pr
 		)
 	} else {
 		// Standard view with Assigned and CI columns
-		assigned, assignedWidth := renderAssigned(n.Details)
+		assigned, assignedWidth := renderAssigned(n.Details, selected)
 		assigned = format.PadRight(assigned, assignedWidth, constants.ColAssigned)
 
-		ci, ciWidth := renderCI(n.Details, isPR)
+		ci, ciWidth := renderCI(n.Details, isPR, selected)
 		ci = format.PadRight(ci, ciWidth, constants.ColCI)
 
 		row = fmt.Sprintf("%s%s%s  %s  %s  %s  %s  %s  %s",
@@ -337,14 +340,14 @@ func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, pr
 	}
 
 	if selected {
-		return listSelectedStyle.Render(row)
+		return listSelectedStyle.Width(tableWidth(hideAssignedCI, hidePriority)).Render(row)
 	}
 	return row
 }
 
 // renderSignal renders the signal column showing why an item needs attention
 // Returns colored text and visible width
-func renderSignal(d *model.ItemDetails) (string, int) {
+func renderSignal(d *model.ItemDetails, selected bool) (string, int) {
 	if d == nil {
 		return "─", 1
 	}
@@ -364,11 +367,11 @@ func renderSignal(d *model.ItemDetails) (string, int) {
 		text := fmt.Sprintf("Stale %dd", days)
 		var coloredText string
 		if days >= 30 {
-			coloredText = listSignalCriticalStyle.Render(text)
+			coloredText = applyStyle(listSignalCriticalStyle, text, selected)
 		} else if days >= 14 {
-			coloredText = listSignalWarningStyle.Render(text)
+			coloredText = applyStyle(listSignalWarningStyle, text, selected)
 		} else {
-			coloredText = listSignalInfoStyle.Render(text)
+			coloredText = applyStyle(listSignalInfoStyle, text, selected)
 		}
 		coloredParts = append(coloredParts, coloredText)
 		plainWidth += len(text)
@@ -379,11 +382,11 @@ func renderSignal(d *model.ItemDetails) (string, int) {
 		text := fmt.Sprintf("%d waiting", d.ConsecutiveAuthorComments)
 		var coloredText string
 		if d.ConsecutiveAuthorComments >= 4 {
-			coloredText = listSignalCriticalStyle.Render(text)
+			coloredText = applyStyle(listSignalCriticalStyle, text, selected)
 		} else if d.ConsecutiveAuthorComments >= 3 {
-			coloredText = listSignalWarningStyle.Render(text)
+			coloredText = applyStyle(listSignalWarningStyle, text, selected)
 		} else {
-			coloredText = listSignalInfoStyle.Render(text)
+			coloredText = applyStyle(listSignalInfoStyle, text, selected)
 		}
 
 		if plainWidth > 0 {
@@ -396,7 +399,7 @@ func renderSignal(d *model.ItemDetails) (string, int) {
 	}
 
 	if len(coloredParts) == 0 {
-		return listSignalInfoStyle.Render("Needs attention"), 15
+		return applyStyle(listSignalInfoStyle, "Needs attention", selected), 15
 	}
 
 	return strings.Join(coloredParts, ""), plainWidth
@@ -404,24 +407,24 @@ func renderSignal(d *model.ItemDetails) (string, int) {
 
 // renderPriority renders the priority with appropriate styling
 // Returns the colored string and its visible width
-func renderPriority(p triage.PriorityLevel) (string, int) {
+func renderPriority(p triage.PriorityLevel, selected bool) (string, int) {
 	switch p {
 	case triage.PriorityUrgent:
-		return listUrgentStyle.Render("Urgent"), 6
+		return applyStyle(listUrgentStyle, "Urgent", selected), 6
 	case triage.PriorityImportant:
-		return listImportantStyle.Render("Important"), 9
+		return applyStyle(listImportantStyle, "Important", selected), 9
 	case triage.PriorityQuickWin:
-		return listQuickWinStyle.Render("Quick Win"), 9
+		return applyStyle(listQuickWinStyle, "Quick Win", selected), 9
 	case triage.PriorityNotable:
-		return listNotableStyle.Render("Notable"), 7
+		return applyStyle(listNotableStyle, "Notable", selected), 7
 	default:
-		return listFYIStyle.Render("FYI"), 3
+		return applyStyle(listFYIStyle, "FYI", selected), 3
 	}
 }
 
 // renderCI renders the CI status column
 // Returns the colored string and its visible width
-func renderCI(d *model.ItemDetails, isPR bool) (string, int) {
+func renderCI(d *model.ItemDetails, isPR bool, selected bool) (string, int) {
 	if !isPR {
 		return "─", 1 // dash for non-PRs
 	}
@@ -430,11 +433,11 @@ func renderCI(d *model.ItemDetails, isPR bool) (string, int) {
 	}
 	switch d.CIStatus {
 	case constants.CIStatusSuccess:
-		return listCISuccessStyle.Render("✓"), 1
+		return applyStyle(listCISuccessStyle, "✓", selected), 1
 	case constants.CIStatusFailure:
-		return listCIFailureStyle.Render("✗"), 1
+		return applyStyle(listCIFailureStyle, "✗", selected), 1
 	case constants.CIStatusPending:
-		return listCIPendingStyle.Render("○"), 1
+		return applyStyle(listCIPendingStyle, "○", selected), 1
 	default:
 		return "─", 1 // dash for no CI
 	}
@@ -442,7 +445,7 @@ func renderCI(d *model.ItemDetails, isPR bool) (string, int) {
 
 // renderAssigned renders the Assigned column using shared logic
 // Returns the string and its visible width
-func renderAssigned(d *model.ItemDetails) (string, int) {
+func renderAssigned(d *model.ItemDetails, selected bool) (string, int) {
 	if d == nil {
 		return "─", 1
 	}
@@ -467,7 +470,7 @@ func renderAssigned(d *model.ItemDetails) (string, int) {
 
 // renderStatus renders the status column with colors
 // Returns the colored string and its visible width
-func renderStatus(n model.Item, sizeXS, sizeS, sizeM, sizeL int) (string, int) {
+func renderStatus(n model.Item, sizeXS, sizeS, sizeM, sizeL int, selected bool) (string, int) {
 	if n.Details == nil {
 		reason := string(n.Reason)
 		return reason, len(reason)
@@ -481,13 +484,13 @@ func renderStatus(n model.Item, sizeXS, sizeS, sizeM, sizeL int) (string, int) {
 
 		switch d.ReviewState {
 		case constants.ReviewStateApproved:
-			coloredParts = append(coloredParts, listApprovedStyle.Render("+ APPROVED"))
+			coloredParts = append(coloredParts, applyStyle(listApprovedStyle, "+ APPROVED", selected))
 			plainWidth += 10
 		case constants.ReviewStateChangesRequested:
-			coloredParts = append(coloredParts, listChangesStyle.Render("! CHANGES"))
+			coloredParts = append(coloredParts, applyStyle(listChangesStyle, "! CHANGES", selected))
 			plainWidth += 9
 		case constants.ReviewStatePending, constants.ReviewStateReviewRequired, constants.ReviewStateReviewed:
-			coloredParts = append(coloredParts, listReviewStyle.Render("* REVIEW"))
+			coloredParts = append(coloredParts, applyStyle(listReviewStyle, "* REVIEW", selected))
 			plainWidth += 8
 		}
 
@@ -500,13 +503,14 @@ func renderStatus(n model.Item, sizeXS, sizeS, sizeM, sizeL int) (string, int) {
 				L:  sizeL,
 			}
 			sizeResult := format.CalculatePRSize(d.Additions, d.Deletions, thresholds)
-			sizeColored := colorPRSizeTUI(sizeResult.Size)
+			sizeColored := colorPRSizeTUI(sizeResult.Size, selected)
 			sizeStr := fmt.Sprintf("%s+%d/-%d", sizeColored, d.Additions, d.Deletions)
 			coloredParts = append(coloredParts, sizeStr)
 			if plainWidth > 0 {
 				plainWidth += 1 // space
 			}
-			plainWidth += len(sizeResult.Formatted)
+			// Calculate actual visible width of size string
+			plainWidth += len(fmt.Sprintf("%s+%d/-%d", string(sizeResult.Size), d.Additions, d.Deletions))
 		}
 
 		if len(coloredParts) > 0 {
@@ -524,31 +528,33 @@ func renderStatus(n model.Item, sizeXS, sizeS, sizeM, sizeL int) (string, int) {
 }
 
 // colorPRSizeTUI returns a styled string for the PR size using lipgloss
-func colorPRSizeTUI(size format.PRSize) string {
+func colorPRSizeTUI(size format.PRSize, selected bool) string {
 	switch size {
 	case format.PRSizeXS, format.PRSizeS:
-		return listSizeSmallStyle.Render(string(size))
+		return applyStyle(listSizeSmallStyle, string(size), selected)
 	case format.PRSizeM, format.PRSizeL:
-		return listSizeMediumStyle.Render(string(size))
+		return applyStyle(listSizeMediumStyle, string(size), selected)
 	default: // XL
-		return listSizeLargeStyle.Render(string(size))
+		return applyStyle(listSizeLargeStyle, string(size), selected)
 	}
 }
 
 // renderAge renders the age with appropriate color coding
-func renderAge(d time.Duration) string {
+// Returns the colored string and its visible width
+func renderAge(d time.Duration, selected bool) (string, int) {
 	ageStr := format.FormatAge(d)
 	days := int(d.Hours() / 24)
+	width := len(ageStr)
 
 	switch {
 	case days >= 30:
-		return listAgeCriticalStyle.Render(ageStr)
+		return applyStyle(listAgeCriticalStyle, ageStr, selected), width
 	case days >= 14:
-		return listAgeWarningStyle.Render(ageStr)
+		return applyStyle(listAgeWarningStyle, ageStr, selected), width
 	case days >= 7:
-		return listAgeModerateStyle.Render(ageStr)
+		return applyStyle(listAgeModerateStyle, ageStr, selected), width
 	default:
-		return listAgeRecentStyle.Render(ageStr)
+		return applyStyle(listAgeRecentStyle, ageStr, selected), width
 	}
 }
 
@@ -562,6 +568,16 @@ func renderEmptyState() string {
 	return listEmptyStyle.Render("All caught up! No items to triage.")
 }
 
+// applyStyle renders text with the given style when not selected.
+// When selected, returns plain text to avoid ANSI reset codes that would
+// interrupt the selected row's background highlight.
+func applyStyle(s lipgloss.Style, text string, selected bool) string {
+	if selected {
+		return text
+	}
+	return s.Render(text)
+}
+
 // List view styles - balanced palette (vibrant but not harsh)
 var (
 	// Neutral UI
@@ -573,8 +589,9 @@ var (
 				Foreground(lipgloss.Color("#475569"))
 
 	listSelectedStyle = lipgloss.NewStyle().
-				Background(lipgloss.Color("#1E293B")).
-				Foreground(lipgloss.Color("#E5E7EB"))
+				Background(lipgloss.Color("#334155")).
+				Foreground(lipgloss.Color("#F1F5F9")).
+				Bold(true)
 
 	listCursorStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#60A5FA")).
