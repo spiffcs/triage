@@ -37,9 +37,9 @@ const (
 	// they are considered stale and require re-fetching.
 	DetailCacheTTL = 24 * time.Hour
 
-	// PRListCacheTTL is the TTL for cached PR lists (shorter because
-	// PR lists change more frequently).
-	PRListCacheTTL = 5 * time.Minute
+	// ItemListCacheTTL is the TTL for cached item lists (PRs, issues).
+	// Shorter than details cache because lists change more frequently.
+	ItemListCacheTTL = 5 * time.Minute
 
 	// NotificationsCacheTTL is the maximum age before a full
 	// notification list refresh is required.

@@ -68,13 +68,27 @@ func runCacheStats(cmd *cobra.Command, args []string) error {
 	fmt.Printf("    Total: %d\n", stats.DetailTotal)
 	fmt.Printf("    Valid: %d\n", stats.DetailValid)
 	fmt.Printf("    Expired: %d\n", stats.DetailTotal-stats.DetailValid)
-	fmt.Printf("  Item lists (TTL: 1h):\n")
-	fmt.Printf("    Total: %d\n", stats.NotifListTotal)
-	fmt.Printf("    Valid: %d\n", stats.NotifListValid)
-	fmt.Printf("    Expired: %d\n", stats.NotifListTotal-stats.NotifListValid)
-	fmt.Printf("  PR lists (TTL: 5m):\n")
-	fmt.Printf("    Total: %d\n", stats.PRListTotal)
-	fmt.Printf("    Valid: %d\n", stats.PRListValid)
-	fmt.Printf("    Expired: %d\n", stats.PRListTotal-stats.PRListValid)
+
+	// Display stats for each list type with appropriate TTL labels
+	listTypeInfo := []struct {
+		listType cache.ListType
+		name     string
+		ttl      string
+	}{
+		{cache.ListTypeNotifications, "Notifications", "1h"},
+		{cache.ListTypeReviewRequested, "Review PRs", "5m"},
+		{cache.ListTypeAuthored, "Authored PRs", "5m"},
+		{cache.ListTypeAssignedIssues, "Assigned Issues", "5m"},
+		{cache.ListTypeOrphaned, "Orphaned", "15m"},
+	}
+
+	for _, info := range listTypeInfo {
+		ls := stats.ListStats[info.listType]
+		fmt.Printf("  %s (TTL: %s):\n", info.name, info.ttl)
+		fmt.Printf("    Total: %d\n", ls.Total)
+		fmt.Printf("    Valid: %d\n", ls.Valid)
+		fmt.Printf("    Expired: %d\n", ls.Total-ls.Valid)
+	}
+
 	return nil
 }

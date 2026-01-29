@@ -30,13 +30,9 @@ type Cacher interface {
 	Set(key CacheKey, updatedAt time.Time, details *model.ItemDetails) error
 	Clear() error
 
-	// PR list cache
-	GetPRList(username, listType string) ([]model.Item, bool)
-	SetPRList(username, listType string, prs []model.Item) error
-
-	// Item list cache
-	GetItemList(username string, sinceTime time.Time) ([]model.Item, time.Time, bool)
-	SetItemList(username string, items []model.Item, sinceTime time.Time) error
+	// Unified list cache
+	GetList(username string, listType ListType, opts ListOptions) (*ListCacheEntry, bool)
+	SetList(username string, listType ListType, entry *ListCacheEntry) error
 
 	// Stats
 	Stats() (total int, validCount int, err error)
@@ -92,14 +88,14 @@ func (c *Cache) Get(key CacheKey, updatedAt time.Time) (*model.ItemDetails, bool
 		return nil, false
 	}
 
-	var entry CacheEntry
+	var entry DetailsCacheEntry
 	if err := json.Unmarshal(data, &entry); err != nil {
 		return nil, false
 	}
 
 	// Invalidate if cache version doesn't match (format/schema changed)
-	if entry.Version != cacheVersion {
-		log.Debug("cache version mismatch", "cached", entry.Version, "current", cacheVersion, "key", keyStr)
+	if entry.Version != Version {
+		log.Debug("cache version mismatch", "cached", entry.Version, "current", Version, "key", keyStr)
 		return nil, false
 	}
 
@@ -123,11 +119,11 @@ func (c *Cache) Set(key CacheKey, updatedAt time.Time, details *model.ItemDetail
 		return nil
 	}
 
-	entry := CacheEntry{
+	entry := DetailsCacheEntry{
 		Details:   details,
 		CachedAt:  time.Now(),
 		UpdatedAt: updatedAt,
-		Version:   cacheVersion,
+		Version:   Version,
 	}
 
 	data, err := json.Marshal(entry)
@@ -163,9 +159,102 @@ func (c *Cache) Stats() (total int, validCount int, err error) {
 	if err != nil {
 		return 0, 0, err
 	}
-	totalCount := stats.DetailTotal + stats.PRListTotal + stats.NotifListTotal + stats.OrphanedListTotal
-	validCount = stats.DetailValid + stats.PRListValid + stats.NotifListValid + stats.OrphanedListValid
+	totalCount := stats.DetailTotal
+	validCount = stats.DetailValid
+	for _, ls := range stats.ListStats {
+		totalCount += ls.Total
+		validCount += ls.Valid
+	}
 	return totalCount, validCount, nil
+}
+
+// ttlForListType returns the TTL for a given list type
+func ttlForListType(listType ListType) time.Duration {
+	switch listType {
+	case ListTypeNotifications:
+		return constants.NotificationsCacheTTL
+	case ListTypeOrphaned:
+		return 15 * time.Minute
+	default:
+		// review-requested, authored, assigned-issues
+		return constants.ItemListCacheTTL
+	}
+}
+
+// listCacheKey generates a cache key for a list
+func (c *Cache) listCacheKey(username string, listType ListType) string {
+	return fmt.Sprintf("list_%s_%s.json", listType, username)
+}
+
+// GetList retrieves a cached list.
+// Returns the entry and true if found and valid, nil and false otherwise.
+func (c *Cache) GetList(username string, listType ListType, opts ListOptions) (*ListCacheEntry, bool) {
+	key := c.listCacheKey(username, listType)
+	path := filepath.Join(c.dir, key)
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, false
+	}
+
+	var entry ListCacheEntry
+	if err := json.Unmarshal(data, &entry); err != nil {
+		return nil, false
+	}
+
+	// Check version
+	if entry.Version != Version {
+		return nil, false
+	}
+
+	// Check TTL
+	ttl := ttlForListType(listType)
+	if time.Since(entry.CachedAt) > ttl {
+		return nil, false
+	}
+
+	// Type-specific validation
+	switch listType {
+	case ListTypeNotifications, ListTypeOrphaned:
+		// If user's since time is earlier than cached, require full refresh
+		if opts.SinceTime.Before(entry.SinceTime) {
+			return nil, false
+		}
+	}
+
+	if listType == ListTypeOrphaned {
+		// Invalidate if repos don't match
+		if !stringSlicesEqual(opts.Repos, entry.Repos) {
+			return nil, false
+		}
+	}
+
+	return &entry, true
+}
+
+// SetList caches a list
+func (c *Cache) SetList(username string, listType ListType, entry *ListCacheEntry) error {
+	if entry == nil {
+		return nil
+	}
+
+	// Ensure required fields are set
+	if entry.CachedAt.IsZero() {
+		entry.CachedAt = time.Now()
+	}
+	if entry.Version == 0 {
+		entry.Version = Version
+	}
+
+	data, err := json.Marshal(entry)
+	if err != nil {
+		return err
+	}
+
+	key := c.listCacheKey(username, listType)
+	path := filepath.Join(c.dir, key)
+
+	return os.WriteFile(path, data, 0600)
 }
 
 // DetailedStats returns detailed cache statistics broken down by type
@@ -175,7 +264,15 @@ func (c *Cache) DetailedStats() (*CacheStats, error) {
 		return nil, err
 	}
 
-	stats := &CacheStats{}
+	stats := &CacheStats{
+		ListStats: make(map[ListType]ListStat),
+	}
+
+	// Initialize all list types
+	for _, lt := range AllListTypes() {
+		stats.ListStats[lt] = ListStat{}
+	}
+
 	now := time.Now()
 
 	for _, entry := range entries {
@@ -187,39 +284,40 @@ func (c *Cache) DetailedStats() (*CacheStats, error) {
 
 		name := entry.Name()
 
-		// Check if it's an item list cache entry (starts with "notif_list_")
-		if len(name) > 11 && name[:11] == "notif_list_" {
-			stats.NotifListTotal++
-			var notifEntry NotificationsCacheEntry
-			if err := json.Unmarshal(data, &notifEntry); err != nil {
+		// Check if it's a list cache entry (starts with "list_")
+		if strings.HasPrefix(name, "list_") {
+			// Parse the list type from the filename: list_{type}_{username}.json
+			rest := strings.TrimPrefix(name, "list_")
+			// Find the list type by checking prefixes
+			var matchedType ListType
+			for _, lt := range AllListTypes() {
+				prefix := string(lt) + "_"
+				if strings.HasPrefix(rest, prefix) {
+					matchedType = lt
+					break
+				}
+			}
+
+			if matchedType == "" {
+				continue // Unknown list type
+			}
+
+			var listEntry ListCacheEntry
+			if err := json.Unmarshal(data, &listEntry); err != nil {
 				continue
 			}
-			if now.Sub(notifEntry.CachedAt) <= NotificationsCacheTTL {
-				stats.NotifListValid++
+
+			ls := stats.ListStats[matchedType]
+			ls.Total++
+			ttl := ttlForListType(matchedType)
+			if now.Sub(listEntry.CachedAt) <= ttl {
+				ls.Valid++
 			}
-		} else if len(name) > 14 && name[:14] == "orphaned_list_" {
-			// Check if it's an orphaned list cache entry (starts with "orphaned_list_")
-			stats.OrphanedListTotal++
-			var orphanedEntry OrphanedListCacheEntry
-			if err := json.Unmarshal(data, &orphanedEntry); err != nil {
-				continue
-			}
-			if now.Sub(orphanedEntry.CachedAt) <= OrphanedListCacheTTL {
-				stats.OrphanedListValid++
-			}
-		} else if len(name) > 7 && name[:7] == "prlist_" {
-			// Check if it's a PR list cache entry (starts with "prlist_")
-			stats.PRListTotal++
-			var prEntry PRListCacheEntry
-			if err := json.Unmarshal(data, &prEntry); err != nil {
-				continue
-			}
-			if now.Sub(prEntry.CachedAt) <= PRListCacheTTL {
-				stats.PRListValid++
-			}
+			stats.ListStats[matchedType] = ls
 		} else {
+			// Everything else is detail cache entries
 			stats.DetailTotal++
-			var cacheEntry CacheEntry
+			var cacheEntry DetailsCacheEntry
 			if err := json.Unmarshal(data, &cacheEntry); err != nil {
 				continue
 			}
@@ -230,184 +328,6 @@ func (c *Cache) DetailedStats() (*CacheStats, error) {
 	}
 
 	return stats, nil
-}
-
-// prListCacheKey generates a cache key for a PR list
-func (c *Cache) prListCacheKey(username string, listType string) string {
-	return fmt.Sprintf("prlist_%s_%s.json", listType, username)
-}
-
-// GetPRList retrieves cached PR list
-func (c *Cache) GetPRList(username string, listType string) ([]model.Item, bool) {
-	key := c.prListCacheKey(username, listType)
-	path := filepath.Join(c.dir, key)
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, false
-	}
-
-	var entry PRListCacheEntry
-	if err := json.Unmarshal(data, &entry); err != nil {
-		return nil, false
-	}
-
-	// Check version (invalidate old cache format)
-	if entry.Version != cacheVersion {
-		return nil, false
-	}
-
-	// Check TTL
-	if time.Since(entry.CachedAt) > PRListCacheTTL {
-		return nil, false
-	}
-
-	return entry.PRs, true
-}
-
-// SetPRList caches a PR list
-func (c *Cache) SetPRList(username string, listType string, prs []model.Item) error {
-	entry := PRListCacheEntry{
-		PRs:      prs,
-		CachedAt: time.Now(),
-		Version:  cacheVersion,
-	}
-
-	data, err := json.Marshal(entry)
-	if err != nil {
-		return err
-	}
-
-	key := c.prListCacheKey(username, listType)
-	path := filepath.Join(c.dir, key)
-
-	return os.WriteFile(path, data, 0600)
-}
-
-// itemListCacheKey generates a cache key for an item list
-func (c *Cache) itemListCacheKey(username string) string {
-	return fmt.Sprintf("notif_list_%s.json", username)
-}
-
-// GetItemList retrieves cached item list.
-// Returns: cached items, last fetch time, ok
-func (c *Cache) GetItemList(username string, sinceTime time.Time) ([]model.Item, time.Time, bool) {
-	key := c.itemListCacheKey(username)
-	path := filepath.Join(c.dir, key)
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, time.Time{}, false
-	}
-
-	var entry NotificationsCacheEntry
-	if err := json.Unmarshal(data, &entry); err != nil {
-		return nil, time.Time{}, false
-	}
-
-	// Check version (invalidate old cache format)
-	if entry.Version != cacheVersion {
-		return nil, time.Time{}, false
-	}
-
-	// Check TTL - if cache is too old, require full refresh
-	if time.Since(entry.CachedAt) > NotificationsCacheTTL {
-		return nil, time.Time{}, false
-	}
-
-	// If user's since time is earlier than what we cached, require full refresh
-	// (they want more history than we have)
-	if sinceTime.Before(entry.SinceTime) {
-		return nil, time.Time{}, false
-	}
-
-	return entry.Items, entry.LastFetchTime, true
-}
-
-// SetItemList caches an item list
-func (c *Cache) SetItemList(username string, items []model.Item, sinceTime time.Time) error {
-	entry := NotificationsCacheEntry{
-		Items:         items,
-		LastFetchTime: time.Now(),
-		CachedAt:      time.Now(),
-		SinceTime:     sinceTime,
-		Version:       cacheVersion,
-	}
-
-	data, err := json.Marshal(entry)
-	if err != nil {
-		return err
-	}
-
-	key := c.itemListCacheKey(username)
-	path := filepath.Join(c.dir, key)
-
-	return os.WriteFile(path, data, 0600)
-}
-
-// orphanedListCacheKey generates a cache key for orphaned contributions
-func (c *Cache) orphanedListCacheKey(username string) string {
-	return fmt.Sprintf("orphaned_list_%s.json", username)
-}
-
-// GetOrphanedList retrieves cached orphaned contributions.
-// The cache is invalidated if repos don't match or sinceTime has changed significantly.
-func (c *Cache) GetOrphanedList(username string, repos []string, sinceTime time.Time) ([]model.Item, bool) {
-	key := c.orphanedListCacheKey(username)
-	path := filepath.Join(c.dir, key)
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, false
-	}
-
-	var entry OrphanedListCacheEntry
-	if err := json.Unmarshal(data, &entry); err != nil {
-		return nil, false
-	}
-
-	// Check version
-	if entry.Version != cacheVersion {
-		return nil, false
-	}
-
-	// Check TTL
-	if time.Since(entry.CachedAt) > OrphanedListCacheTTL {
-		return nil, false
-	}
-
-	// Invalidate if repos don't match (order-insensitive comparison)
-	if !stringSlicesEqual(entry.Repos, repos) {
-		return nil, false
-	}
-
-	// Invalidate if user's since time is earlier than cached
-	if sinceTime.Before(entry.SinceTime) {
-		return nil, false
-	}
-
-	return entry.Orphaned, true
-}
-
-// SetOrphanedList caches orphaned contributions
-func (c *Cache) SetOrphanedList(username string, orphaned []model.Item, repos []string, sinceTime time.Time) error {
-	entry := OrphanedListCacheEntry{
-		Orphaned:  orphaned,
-		Repos:     repos,
-		CachedAt:  time.Now(),
-		SinceTime: sinceTime,
-		Version:   cacheVersion,
-	}
-
-	data, err := json.Marshal(entry)
-	if err != nil {
-		return err
-	}
-
-	key := c.orphanedListCacheKey(username)
-	path := filepath.Join(c.dir, key)
-
-	return os.WriteFile(path, data, 0600)
 }
 
 // stringSlicesEqual checks if two string slices contain the same elements (order-insensitive)

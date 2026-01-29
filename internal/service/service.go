@@ -3,8 +3,6 @@ package service
 
 import (
 	"context"
-	"errors"
-	"strings"
 	"time"
 
 	"github.com/spiffcs/triage/internal/cache"
@@ -50,8 +48,8 @@ type ItemFetchResult struct {
 func (s *ItemService) GetReviewRequestedPRs(ctx context.Context) ([]model.Item, bool, error) {
 	// Check cache first
 	if s.cache != nil {
-		if prs, ok := s.cache.GetPRList(s.currentUser, "review-requested"); ok {
-			return prs, true, nil
+		if entry, ok := s.cache.GetList(s.currentUser, cache.ListTypeReviewRequested, cache.ListOptions{}); ok {
+			return entry.Items, true, nil
 		}
 	}
 
@@ -68,7 +66,11 @@ func (s *ItemService) GetReviewRequestedPRs(ctx context.Context) ([]model.Item, 
 
 	// Cache the result
 	if s.cache != nil {
-		if err := s.cache.SetPRList(s.currentUser, "review-requested", prs); err != nil {
+		if err := s.cache.SetList(s.currentUser, cache.ListTypeReviewRequested, &cache.ListCacheEntry{
+			Items:    prs,
+			CachedAt: time.Now(),
+			Version:  cache.Version,
+		}); err != nil {
 			log.Debug("failed to cache review-requested PRs", "error", err)
 		}
 	}
@@ -81,8 +83,8 @@ func (s *ItemService) GetReviewRequestedPRs(ctx context.Context) ([]model.Item, 
 func (s *ItemService) GetAuthoredPRs(ctx context.Context) ([]model.Item, bool, error) {
 	// Check cache first
 	if s.cache != nil {
-		if prs, ok := s.cache.GetPRList(s.currentUser, "authored"); ok {
-			return prs, true, nil
+		if entry, ok := s.cache.GetList(s.currentUser, cache.ListTypeAuthored, cache.ListOptions{}); ok {
+			return entry.Items, true, nil
 		}
 	}
 
@@ -99,7 +101,11 @@ func (s *ItemService) GetAuthoredPRs(ctx context.Context) ([]model.Item, bool, e
 
 	// Cache the result
 	if s.cache != nil {
-		if err := s.cache.SetPRList(s.currentUser, "authored", prs); err != nil {
+		if err := s.cache.SetList(s.currentUser, cache.ListTypeAuthored, &cache.ListCacheEntry{
+			Items:    prs,
+			CachedAt: time.Now(),
+			Version:  cache.Version,
+		}); err != nil {
 			log.Debug("failed to cache authored PRs", "error", err)
 		}
 	}
@@ -112,8 +118,8 @@ func (s *ItemService) GetAuthoredPRs(ctx context.Context) ([]model.Item, bool, e
 func (s *ItemService) GetAssignedIssues(ctx context.Context) ([]model.Item, bool, error) {
 	// Check cache first
 	if s.cache != nil {
-		if issues, ok := s.cache.GetPRList(s.currentUser, "assigned-issues"); ok {
-			return issues, true, nil
+		if entry, ok := s.cache.GetList(s.currentUser, cache.ListTypeAssignedIssues, cache.ListOptions{}); ok {
+			return entry.Items, true, nil
 		}
 	}
 
@@ -130,7 +136,11 @@ func (s *ItemService) GetAssignedIssues(ctx context.Context) ([]model.Item, bool
 
 	// Cache the result
 	if s.cache != nil {
-		if err := s.cache.SetPRList(s.currentUser, "assigned-issues", issues); err != nil {
+		if err := s.cache.SetList(s.currentUser, cache.ListTypeAssignedIssues, &cache.ListCacheEntry{
+			Items:    issues,
+			CachedAt: time.Now(),
+			Version:  cache.Version,
+		}); err != nil {
 			log.Debug("failed to cache assigned issues", "error", err)
 		}
 	}
@@ -142,12 +152,13 @@ func (s *ItemService) GetAssignedIssues(ctx context.Context) ([]model.Item, bool
 // It returns cached items merged with any new ones since the last fetch.
 func (s *ItemService) GetUnreadItems(ctx context.Context) (*ItemFetchResult, error) {
 	result := &ItemFetchResult{}
+	opts := cache.ListOptions{SinceTime: s.since}
 
 	// Check if rate limited - return cached data if available
 	if ghclient.IsRateLimited() {
 		if s.cache != nil {
-			if cached, _, ok := s.cache.GetItemList(s.currentUser, s.since); ok {
-				result.Items = cached
+			if entry, ok := s.cache.GetList(s.currentUser, cache.ListTypeNotifications, opts); ok {
+				result.Items = entry.Items
 				result.FromCache = true
 				return result, nil
 			}
@@ -157,26 +168,31 @@ func (s *ItemService) GetUnreadItems(ctx context.Context) (*ItemFetchResult, err
 
 	// Check cache
 	if s.cache != nil {
-		cached, lastFetch, ok := s.cache.GetItemList(s.currentUser, s.since)
-		if ok {
+		if entry, ok := s.cache.GetList(s.currentUser, cache.ListTypeNotifications, opts); ok {
 			// Fetch only NEW notifications since last fetch
-			newItems, err := s.fetcher.ListUnreadNotifications(ctx, lastFetch)
+			newItems, err := s.fetcher.ListUnreadNotifications(ctx, entry.LastFetchTime)
 			if err != nil {
 				// Return cached on error
 				log.Debug("failed to fetch new items, using cache", "error", err)
-				result.Items = cached
+				result.Items = entry.Items
 				result.FromCache = true
 				return result, nil
 			}
 
 			// Merge: new items replace old ones by ID
-			merged := mergeItems(cached, newItems, s.since)
+			merged := mergeItems(entry.Items, newItems, s.since)
 			result.Items = merged
 			result.FromCache = true
 			result.NewCount = len(newItems)
 
 			// Update cache with merged result
-			if err := s.cache.SetItemList(s.currentUser, merged, s.since); err != nil {
+			if err := s.cache.SetList(s.currentUser, cache.ListTypeNotifications, &cache.ListCacheEntry{
+				Items:         merged,
+				CachedAt:      time.Now(),
+				LastFetchTime: time.Now(),
+				SinceTime:     s.since,
+				Version:       cache.Version,
+			}); err != nil {
 				log.Debug("failed to update item cache", "error", err)
 			}
 
@@ -195,7 +211,13 @@ func (s *ItemService) GetUnreadItems(ctx context.Context) (*ItemFetchResult, err
 
 	// Cache result
 	if s.cache != nil {
-		if err := s.cache.SetItemList(s.currentUser, items, s.since); err != nil {
+		if err := s.cache.SetList(s.currentUser, cache.ListTypeNotifications, &cache.ListCacheEntry{
+			Items:         items,
+			CachedAt:      time.Now(),
+			LastFetchTime: time.Now(),
+			SinceTime:     s.since,
+			Version:       cache.Version,
+		}); err != nil {
 			log.Debug("failed to cache items", "error", err)
 		}
 	}
@@ -216,10 +238,15 @@ func (s *ItemService) GetOrphanedContributions(ctx context.Context, opts ghclien
 		since = s.since
 	}
 
+	cacheOpts := cache.ListOptions{
+		SinceTime: since,
+		Repos:     opts.Repos,
+	}
+
 	// Try cache first
 	if s.cache != nil {
-		if cached, ok := s.cache.GetOrphanedList(s.currentUser, opts.Repos, since); ok {
-			return cached, true, nil
+		if entry, ok := s.cache.GetList(s.currentUser, cache.ListTypeOrphaned, cacheOpts); ok {
+			return entry.Items, true, nil
 		}
 	}
 
@@ -231,7 +258,13 @@ func (s *ItemService) GetOrphanedContributions(ctx context.Context, opts ghclien
 
 	// Cache the result
 	if s.cache != nil {
-		if cacheErr := s.cache.SetOrphanedList(s.currentUser, orphaned, opts.Repos, since); cacheErr != nil {
+		if cacheErr := s.cache.SetList(s.currentUser, cache.ListTypeOrphaned, &cache.ListCacheEntry{
+			Items:     orphaned,
+			CachedAt:  time.Now(),
+			SinceTime: since,
+			Repos:     opts.Repos,
+			Version:   cache.Version,
+		}); cacheErr != nil {
 			log.Debug("failed to cache orphaned list", "error", cacheErr)
 		}
 	}
@@ -384,15 +417,3 @@ func mergeItems(cached, fresh []model.Item, since time.Time) []model.Item {
 
 	return result
 }
-
-// extractRepoOwnerAndName extracts owner and repo name from a full repo name.
-func extractRepoOwnerAndName(fullName string) (owner, repo string, ok bool) {
-	parts := strings.Split(fullName, "/")
-	if len(parts) != 2 {
-		return "", "", false
-	}
-	return parts[0], parts[1], true
-}
-
-// ErrRateLimited is re-exported for convenience
-var ErrRateLimited = errors.New("GitHub API rate limit exceeded")
