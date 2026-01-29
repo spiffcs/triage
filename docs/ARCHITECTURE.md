@@ -2,58 +2,74 @@
 
 ## Data Sources
 
-The tool aggregates items from four GitHub API sources:
+The tool aggregates items from five GitHub API sources:
 
 1. **Unread Notifications** - Your GitHub notification inbox
 2. **Review-Requested PRs** - Open PRs where you're a requested reviewer
 3. **Authored PRs** - Your own open PRs (to track stale PRs, reviews needed, etc.)
 4. **Assigned Issues** - Open issues assigned to you
+5. **Orphaned Contributions** - External PRs/issues lacking team engagement
 
 Items are deduplicated when merging these sources, so an item won't appear twice.
 
 ## Data Flow
 
 ```
-┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐
-│  Notifications   │  │ Review-Requested │  │  Authored PRs    │  │ Assigned Issues  │
-│  (Core API)      │  │  PRs (Search)    │  │    (Search)      │  │    (Search)      │
-└────────┬─────────┘  └────────┬─────────┘  └────────┬─────────┘  └────────┬─────────┘
-         │ (1h cache)          │ (5m cache)          │ (5m cache)          │ (5m cache)
-         ▼                     ▼                     ▼                     ▼
-┌─────────────────────────────────────────────────────────────────────────────────────┐
-│                              Merge & Deduplicate                                    │
-└─────────────────────────────────────────────────────────────────────────────────────┘
-                                        │
-                                        ▼
-┌─────────────────────────────────────────────────────────────────────────────────────┐
-│                    Enrich with Details (GraphQL batch, 24h cache)                   │
-│              (PR size, review state, CI status, labels, comments, etc.)             │
-└─────────────────────────────────────────────────────────────────────────────────────┘
-                                        │
-                                        ▼
-┌─────────────────────────────────────────────────────────────────────────────────────┐
-│                              Score & Prioritize                                     │
-└─────────────────────────────────────────────────────────────────────────────────────┘
-                                        │
-                                        ▼
-┌─────────────────────────────────────────────────────────────────────────────────────┐
-│                               Filter & Output                                       │
-└─────────────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐ ┌─────────────────┐
+│  Notifications  │ │Review-Requested │ │  Authored PRs   │ │ Assigned Issues │ │    Orphaned     │
+│   (Core API)    │ │  PRs (Search)   │ │    (Search)     │ │    (Search)     │ │ (Search+GraphQL)│
+└───────┬─────────┘ └───────┬─────────┘ └───────┬─────────┘ └───────┬─────────┘ └───────┬─────────┘
+        │ (1h cache)        │ (5m cache)        │ (5m cache)        │ (5m cache)        │ (15m cache)
+        ▼                   ▼                   ▼                   ▼                   ▼
+┌───────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                   ItemService (Orchestration Layer)                               │
+│                                    - Cache coordination                                           │
+│                                    - API call management                                          │
+└───────────────────────────────────────────────────────────────────────────────────────────────────┘
+                                                │
+                                                ▼
+┌───────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                              Merge & Deduplicate (cmd/merge.go)                                   │
+└───────────────────────────────────────────────────────────────────────────────────────────────────┘
+                                                │
+                                                ▼
+┌───────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                       Enrich with Details (GraphQL batch, 24h cache)                              │
+│                 (PR size, review state, CI status, labels, comments, etc.)                        │
+└───────────────────────────────────────────────────────────────────────────────────────────────────┘
+                                                │
+                                                ▼
+┌───────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                                     Score & Prioritize                                            │
+└───────────────────────────────────────────────────────────────────────────────────────────────────┘
+                                                │
+                                                ▼
+┌───────────────────────────────────────────────────────────────────────────────────────────────────┐
+│                              Dual-Pane TUI / Filter & Output                                      │
+│                         (Priority Pane)              (Orphaned Pane)                              │
+└───────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Caching Strategy
 
-The tool uses a three-tier caching strategy to balance freshness with API efficiency:
+The tool uses a multi-tier caching strategy to balance freshness with API efficiency:
 
 | Cache Type | TTL | Purpose |
 |------------|-----|---------|
 | PR/Issue Lists | 5 minutes | Review-requested PRs, authored PRs, assigned issues |
+| Orphaned Lists | 15 minutes | Orphaned contribution lists |
 | Notification Lists | 1 hour | Unread notifications (with incremental updates) |
 | Item Details | 24 hours | Issue/PR metadata (labels, size, review state, CI status, etc.) |
 
 Cache location: `~/.cache/triage/details/`
 
 The shorter TTL for PR/issue lists ensures you see new review requests quickly. Notification lists use incremental fetching - only new notifications since last fetch are retrieved and merged with cached data. The longer TTL for details reduces API calls for metadata that changes less frequently.
+
+### Cache Features
+
+- **Incremental notification fetching**: Only new notifications since last fetch are retrieved and merged with cached data
+- **Cache versioning**: Version stamps on cache entries allow invalidation when data format changes
+- **Graceful degradation**: When rate limited, returns cached data instead of failing
 
 ## Enriched Data
 
@@ -75,6 +91,79 @@ For each item, the tool fetches additional details via GraphQL:
 | `mergeable` | Whether the PR can be merged | PRs only |
 | `draft` | Whether the PR is a draft | PRs only |
 
+## Package Architecture
+
+The codebase follows a layered architecture with clear separation of concerns:
+
+### ghclient (GitHub API Layer)
+Raw GitHub API operations implementing the `GitHubFetcher` interface. This package handles:
+- REST API calls for notifications and search queries
+- GraphQL batch queries for enrichment
+- Rate limit tracking and handling
+- Orphaned contribution detection via comment/review analysis
+
+### cache (Caching Layer)
+Two-tier caching system:
+- **List cache**: Stores notification/PR/issue lists with type-specific TTLs
+- **Details cache**: Stores enriched item metadata with longer TTL
+
+The cache package is independent of the GitHub client, allowing for easier testing and potential alternative backends.
+
+### model (Domain Models)
+Domain types independent of the go-github library:
+- `Item`: Core work item (PR or issue) with source tracking
+- `ItemDetails`: Enriched metadata (size, review state, CI status, etc.)
+- Team membership helpers for orphaned detection
+
+### service (Orchestration Layer)
+The `ItemService` coordinates between cache and API:
+- Checks cache before making API calls
+- Manages cache invalidation and updates
+- Provides a unified interface for fetching items
+- URL parsing utilities for extracting owner/repo/number
+
+## Dual-Pane TUI
+
+The interactive terminal UI presents two panes accessible via `Tab`:
+
+### Priority Pane
+Displays your work items (notifications, review requests, authored PRs, assigned issues) sorted by:
+- **Priority** (default): Urgent → Important → Quick Win → Notable → FYI
+- **Updated**: Most recently updated first
+- **Repo**: Alphabetical by repository name
+
+### Orphaned Pane
+Displays external contributions lacking team engagement, sorted by:
+- **Stale** (default): Days since last team response
+- **Updated**: Most recently updated first
+- **Comments**: Number of comments
+- **Size**: PR size (lines changed)
+- **Author**: Alphabetical by author
+- **Repo**: Alphabetical by repository name
+
+Use `s` to cycle through sort columns, `S` to toggle direction, and `r` to reset.
+
+## Orphaned Detection
+
+The orphaned detection feature identifies external contributions that may need team attention.
+
+### Detection Criteria
+
+An item is flagged as orphaned when ALL of the following are true:
+1. **External author**: The author's association is not MEMBER, OWNER, or COLLABORATOR
+2. **Needs attention**: Either:
+   - No team member has responded in the configured days (`--stale-days`, default 7), OR
+   - The author has posted multiple consecutive comments without team response (`--consecutive`, default 2)
+
+### Implementation
+
+Orphaned detection uses GraphQL to analyze:
+- Comment timelines to find last team response
+- Review submissions (for PRs) to detect team engagement
+- Author associations to identify external contributors
+
+The analysis happens in `internal/ghclient/orphaned.go` and results are displayed in the Orphaned pane of the TUI.
+
 ## Project Structure
 
 ```
@@ -83,22 +172,34 @@ triage/
 ├── cmd/
 │   ├── root.go              # Root command, subcommand registration
 │   ├── list.go              # Main list command (also default)
+│   ├── fetch.go             # Data fetching logic
+│   ├── merge.go             # Item merging and deduplication
 │   ├── cache.go             # Cache management commands
 │   ├── config.go            # Config management commands
 │   ├── ratelimit.go         # Rate limit status command
+│   ├── tui_flag.go          # TUI flag configuration
 │   ├── version.go           # Version command
 │   └── options.go           # Shared CLI options
 ├── config/
 │   └── config.go            # Configuration loading and defaults
 ├── internal/
-│   ├── github/
-│   │   ├── client.go        # GitHub REST API client, search queries
+│   ├── ghclient/            # GitHub API client (renamed from github/)
+│   │   ├── client.go        # REST API client, search queries
 │   │   ├── graphql.go       # GraphQL batch enrichment
-│   │   ├── ratelimit.go     # Global rate limit state tracking
-│   │   ├── cache.go         # Multi-tier caching layer
-│   │   ├── details.go       # Enrichment orchestration
+│   │   ├── interfaces.go    # GitHubFetcher interface
 │   │   ├── notifications.go # Notification fetching
-│   │   └── types.go         # Data structures
+│   │   ├── orphaned.go      # Orphaned contribution detection
+│   │   └── ratelimit.go     # Rate limit state tracking
+│   ├── cache/               # Dedicated caching layer
+│   │   ├── cache.go         # Cache implementation
+│   │   └── entries.go       # Cache entry types
+│   ├── model/               # Domain models
+│   │   ├── item.go          # Core Item model
+│   │   ├── details.go       # ItemDetails for enrichment
+│   │   └── team.go          # Team membership helpers
+│   ├── service/             # Orchestration layer
+│   │   ├── service.go       # ItemService (cache + API coordination)
+│   │   └── url.go           # URL parsing utilities
 │   ├── triage/
 │   │   ├── engine.go        # Prioritization engine, filters
 │   │   ├── heuristics.go    # Scoring logic
@@ -106,9 +207,9 @@ triage/
 │   ├── tui/
 │   │   ├── tui.go           # TUI initialization and runner
 │   │   ├── model.go         # Progress display model
-│   │   ├── list_model.go    # Interactive list model
+│   │   ├── list_model.go    # Interactive list model (dual-pane)
 │   │   ├── list_view.go     # List rendering
-│   │   ├── events.go        # Event types (task, rate limit, etc.)
+│   │   ├── events.go        # Event types
 │   │   ├── task.go          # Task progress tracking
 │   │   └── styles.go        # Lipgloss styles
 │   ├── output/
@@ -125,7 +226,7 @@ triage/
 
 ## Concurrency
 
-Data fetching uses parallel goroutines for the four data sources (notifications, review-requested PRs, authored PRs, assigned issues), each with independent caching.
+Data fetching uses parallel goroutines for the five data sources (notifications, review-requested PRs, authored PRs, assigned issues, orphaned contributions), each with independent caching.
 
 Detail enrichment uses GraphQL batch queries:
 
