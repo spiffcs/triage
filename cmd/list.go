@@ -53,7 +53,6 @@ func (rt *listRuntime) sendEvent(task tui.TaskID, status tui.TaskStatus, opts ..
 	sendTaskEvent(rt.events, task, status, opts...)
 }
 
-
 // NewCmdList creates the list command.
 func NewCmdList(opts *Options) *cobra.Command {
 	cmd := &cobra.Command{

@@ -72,6 +72,9 @@ const (
 )
 
 // Item represents a GitHub notification with enriched context
+// TODO: there is a way to refactor this where we give the item a type
+// and we switch on that type and have different Detail types depending orphaned
+// the Item type (where it was fetched from)
 type Item struct {
 	ID         string     `json:"id"`
 	Reason     ItemReason `json:"reason"`

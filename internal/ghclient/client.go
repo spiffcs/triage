@@ -440,5 +440,3 @@ func (c *Client) authoredPRToItem(issue *gh.Issue) model.Item {
 
 	return notification
 }
-
-
