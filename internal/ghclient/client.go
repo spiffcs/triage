@@ -84,7 +84,9 @@ func parseRateLimitHeaders(resp *http.Response) (remaining, limit int, resetAt t
 // Client wraps the GitHub API client
 type Client struct {
 	client *gh.Client
-	token  string
+	// token is intentionally unexported. NEVER add String(), MarshalJSON(),
+	// or any method that could expose this value in logs or serialized output.
+	token string
 }
 
 // NewClient creates a new GitHub client using a personal access token.

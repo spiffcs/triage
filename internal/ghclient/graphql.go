@@ -343,7 +343,7 @@ func (c *Client) executeGraphQL(ctx context.Context, query string, token string)
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GraphQL request failed with status %d: %s", resp.StatusCode, string(respBody))
+		return nil, fmt.Errorf("GraphQL request failed with status %d", resp.StatusCode)
 	}
 
 	var gqlResp graphqlResponse
