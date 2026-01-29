@@ -36,36 +36,6 @@ type orphanedRepoResult struct {
 	err           error
 }
 
-// ListOrphanedContributionsCached finds external PRs/issues needing attention, using cache if available.
-// Returns: notifications, fromCache, error
-func (c *Client) ListOrphanedContributionsCached(opts model.OrphanedSearchOptions, username string, cache *Cache) ([]model.Item, bool, error) {
-	if len(opts.Repos) == 0 {
-		return nil, false, nil
-	}
-
-	// Try cache first
-	if cache != nil {
-		if cached, ok := cache.GetOrphanedList(username, opts.Repos, opts.Since); ok {
-			return cached, true, nil
-		}
-	}
-
-	// Fetch fresh data
-	orphaned, err := c.ListOrphanedContributions(opts)
-	if err != nil {
-		return nil, false, err
-	}
-
-	// Cache the result
-	if cache != nil {
-		if cacheErr := cache.SetOrphanedList(username, orphaned, opts.Repos, opts.Since); cacheErr != nil {
-			log.Debug("failed to cache orphaned list", "error", cacheErr)
-		}
-	}
-
-	return orphaned, false, nil
-}
-
 // ListOrphanedContributions finds external PRs/issues needing attention
 func (c *Client) ListOrphanedContributions(opts model.OrphanedSearchOptions) ([]model.Item, error) {
 	if len(opts.Repos) == 0 {

@@ -139,11 +139,17 @@ func runList(cmd *cobra.Command, _ []string, opts *Options) error {
 
 	log.Info("fetching notifications", "since", opts.Since)
 
-	// Create cache for PR lists
-	prCache, cacheErr := ghclient.NewCache()
+	// Create cache for item storage
+	cache, cacheErr := ghclient.NewCache()
 	if cacheErr != nil {
 		log.Warn("failed to initialize cache", "error", cacheErr)
 	}
+
+	// Create ItemStore for cache-aware fetching
+	store := ghclient.NewItemStore(ghClient, cache)
+
+	// Create Enricher for GraphQL-based enrichment
+	enricher := ghclient.NewEnricher(ghClient, cache)
 
 	// Determine orphaned settings - enabled by default unless explicitly skipped
 	orphanedEnabled := !opts.SkipOrphaned
@@ -165,7 +171,7 @@ func runList(cmd *cobra.Command, _ []string, opts *Options) error {
 	}
 
 	// Fetch all data sources in parallel
-	fetchResult, err := fetchAll(ctx, ghClient, prCache, fetchOptions{
+	fetchResult, err := fetchAll(ctx, store, fetchOptions{
 		Since:               since,
 		SinceLabel:          opts.Since,
 		CurrentUser:         currentUser,
@@ -188,7 +194,7 @@ func runList(cmd *cobra.Command, _ []string, opts *Options) error {
 	var totalCompleted int64
 
 	if totalToEnrich > 0 {
-		enrichItems(ghClient, fetchResult.Notifications, fetchResult.ReviewPRs, fetchResult.AuthoredPRs, prCache, opts.Workers, useTUI, events, totalToEnrich, &totalCompleted, &totalCacheHits)
+		enrichItems(enricher, fetchResult.Notifications, fetchResult.ReviewPRs, fetchResult.AuthoredPRs, useTUI, events, totalToEnrich, &totalCompleted, &totalCacheHits)
 	}
 
 	enrichCompleteMsg := fmt.Sprintf("%d/%d", totalCompleted, totalToEnrich)
@@ -266,12 +272,10 @@ func runList(cmd *cobra.Command, _ []string, opts *Options) error {
 	return formatter.Format(items, os.Stdout)
 }
 
-// enrichItems enriches notifications and PRs concurrently.
+// enrichItems enriches notifications and PRs concurrently using the Enricher.
 func enrichItems(
-	ghClient *ghclient.Client,
+	enricher *ghclient.Enricher,
 	notifications, reviewPRs, authoredPRs []model.Item,
-	prCache *ghclient.Cache,
-	workers int,
 	useTUI bool,
 	events chan tui.Event,
 	totalToEnrich int,
@@ -320,7 +324,7 @@ func enrichItems(
 		enrichWg.Add(1)
 		go func() {
 			defer enrichWg.Done()
-			cacheHits, err := ghClient.EnrichItemsConcurrent(notifications, workers, nil, onProgress)
+			cacheHits, err := enricher.Enrich(notifications, onProgress)
 			if err != nil {
 				log.Warn("some notifications could not be enriched", "error", err)
 			}
@@ -333,7 +337,7 @@ func enrichItems(
 		enrichWg.Add(1)
 		go func() {
 			defer enrichWg.Done()
-			cacheHits, err := ghClient.EnrichItemsConcurrent(reviewPRs, workers, prCache, onProgress)
+			cacheHits, err := enricher.Enrich(reviewPRs, onProgress)
 			if err != nil {
 				log.Warn("some review PRs could not be enriched", "error", err)
 			}
@@ -346,7 +350,7 @@ func enrichItems(
 		enrichWg.Add(1)
 		go func() {
 			defer enrichWg.Done()
-			cacheHits, err := ghClient.EnrichItemsConcurrent(authoredPRs, workers, prCache, onProgress)
+			cacheHits, err := enricher.Enrich(authoredPRs, onProgress)
 			if err != nil {
 				log.Warn("some authored PRs could not be enriched", "error", err)
 			}

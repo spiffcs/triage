@@ -7,9 +7,10 @@ import (
 	"github.com/spiffcs/triage/internal/model"
 )
 
-// GitHubClient defines the interface for GitHub API operations.
-// This interface enables mocking the GitHub client in unit tests.
-type GitHubClient interface {
+// GitHubFetcher defines the interface for raw GitHub API operations.
+// This interface provides direct access to GitHub's REST and GraphQL APIs
+// without any caching logic. Use ItemStore for cache-aware fetching.
+type GitHubFetcher interface {
 	// Authentication
 	GetAuthenticatedUser() (string, error)
 
@@ -21,14 +22,14 @@ type GitHubClient interface {
 	ListAuthoredPRs(username string) ([]model.Item, error)
 	ListAssignedIssues(username string) ([]model.Item, error)
 
-	// Cached operations
-	ListReviewRequestedPRsCached(username string, cache *Cache) ([]model.Item, bool, error)
-	ListAuthoredPRsCached(username string, cache *Cache) ([]model.Item, bool, error)
-	ListAssignedIssuesCached(username string, cache *Cache) ([]model.Item, bool, error)
-	ListUnreadItemsCached(username string, since time.Time, cache *Cache) (*ItemFetchResult, error)
+	// Orphaned contributions
+	ListOrphanedContributions(opts model.OrphanedSearchOptions) ([]model.Item, error)
 
-	// Enrichment
-	EnrichItemsConcurrent(items []model.Item, workers int, cache *Cache, onProgress func(completed, total int)) (int, error)
+	// GraphQL enrichment (used by Enricher)
+	EnrichItemsGraphQL(items []model.Item, token string, onProgress func(completed, total int)) (int, error)
+
+	// Token access (needed for GraphQL operations)
+	Token() string
 }
 
 // Cacher defines the interface for caching operations.
@@ -52,8 +53,8 @@ type Cacher interface {
 	DetailedStats() (*CacheStats, error)
 }
 
-// Ensure Client implements GitHubClient interface.
-var _ GitHubClient = (*Client)(nil)
+// Ensure Client implements GitHubFetcher interface.
+var _ GitHubFetcher = (*Client)(nil)
 
 // Ensure Cache implements Cacher interface.
 var _ Cacher = (*Cache)(nil)

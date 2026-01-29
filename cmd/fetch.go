@@ -52,7 +52,7 @@ type fetchOptions struct {
 }
 
 // fetchAll fetches all data sources in parallel.
-func fetchAll(ctx context.Context, client *ghclient.Client, cache *ghclient.Cache, opts fetchOptions) (*fetchResult, error) {
+func fetchAll(_ context.Context, store *ghclient.ItemStore, opts fetchOptions) (*fetchResult, error) {
 	totalFetches := 4
 	if len(opts.OrphanedRepos) > 0 {
 		totalFetches = 5
@@ -84,7 +84,7 @@ func fetchAll(ctx context.Context, client *ghclient.Client, cache *ghclient.Cach
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		notifResult, err := client.ListUnreadItemsCached(opts.CurrentUser, opts.Since, cache)
+		notifResult, err := store.GetUnreadItems(opts.CurrentUser, opts.Since)
 		if err != nil {
 			notifErr = err
 			updateFetchProgress()
@@ -100,7 +100,7 @@ func fetchAll(ctx context.Context, client *ghclient.Client, cache *ghclient.Cach
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		result.ReviewPRs, result.ReviewCached, reviewErr = client.ListReviewRequestedPRsCached(opts.CurrentUser, cache)
+		result.ReviewPRs, result.ReviewCached, reviewErr = store.GetReviewRequestedPRs(opts.CurrentUser)
 		updateFetchProgress()
 	}()
 
@@ -108,7 +108,7 @@ func fetchAll(ctx context.Context, client *ghclient.Client, cache *ghclient.Cach
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		result.AuthoredPRs, result.AuthoredCached, authoredErr = client.ListAuthoredPRsCached(opts.CurrentUser, cache)
+		result.AuthoredPRs, result.AuthoredCached, authoredErr = store.GetAuthoredPRs(opts.CurrentUser)
 		updateFetchProgress()
 	}()
 
@@ -116,7 +116,7 @@ func fetchAll(ctx context.Context, client *ghclient.Client, cache *ghclient.Cach
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		result.AssignedIssues, result.AssignedCached, assignedErr = client.ListAssignedIssuesCached(opts.CurrentUser, cache)
+		result.AssignedIssues, result.AssignedCached, assignedErr = store.GetAssignedIssues(opts.CurrentUser)
 		updateFetchProgress()
 	}()
 
@@ -133,7 +133,7 @@ func fetchAll(ctx context.Context, client *ghclient.Client, cache *ghclient.Cach
 				ConsecutiveAuthorComments: opts.ConsecutiveComments,
 				MaxPerRepo:                50,
 			}
-			result.Orphaned, result.OrphanedCached, orphanedErr = client.ListOrphanedContributionsCached(searchOpts, opts.CurrentUser, cache)
+			result.Orphaned, result.OrphanedCached, orphanedErr = store.GetOrphanedContributions(searchOpts, opts.CurrentUser)
 			updateFetchProgress()
 		}()
 	}
