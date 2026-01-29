@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -10,15 +11,47 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spiffcs/triage/config"
+	"github.com/spiffcs/triage/internal/cache"
 	"github.com/spiffcs/triage/internal/constants"
 	"github.com/spiffcs/triage/internal/duration"
-	"github.com/spiffcs/triage/internal/github"
+	"github.com/spiffcs/triage/internal/ghclient"
 	"github.com/spiffcs/triage/internal/log"
+	"github.com/spiffcs/triage/internal/model"
 	"github.com/spiffcs/triage/internal/output"
 	"github.com/spiffcs/triage/internal/resolved"
+	"github.com/spiffcs/triage/internal/service"
 	"github.com/spiffcs/triage/internal/triage"
 	"github.com/spiffcs/triage/internal/tui"
 )
+
+// listRuntime bundles TUI-related state that's threaded through the list command.
+type listRuntime struct {
+	useTUI  bool
+	events  chan tui.Event
+	tuiDone chan error
+}
+
+// startTUI initializes and starts the TUI goroutine if TUI mode is enabled.
+func (rt *listRuntime) startTUI() {
+	if !rt.useTUI {
+		return
+	}
+	rt.events = make(chan tui.Event, 100)
+	rt.tuiDone = make(chan error, 1)
+	go func() {
+		rt.tuiDone <- tui.Run(rt.events)
+	}()
+}
+
+// close closes the event channel and waits for the TUI to finish.
+func (rt *listRuntime) close() {
+	closeTUI(rt.events, rt.tuiDone)
+}
+
+// sendEvent sends a task event to the TUI channel if it exists.
+func (rt *listRuntime) sendEvent(task tui.TaskID, status tui.TaskStatus, opts ...tui.TaskEventOption) {
+	sendTaskEvent(rt.events, task, status, opts...)
+}
 
 // NewCmdList creates the list command.
 func NewCmdList(opts *Options) *cobra.Command {
@@ -27,8 +60,8 @@ func NewCmdList(opts *Options) *cobra.Command {
 		Short: "List prioritized GitHub notifications(same as root triage)",
 		Long: `Fetches your unread GitHub notifications, enriches them with
 issue/PR details, and displays them sorted by priority.`,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return runList(cmd, args, opts)
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runList(cmd, opts)
 		},
 	}
 
@@ -38,21 +71,12 @@ issue/PR details, and displays them sorted by priority.`,
 
 // addListFlags adds the list-specific flags to a command.
 func addListFlags(cmd *cobra.Command, opts *Options) {
-	cmd.Flags().StringVarP(&opts.Format, "format", "f", "", "Output format (table, json)")
-	cmd.Flags().IntVarP(&opts.Limit, "limit", "l", 0, "Limit number of results")
+	cmd.Flags().StringVarP(&opts.Format, "output", "o", "", "Output format (table, json)")
 	cmd.Flags().StringVarP(&opts.Since, "since", "s", "1w", "Show notifications since (e.g., 1w, 30d, 6mo)")
-	cmd.Flags().StringVarP(&opts.Priority, "priority", "p", "", "Filter by priority (urgent, important, quick-win, notable, fyi)")
-	cmd.Flags().StringVarP(&opts.Reason, "reason", "r", "", "Filter by reason (mention, review_requested, author, etc.)")
-	cmd.Flags().StringVar(&opts.Repo, "repo", "", "Filter to specific repo (owner/repo)")
 	cmd.Flags().CountVarP(&opts.Verbosity, "verbose", "v", "Increase verbosity (-v info, -vv debug, -vvv trace)")
-	cmd.Flags().IntVarP(&opts.Workers, "workers", "w", 20, "Number of concurrent workers for fetching details")
-	cmd.Flags().BoolVar(&opts.IncludeMerged, "include-merged", false, "Include notifications for merged PRs")
-	cmd.Flags().BoolVar(&opts.IncludeClosed, "include-closed", false, "Include notifications for closed issues/PRs")
-	cmd.Flags().BoolVar(&opts.GreenCI, "green-ci", false, "Only show PRs with passing CI status (excludes issues)")
-	cmd.Flags().StringVarP(&opts.Type, "type", "t", "", "Filter by type (pr, issue)")
 
 	// TUI flag with tri-state: nil = auto, true = force, false = disable
-	cmd.Flags().Var(&tuiFlag{opts: opts}, "tui", "Enable/disable TUI progress (default: auto-detect)")
+	cmd.Flags().Var(newTUIFlag(opts), "tui", "Enable/disable TUI progress (default: auto-detect)")
 
 	// Profiling flags
 	cmd.Flags().StringVar(&opts.CPUProfile, "cpuprofile", "", "Write CPU profile to file")
@@ -60,56 +84,61 @@ func addListFlags(cmd *cobra.Command, opts *Options) {
 	cmd.Flags().StringVar(&opts.Trace, "trace", "", "Write execution trace to file")
 }
 
-// tuiFlag implements pflag.Value for the tri-state TUI flag.
-type tuiFlag struct {
-	opts *Options
-}
-
-func (f *tuiFlag) String() string {
-	if f.opts.TUI == nil {
-		return "auto"
-	}
-	if *f.opts.TUI {
-		return "true"
-	}
-	return "false"
-}
-
-func (f *tuiFlag) Set(s string) error {
-	switch s {
-	case "true", "1", "yes":
-		v := true
-		f.opts.TUI = &v
-	case "false", "0", "no":
-		v := false
-		f.opts.TUI = &v
-	case "auto":
-		f.opts.TUI = nil
-	default:
-		return fmt.Errorf("invalid value %q: use true, false, or auto", s)
-	}
-	return nil
-}
-
-func (f *tuiFlag) Type() string {
-	return "bool"
-}
-
-func (f *tuiFlag) IsBoolFlag() bool {
-	return true
-}
-
-func runList(cmd *cobra.Command, _ []string, opts *Options) error {
+func runList(cmd *cobra.Command, opts *Options) error {
 	ctx := cmd.Context()
 
-	// Set up profiling
-	profiler := NewProfiler(opts.CPUProfile, opts.MemProfile, opts.Trace)
-	if err := profiler.Start(); err != nil {
+	// Setup
+	rt, cleanup, err := setupRuntime(opts)
+	if err != nil {
 		return err
 	}
-	defer profiler.Stop()
+	defer cleanup()
+	rt.startTUI()
 
-	// Determine if TUI should be used
+	// Load config (separate from service)
+	cfg, resolvedStore, err := loadConfig()
+	if err != nil {
+		rt.close()
+		return err
+	}
+
+	// Create service (combines auth + data pipeline)
+	svc, err := initializeService(ctx, cfg, opts.Since, rt)
+	if err != nil {
+		rt.close()
+		return err
+	}
+
+	// Fetch
+	fetchOpts := buildFetchOptions(cfg, opts.Since, rt.events)
+	result, err := fetchAll(ctx, svc, fetchOpts)
+	if err != nil {
+		log.Warn("some fetches failed", "error", err)
+	}
+
+	// Enrich
+	runEnrichment(ctx, svc, result, rt)
+
+	// Process
+	if len(result.Notifications) == 0 {
+		rt.close()
+		fmt.Println("No unread notifications, pending reviews, or open PRs found.")
+		return nil
+	}
+	items := processResults(result, cfg, svc.CurrentUser(), resolvedStore, rt.events)
+
+	// Output
+	rt.close()
+	return renderOutput(items, opts, cfg, svc.CurrentUser(), resolvedStore)
+}
+
+// setupRuntime creates the runtime struct and returns a cleanup function for profiling.
+func setupRuntime(opts *Options) (*listRuntime, func(), error) {
+	profiler := newProfiler(opts.CPUProfile, opts.MemProfile, opts.Trace)
+	if err := profiler.Start(); err != nil {
+		return nil, nil, err
+	}
+
 	useTUI := shouldUseTUI(opts)
 
 	// Initialize logging - suppress logs during TUI to avoid interleaving with display
@@ -119,171 +148,163 @@ func runList(cmd *cobra.Command, _ []string, opts *Options) error {
 		log.Initialize(opts.Verbosity, os.Stderr)
 	}
 
+	rt := &listRuntime{useTUI: useTUI}
+	return rt, profiler.Stop, nil
+}
+
+// loadConfig loads configuration and resolved store.
+func loadConfig() (*config.Config, *resolved.Store, error) {
 	cfg, err := config.Load()
 	if err != nil {
-		return fmt.Errorf("failed to load config: %w", err)
+		return nil, nil, fmt.Errorf("failed to load config: %w", err)
 	}
 
-	// Load resolved items store
 	resolvedStore, err := resolved.NewStore()
 	if err != nil {
 		log.Warn("could not load resolved store", "error", err)
 	}
 
-	// Create GitHub client
+	return cfg, resolvedStore, nil
+}
+
+// initializeService creates the ItemService with user context.
+func initializeService(ctx context.Context, cfg *config.Config, sinceStr string, rt *listRuntime) (*service.ItemService, error) {
+	since, err := duration.Parse(sinceStr)
+	if err != nil {
+		return nil, fmt.Errorf("invalid duration: %w", err)
+	}
+
+	log.Info("fetching notifications", "since", sinceStr)
+
 	token := cfg.GetGitHubToken()
 	if token == "" {
-		return fmt.Errorf("GitHub token not configured. Set the GITHUB_TOKEN environment variable")
+		return nil, fmt.Errorf("GitHub token not configured. Set the GITHUB_TOKEN environment variable")
 	}
 
-	ghClient, err := github.NewClient(ctx, token)
+	ghClient, err := ghclient.NewClient(ctx, token)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	// Set up TUI event channel if using TUI
-	var events chan tui.Event
-	var tuiDone chan error
-	if useTUI {
-		events = make(chan tui.Event, 100)
-		tuiDone = make(chan error, 1)
-		// Start TUI immediately so it can show auth progress
-		go func() {
-			tuiDone <- tui.Run(events)
-		}()
-	}
-
-	// Get current user for heuristics
-	sendTaskEvent(events, tui.TaskAuth, tui.StatusRunning)
-	currentUser, err := ghClient.GetAuthenticatedUser()
+	rt.sendEvent(tui.TaskAuth, tui.StatusRunning)
+	currentUser, err := ghClient.GetAuthenticatedUser(ctx)
 	if err != nil {
-		sendTaskEvent(events, tui.TaskAuth, tui.StatusError, tui.WithError(err))
-		closeTUI(events, tuiDone)
-		return fmt.Errorf("failed to get authenticated user: %w", err)
+		rt.sendEvent(tui.TaskAuth, tui.StatusError, tui.WithError(err))
+		return nil, fmt.Errorf("failed to get authenticated user: %w", err)
 	}
-	sendTaskEvent(events, tui.TaskAuth, tui.StatusComplete, tui.WithMessage(currentUser))
+	rt.sendEvent(tui.TaskAuth, tui.StatusComplete, tui.WithMessage(currentUser))
 
-	// Parse since duration
-	since, err := duration.Parse(opts.Since)
-	if err != nil {
-		closeTUI(events, tuiDone)
-		return fmt.Errorf("invalid duration: %w", err)
-	}
-
-	log.Info("fetching notifications", "since", opts.Since)
-
-	// Create cache for PR lists
-	prCache, cacheErr := github.NewCache()
+	c, cacheErr := cache.NewCache()
 	if cacheErr != nil {
 		log.Warn("failed to initialize cache", "error", cacheErr)
 	}
 
-	// Fetch all data sources in parallel
-	fetchResult, err := FetchAll(ctx, ghClient, prCache, FetchOptions{
-		Since:       since,
-		SinceLabel:  opts.Since,
-		CurrentUser: currentUser,
-		Events:      events,
-	})
-	if err != nil {
-		closeTUI(events, tuiDone)
-		return err
+	return service.New(ghClient, c, currentUser, since), nil
+}
+
+// buildFetchOptions constructs fetchOptions from config and parameters.
+func buildFetchOptions(cfg *config.Config, sinceLabel string, events chan tui.Event) fetchOptions {
+	var orphanedRepos []string
+	var staleDays, consecutiveComments int
+	if cfg.Orphaned != nil {
+		orphanedRepos = cfg.Orphaned.Repos
+		staleDays = cfg.Orphaned.StaleDays
+		consecutiveComments = cfg.Orphaned.ConsecutiveAuthorComments
 	}
 
-	notifications := fetchResult.Notifications
-	reviewPRs := fetchResult.ReviewPRs
-	authoredPRs := fetchResult.AuthoredPRs
-	assignedIssues := fetchResult.AssignedIssues
+	return fetchOptions{
+		SinceLabel:          sinceLabel,
+		Events:              events,
+		IncludeOrphaned:     len(orphanedRepos) > 0,
+		OrphanedRepos:       orphanedRepos,
+		StaleDays:           staleDays,
+		ConsecutiveComments: consecutiveComments,
+	}
+}
 
-	// Enrich all items concurrently
-	sendTaskEvent(events, tui.TaskEnrich, tui.StatusRunning)
+// runEnrichment enriches all fetched items and sends TUI events.
+func runEnrichment(ctx context.Context, svc *service.ItemService, result *fetchResult, rt *listRuntime) {
+	rt.sendEvent(tui.TaskEnrich, tui.StatusRunning)
 
-	totalToEnrich := len(notifications) + len(reviewPRs) + len(authoredPRs)
+	totalToEnrich := len(result.Notifications) + len(result.ReviewPRs) + len(result.AuthoredPRs)
 	var totalCacheHits int64
 	var totalCompleted int64
 
 	if totalToEnrich > 0 {
-		enrichItems(ghClient, notifications, reviewPRs, authoredPRs, prCache, opts.Workers, useTUI, events, totalToEnrich, &totalCompleted, &totalCacheHits)
+		enrichItems(ctx, svc, result.Notifications, result.ReviewPRs, result.AuthoredPRs, rt.useTUI, rt.events, totalToEnrich, &totalCompleted, &totalCacheHits)
 	}
 
 	enrichCompleteMsg := fmt.Sprintf("%d/%d", totalCompleted, totalToEnrich)
 	if totalCacheHits > 0 {
 		enrichCompleteMsg = fmt.Sprintf("%d/%d (%d cached)", totalCompleted, totalToEnrich, totalCacheHits)
 	}
-	sendTaskEvent(events, tui.TaskEnrich, tui.StatusComplete, tui.WithMessage(enrichCompleteMsg))
+	rt.sendEvent(tui.TaskEnrich, tui.StatusComplete, tui.WithMessage(enrichCompleteMsg))
+}
 
+// processResults merges, prioritizes, and filters the fetched data.
+func processResults(result *fetchResult, cfg *config.Config, currentUser string, resolvedStore *resolved.Store, events chan tui.Event) []triage.PrioritizedItem {
 	// Merge all additional data sources into notifications
-	notifications, mergeResult := MergeAll(notifications, reviewPRs, authoredPRs, assignedIssues)
-	if mergeResult.ReviewPRsAdded > 0 {
-		log.Info("PRs awaiting your review", "count", mergeResult.ReviewPRsAdded)
+	mergeRes := mergeAll(result)
+	if mergeRes.ReviewPRsAdded > 0 {
+		log.Info("PRs awaiting your review", "count", mergeRes.ReviewPRsAdded)
 	}
-	if mergeResult.AuthoredPRsAdded > 0 {
-		log.Info("your open PRs", "count", mergeResult.AuthoredPRsAdded)
+	if mergeRes.AuthoredPRsAdded > 0 {
+		log.Info("your open PRs", "count", mergeRes.AuthoredPRsAdded)
 	}
-	if mergeResult.AssignedIssuesAdded > 0 {
-		log.Info("issues assigned to you", "count", mergeResult.AssignedIssuesAdded)
+	if mergeRes.AssignedIssuesAdded > 0 {
+		log.Info("issues assigned to you", "count", mergeRes.AssignedIssuesAdded)
 	}
-
-	if len(notifications) == 0 {
-		closeTUI(events, tuiDone)
-		fmt.Println("No unread notifications, pending reviews, or open PRs found.")
-		return nil
+	if mergeRes.OrphanedAdded > 0 {
+		log.Info("orphaned contributions", "count", mergeRes.OrphanedAdded)
 	}
 
-	// Get score weights and quick win labels (with any user overrides)
 	weights := cfg.GetScoreWeights()
 	quickWinLabels := cfg.GetQuickWinLabels()
 
-	// Process results: score and filter
 	sendTaskEvent(events, tui.TaskProcess, tui.StatusRunning)
 
 	// Debug: log state of notifications before prioritization
 	var withDetails, withoutDetails int
-	for _, n := range notifications {
+	for _, n := range result.Notifications {
 		if n.Details != nil {
 			withDetails++
 		} else {
 			withoutDetails++
 		}
 	}
-	log.Debug("notifications before prioritization", "total", len(notifications), "withDetails", withDetails, "withoutDetails", withoutDetails)
+	log.Debug("notifications before prioritization", "total", len(result.Notifications), "withDetails", withDetails, "withoutDetails", withoutDetails)
 
-	// Prioritize
 	engine := triage.NewEngine(currentUser, weights, quickWinLabels)
-	items := engine.Prioritize(notifications)
-
-	// Apply filters
-	items = applyFilters(items, opts, cfg, resolvedStore)
+	items := engine.Prioritize(result.Notifications)
+	items = applyFilters(items, cfg, resolvedStore)
 
 	sendTaskEvent(events, tui.TaskProcess, tui.StatusComplete, tui.WithCount(len(items)))
+	return items
+}
 
-	// Close TUI and wait for it to finish before showing output
-	closeTUI(events, tuiDone)
-
-	// Determine format
+// renderOutput determines the format and outputs the results.
+func renderOutput(items []triage.PrioritizedItem, opts *Options, cfg *config.Config, currentUser string, resolvedStore *resolved.Store) error {
 	format := output.Format(opts.Format)
 	if format == "" {
 		format = output.Format(cfg.DefaultFormat)
 	}
 
 	// If running in a TTY with table format, launch interactive UI
-	// Use shouldUseTUI to respect verbose mode and --tui flag
 	if shouldUseTUI(opts) && (format == "" || format == output.FormatTable) {
-		return tui.RunListUI(items, resolvedStore, weights, currentUser)
+		weights := cfg.GetScoreWeights()
+		return tui.RunListUI(items, resolvedStore, weights, currentUser, tui.WithConfig(cfg))
 	}
 
-	// Output
+	weights := cfg.GetScoreWeights()
 	formatter := output.NewFormatterWithWeights(format, weights, currentUser)
-
 	return formatter.Format(items, os.Stdout)
 }
 
-// enrichItems enriches notifications and PRs concurrently.
+// enrichItems enriches notifications and PRs concurrently using the ItemService.
 func enrichItems(
-	ghClient *github.Client,
-	notifications, reviewPRs, authoredPRs []github.Notification,
-	prCache *github.Cache,
-	workers int,
+	ctx context.Context,
+	svc *service.ItemService,
+	notifications, reviewPRs, authoredPRs []model.Item,
 	useTUI bool,
 	events chan tui.Event,
 	totalToEnrich int,
@@ -332,7 +353,7 @@ func enrichItems(
 		enrichWg.Add(1)
 		go func() {
 			defer enrichWg.Done()
-			cacheHits, err := ghClient.EnrichNotificationsConcurrent(notifications, workers, onProgress)
+			cacheHits, err := svc.Enrich(ctx, notifications, onProgress)
 			if err != nil {
 				log.Warn("some notifications could not be enriched", "error", err)
 			}
@@ -345,7 +366,7 @@ func enrichItems(
 		enrichWg.Add(1)
 		go func() {
 			defer enrichWg.Done()
-			cacheHits, err := ghClient.EnrichPRsConcurrent(reviewPRs, workers, prCache, onProgress)
+			cacheHits, err := svc.Enrich(ctx, reviewPRs, onProgress)
 			if err != nil {
 				log.Warn("some review PRs could not be enriched", "error", err)
 			}
@@ -358,7 +379,7 @@ func enrichItems(
 		enrichWg.Add(1)
 		go func() {
 			defer enrichWg.Done()
-			cacheHits, err := ghClient.EnrichPRsConcurrent(authoredPRs, workers, prCache, onProgress)
+			cacheHits, err := svc.Enrich(ctx, authoredPRs, onProgress)
 			if err != nil {
 				log.Warn("some authored PRs could not be enriched", "error", err)
 			}
@@ -374,50 +395,17 @@ func enrichItems(
 }
 
 // applyFilters applies all configured filters to the items.
-func applyFilters(items []triage.PrioritizedItem, opts *Options, cfg *config.Config, resolvedStore *resolved.Store) []triage.PrioritizedItem {
-	if !opts.IncludeMerged {
-		items = triage.FilterOutMerged(items)
-	}
-	if !opts.IncludeClosed {
-		items = triage.FilterOutClosed(items)
-	}
+func applyFilters(items []triage.PrioritizedItem, cfg *config.Config, resolvedStore *resolved.Store) []triage.PrioritizedItem {
+	// Filter out merged and closed items by default
+	items = triage.FilterOutMerged(items)
+	items = triage.FilterOutClosed(items)
 
 	// Filter out unenriched (inaccessible) items - always applied
 	items = triage.FilterOutUnenriched(items)
 
-	if opts.Priority != "" {
-		items = triage.FilterByPriority(items, triage.PriorityLevel(opts.Priority))
-	}
-
-	if opts.Reason != "" {
-		items = triage.FilterByReason(items, []github.NotificationReason{github.NotificationReason(opts.Reason)})
-	}
-
-	if opts.Repo != "" {
-		items = triage.FilterByRepo(items, opts.Repo)
-	}
-
-	if opts.Type != "" {
-		var subjectType github.SubjectType
-		switch opts.Type {
-		case "pr", "PR", "pullrequest", "PullRequest":
-			subjectType = github.SubjectPullRequest
-		case "issue", "Issue":
-			subjectType = github.SubjectIssue
-		}
-		if subjectType != "" {
-			items = triage.FilterByType(items, subjectType)
-		}
-	}
-
 	// Filter out excluded authors (bots like dependabot, renovate, etc.)
 	if len(cfg.ExcludeAuthors) > 0 {
 		items = triage.FilterByExcludedAuthors(items, cfg.ExcludeAuthors)
-	}
-
-	// Filter to only show PRs with green CI
-	if opts.GreenCI {
-		items = triage.FilterByGreenCI(items)
 	}
 
 	// Filter out resolved items (that haven't had new activity)
@@ -425,24 +413,7 @@ func applyFilters(items []triage.PrioritizedItem, opts *Options, cfg *config.Con
 		items = triage.FilterResolved(items, resolvedStore)
 	}
 
-	// Apply limit
-	if opts.Limit > 0 && len(items) > opts.Limit {
-		items = items[:opts.Limit]
-	}
-
 	return items
-}
-
-// shouldUseTUI determines whether to use the TUI based on options and environment.
-func shouldUseTUI(opts *Options) bool {
-	// Disable TUI when verbose logging is requested so logs are visible
-	if opts.Verbosity > 0 {
-		return false
-	}
-	if opts.TUI != nil {
-		return *opts.TUI
-	}
-	return tui.ShouldUseTUI()
 }
 
 // sendTaskEvent sends a task event to the TUI channel if it exists.

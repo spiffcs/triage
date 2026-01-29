@@ -26,8 +26,28 @@ type Model struct {
 // doneMsg signals that all events have been processed.
 type doneMsg struct{}
 
+// ModelOption is a functional option for configuring a Model.
+type ModelOption func(*Model)
+
+// WithTasks sets the tasks to display in the TUI.
+func WithTasks(tasks []Task) ModelOption {
+	return func(m *Model) {
+		m.tasks = tasks
+	}
+}
+
+// DefaultTasks returns the default task list for the main triage command.
+func DefaultTasks() []Task {
+	return []Task{
+		NewTask(TaskAuth, "Authenticating"),
+		NewTask(TaskFetch, "Fetching data"),
+		NewTask(TaskEnrich, "Enriching items"),
+		NewTask(TaskProcess, "Processing results"),
+	}
+}
+
 // NewModel creates a new TUI model.
-func NewModel(events <-chan Event) Model {
+func NewModel(events <-chan Event, opts ...ModelOption) Model {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 
@@ -37,21 +57,18 @@ func NewModel(events <-chan Event) Model {
 		progress.WithoutPercentage(),
 	)
 
-	// Task order matches actual execution order in cmd/list.go
-	// Using simplified parallel flow for better performance
-	tasks := []Task{
-		NewTask(TaskAuth, "Authenticating"),
-		NewTask(TaskFetch, "Fetching data"),
-		NewTask(TaskEnrich, "Enriching items"),
-		NewTask(TaskProcess, "Processing results"),
-	}
-
-	return Model{
-		tasks:    tasks,
+	m := Model{
+		tasks:    DefaultTasks(),
 		spinner:  s,
 		progress: p,
 		events:   events,
 	}
+
+	for _, opt := range opts {
+		opt(&m)
+	}
+
+	return m
 }
 
 // Init initializes the model.
@@ -81,9 +98,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.spinner, cmd = m.spinner.Update(msg)
 		return m, cmd
 
+	case progress.FrameMsg:
+		progressModel, cmd := m.progress.Update(msg)
+		m.progress = progressModel.(progress.Model)
+		return m, cmd
+
 	case TaskEvent:
-		m = m.updateTask(msg)
-		return m, waitForEvent(m.events)
+		var cmd tea.Cmd
+		m, cmd = m.updateTask(msg)
+		return m, tea.Batch(cmd, waitForEvent(m.events))
 
 	case DoneEvent:
 		m.done = true
@@ -103,7 +126,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // updateTask updates a task based on a TaskEvent.
-func (m Model) updateTask(e TaskEvent) Model {
+func (m Model) updateTask(e TaskEvent) (Model, tea.Cmd) {
+	var cmd tea.Cmd
 	for i := range m.tasks {
 		if m.tasks[i].ID == e.Task {
 			m.tasks[i].Status = e.Status
@@ -115,6 +139,7 @@ func (m Model) updateTask(e TaskEvent) Model {
 			}
 			if e.Progress > 0 {
 				m.tasks[i].Progress = e.Progress
+				cmd = m.progress.SetPercent(e.Progress)
 			}
 			if e.Error != nil {
 				m.tasks[i].Error = e.Error
@@ -126,7 +151,7 @@ func (m Model) updateTask(e TaskEvent) Model {
 			break
 		}
 	}
-	return m
+	return m, cmd
 }
 
 // View renders the model.

@@ -1,4 +1,4 @@
-package github
+package ghclient
 
 import (
 	"errors"
@@ -69,4 +69,9 @@ func (s *RateLimitState) GetStatus() (remaining, limit int, resetAt time.Time, l
 // GetRateLimitStatus returns the global rate limit status.
 func GetRateLimitStatus() (remaining, limit int, resetAt time.Time, limited bool) {
 	return globalRateLimitState.GetStatus()
+}
+
+// IsRateLimited returns true if the global rate limit is currently exceeded.
+func IsRateLimited() bool {
+	return globalRateLimitState.IsLimited()
 }

@@ -1,7 +1,7 @@
 package triage
 
 import (
-	"github.com/spiffcs/triage/internal/github"
+	"github.com/spiffcs/triage/internal/model"
 )
 
 // PriorityLevel represents the action priority (displayed in table)
@@ -9,8 +9,8 @@ type PriorityLevel string
 
 const (
 	PriorityUrgent    PriorityLevel = "urgent"
-	PriorityImportant PriorityLevel = "important"
 	PriorityQuickWin  PriorityLevel = "quick-win"
+	PriorityImportant PriorityLevel = "important"
 	PriorityNotable   PriorityLevel = "notable"
 	PriorityFYI       PriorityLevel = "fyi"
 )
@@ -20,10 +20,10 @@ func (p PriorityLevel) Display() string {
 	switch p {
 	case PriorityUrgent:
 		return "Urgent"
-	case PriorityImportant:
-		return "Important"
 	case PriorityQuickWin:
 		return "Quick Win"
+	case PriorityImportant:
+		return "Important"
 	case PriorityNotable:
 		return "Notable"
 	case PriorityFYI:
@@ -33,10 +33,10 @@ func (p PriorityLevel) Display() string {
 	}
 }
 
-// PrioritizedItem wraps a notification with priority information
+// PrioritizedItem wraps an item with priority information
 type PrioritizedItem struct {
-	Notification github.Notification `json:"notification"`
-	Score        int                 `json:"score"`
-	Priority     PriorityLevel       `json:"priority"`
-	ActionNeeded string              `json:"actionNeeded"`
+	Item         model.Item    `json:"item"`
+	Score        int           `json:"score"`
+	Priority     PriorityLevel `json:"priority"`
+	ActionNeeded string        `json:"actionNeeded"`
 }

@@ -21,6 +21,25 @@ type Config struct {
 	Scoring    *ScoringOverrides   `yaml:"scoring,omitempty"`
 	PR         *PROverrides        `yaml:"pr,omitempty"`
 	Urgency    *UrgencyOverrides   `yaml:"urgency,omitempty"`
+	Orphaned   *OrphanedConfig     `yaml:"orphaned,omitempty"`
+	UI         *UIPreferences      `yaml:"ui,omitempty"`
+}
+
+// UIPreferences stores user interface preferences like sort settings
+type UIPreferences struct {
+	PrioritySortColumn string `yaml:"priority_sort_column,omitempty"`
+	PrioritySortDesc   *bool  `yaml:"priority_sort_desc,omitempty"`
+	OrphanedSortColumn string `yaml:"orphaned_sort_column,omitempty"`
+	OrphanedSortDesc   *bool  `yaml:"orphaned_sort_desc,omitempty"`
+}
+
+// OrphanedConfig configures orphaned contribution detection
+type OrphanedConfig struct {
+	Enabled                   bool     `yaml:"enabled,omitempty"`
+	Repos                     []string `yaml:"repos,omitempty"`
+	StaleDays                 int      `yaml:"stale_days,omitempty"`                  // Default: 7
+	ConsecutiveAuthorComments int      `yaml:"consecutive_author_comments,omitempty"` // Default: 2
+	MaxItemsPerRepo           int      `yaml:"max_items_per_repo,omitempty"`          // Default: 20
 }
 
 // BaseScoreOverrides allows customizing base scores for notification reasons
@@ -326,8 +345,8 @@ func (c *Config) GetScoreWeights() ScoreWeights {
 	return weights
 }
 
-// DefaultConfigDir returns the default config directory
-func DefaultConfigDir() string {
+// defaultConfigDir returns the default config directory
+func defaultConfigDir() string {
 	configDir, err := os.UserConfigDir()
 	if err != nil {
 		return ".triage"
@@ -335,20 +354,14 @@ func DefaultConfigDir() string {
 	return filepath.Join(configDir, "triage")
 }
 
-// ConfigPath returns the path to the config file
-func ConfigPath() string {
-	return filepath.Join(DefaultConfigDir(), "config.yaml")
+// configPath returns the path to the config file
+func configPath() string {
+	return filepath.Join(defaultConfigDir(), "config.yaml")
 }
 
-// LocalConfigPath returns the path to the local config file in the current directory
-func LocalConfigPath() string {
+// localConfigPath returns the path to the local config file in the current directory
+func localConfigPath() string {
 	return ".triage.yaml"
-}
-
-// ConfigFileExists returns true if the config file exists on disk
-func ConfigFileExists() bool {
-	_, err := os.Stat(ConfigPath())
-	return err == nil
 }
 
 // Load loads the configuration from disk.
@@ -361,7 +374,7 @@ func Load() (*Config, error) {
 	}
 
 	// Load global config if it exists
-	globalPath := ConfigPath()
+	globalPath := configPath()
 	if _, err := os.Stat(globalPath); err == nil {
 		data, err := os.ReadFile(globalPath)
 		if err != nil {
@@ -374,7 +387,7 @@ func Load() (*Config, error) {
 	}
 
 	// Load local config if it exists and merge on top
-	localPath := LocalConfigPath()
+	localPath := localConfigPath()
 	if _, err := os.Stat(localPath); err == nil {
 		data, err := os.ReadFile(localPath)
 		if err != nil {
@@ -440,6 +453,12 @@ func mergeConfig(global, local *Config) *Config {
 	// Merge Urgency
 	result.Urgency = mergeUrgencyOverrides(global.Urgency, local.Urgency)
 
+	// Merge Orphaned
+	result.Orphaned = mergeOrphanedConfig(global.Orphaned, local.Orphaned)
+
+	// Merge UI preferences
+	result.UI = mergeUIPreferences(global.UI, local.UI)
+
 	return result
 }
 
@@ -504,9 +523,124 @@ func mergeUrgencyOverrides(global, local *UrgencyOverrides) *UrgencyOverrides {
 	return mergePointerStruct(global, local)
 }
 
+func mergeOrphanedConfig(global, local *OrphanedConfig) *OrphanedConfig {
+	if global == nil && local == nil {
+		return nil
+	}
+	result := &OrphanedConfig{}
+
+	if global != nil {
+		result.Enabled = global.Enabled
+		result.Repos = global.Repos
+		result.StaleDays = global.StaleDays
+		result.ConsecutiveAuthorComments = global.ConsecutiveAuthorComments
+		result.MaxItemsPerRepo = global.MaxItemsPerRepo
+	}
+
+	if local != nil {
+		// Local enabled overrides global
+		if local.Enabled {
+			result.Enabled = local.Enabled
+		}
+		// Local repos replace global if non-empty
+		if len(local.Repos) > 0 {
+			result.Repos = local.Repos
+		}
+		// Local numeric values override if non-zero
+		if local.StaleDays > 0 {
+			result.StaleDays = local.StaleDays
+		}
+		if local.ConsecutiveAuthorComments > 0 {
+			result.ConsecutiveAuthorComments = local.ConsecutiveAuthorComments
+		}
+		if local.MaxItemsPerRepo > 0 {
+			result.MaxItemsPerRepo = local.MaxItemsPerRepo
+		}
+	}
+
+	// Return nil if effectively empty
+	if !result.Enabled && len(result.Repos) == 0 && result.StaleDays == 0 &&
+		result.ConsecutiveAuthorComments == 0 && result.MaxItemsPerRepo == 0 {
+		return nil
+	}
+
+	return result
+}
+
+func mergeUIPreferences(global, local *UIPreferences) *UIPreferences {
+	if global == nil && local == nil {
+		return nil
+	}
+	result := &UIPreferences{}
+
+	if global != nil {
+		result.PrioritySortColumn = global.PrioritySortColumn
+		result.PrioritySortDesc = global.PrioritySortDesc
+		result.OrphanedSortColumn = global.OrphanedSortColumn
+		result.OrphanedSortDesc = global.OrphanedSortDesc
+	}
+
+	if local != nil {
+		if local.PrioritySortColumn != "" {
+			result.PrioritySortColumn = local.PrioritySortColumn
+		}
+		if local.PrioritySortDesc != nil {
+			result.PrioritySortDesc = local.PrioritySortDesc
+		}
+		if local.OrphanedSortColumn != "" {
+			result.OrphanedSortColumn = local.OrphanedSortColumn
+		}
+		if local.OrphanedSortDesc != nil {
+			result.OrphanedSortDesc = local.OrphanedSortDesc
+		}
+	}
+
+	// Return nil if effectively empty
+	if result.PrioritySortColumn == "" && result.PrioritySortDesc == nil &&
+		result.OrphanedSortColumn == "" && result.OrphanedSortDesc == nil {
+		return nil
+	}
+
+	return result
+}
+
+// SaveUIPreferences saves only the UI preferences section to the config file.
+// It loads the existing config, updates only the UI preferences, and saves.
+func (c *Config) SaveUIPreferences() error {
+	// Read existing config file to preserve other settings
+	globalPath := configPath()
+	var existing Config
+
+	if data, err := os.ReadFile(globalPath); err == nil {
+		if err := yaml.Unmarshal(data, &existing); err != nil {
+			return fmt.Errorf("failed to parse existing config: %w", err)
+		}
+	}
+
+	// Update only the UI section
+	existing.UI = c.UI
+
+	// Write back
+	configDir := defaultConfigDir()
+	if err := os.MkdirAll(configDir, 0700); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
+
+	data, err := yaml.Marshal(&existing)
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+
+	if err := os.WriteFile(globalPath, data, 0600); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
+
+	return nil
+}
+
 // Save saves the configuration to disk
 func (c *Config) Save() error {
-	configDir := DefaultConfigDir()
+	configDir := defaultConfigDir()
 
 	// Create config directory if it doesn't exist
 	if err := os.MkdirAll(configDir, 0700); err != nil {
@@ -518,7 +652,7 @@ func (c *Config) Save() error {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 
-	configPath := ConfigPath()
+	configPath := configPath()
 	if err := os.WriteFile(configPath, data, 0600); err != nil {
 		return fmt.Errorf("failed to write config file: %w", err)
 	}
@@ -629,6 +763,12 @@ func DefaultConfig() *Config {
 			ApprovedMergeablePR: &weights.ApprovedMergeablePRIsUrgent,
 			ChangesRequestedPR:  &weights.ChangesRequestedPRIsUrgent,
 		},
+		Orphaned: &OrphanedConfig{
+			Repos:                     []string{},
+			StaleDays:                 7,
+			ConsecutiveAuthorComments: 2,
+			MaxItemsPerRepo:           50,
+		},
 	}
 }
 
@@ -651,8 +791,8 @@ type ConfigPathInfo struct {
 
 // GetConfigPaths returns path info for both global and local configs
 func GetConfigPaths() ConfigPathInfo {
-	globalPath := ConfigPath()
-	localPath := LocalConfigPath()
+	globalPath := configPath()
+	localPath := localConfigPath()
 
 	// Get absolute path for local config
 	absLocalPath, err := filepath.Abs(localPath)
@@ -692,6 +832,16 @@ default_format: table
 # base_scores:
 #   review_requested: 100
 #   mention: 90
+
+# Orphaned contribution detection (enabled by default, disable with --no-orphaned)
+# Requires repos to be specified - no auto-discovery
+# orphaned:
+#   repos:                              # Repos to monitor for orphaned contributions (required)
+#     - myorg/repo1
+#     - myorg/repo2
+#   stale_days: 7                       # Days without team response
+#   consecutive_author_comments: 2      # Consecutive unanswered comments
+#   max_items_per_repo: 50              # Limit per repository
 
 # See README.md for full configuration options
 `

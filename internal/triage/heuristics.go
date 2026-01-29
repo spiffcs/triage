@@ -6,7 +6,7 @@ import (
 
 	"github.com/spiffcs/triage/config"
 	"github.com/spiffcs/triage/internal/constants"
-	"github.com/spiffcs/triage/internal/github"
+	"github.com/spiffcs/triage/internal/model"
 )
 
 // Heuristics implements rule-based priority scoring
@@ -25,8 +25,8 @@ func NewHeuristics(currentUser string, weights config.ScoreWeights, quickWinLabe
 	}
 }
 
-// Score calculates the priority score for a notification
-func (h *Heuristics) Score(n *github.Notification) int {
+// Score calculates the priority score for an item
+func (h *Heuristics) Score(n *model.Item) int {
 	score := h.baseScore(n.Reason)
 
 	// Apply modifiers based on enriched details
@@ -44,32 +44,32 @@ func (h *Heuristics) Score(n *github.Notification) int {
 	return max(score, 0)
 }
 
-func (h *Heuristics) baseScore(reason github.NotificationReason) int {
+func (h *Heuristics) baseScore(reason model.ItemReason) int {
 	switch reason {
-	case github.ReasonReviewRequested:
+	case model.ReasonReviewRequested:
 		return h.Weights.ReviewRequested
-	case github.ReasonMention:
+	case model.ReasonMention:
 		return h.Weights.Mention
-	case github.ReasonTeamMention:
+	case model.ReasonTeamMention:
 		return h.Weights.TeamMention
-	case github.ReasonAuthor:
+	case model.ReasonAuthor:
 		return h.Weights.Author
-	case github.ReasonAssign:
+	case model.ReasonAssign:
 		return h.Weights.Assign
-	case github.ReasonComment:
+	case model.ReasonComment:
 		return h.Weights.Comment
-	case github.ReasonStateChange:
+	case model.ReasonStateChange:
 		return h.Weights.StateChange
-	case github.ReasonSubscribed:
+	case model.ReasonSubscribed:
 		return h.Weights.Subscribed
-	case github.ReasonCIActivity:
+	case model.ReasonCIActivity:
 		return h.Weights.CIActivity
 	default:
 		return h.Weights.Subscribed
 	}
 }
 
-func (h *Heuristics) detailModifiers(n *github.Notification) int {
+func (h *Heuristics) detailModifiers(n *model.Item) int {
 	d := n.Details
 	modifier := 0
 
@@ -100,7 +100,7 @@ func (h *Heuristics) detailModifiers(n *github.Notification) int {
 }
 
 // authoredPRModifiers calculates score modifiers for user's own PRs
-func (h *Heuristics) authoredPRModifiers(d *github.ItemDetails) int {
+func (h *Heuristics) authoredPRModifiers(d *model.ItemDetails) int {
 	modifier := 0
 
 	// PR is approved and ready to merge - urgent action needed!
@@ -143,7 +143,7 @@ func normalizeLabel(s string) string {
 }
 
 // isLowHangingFruit detects items that are likely quick wins
-func (h *Heuristics) isLowHangingFruit(d *github.ItemDetails) bool {
+func (h *Heuristics) isLowHangingFruit(d *model.ItemDetails) bool {
 	// Check for configured quick win labels
 	for _, label := range d.Labels {
 		labelNorm := normalizeLabel(label)
@@ -163,21 +163,21 @@ func (h *Heuristics) isLowHangingFruit(d *github.ItemDetails) bool {
 }
 
 // DeterminePriority determines the priority for a notification (displayed in table)
-func (h *Heuristics) DeterminePriority(n *github.Notification, score int) PriorityLevel {
+func (h *Heuristics) DeterminePriority(n *model.Item, score int) PriorityLevel {
 	reason := n.Reason
 
 	// Urgent: review requests (if enabled)
-	if reason == github.ReasonReviewRequested && h.Weights.ReviewRequestedIsUrgent {
+	if reason == model.ReasonReviewRequested && h.Weights.ReviewRequestedIsUrgent {
 		return PriorityUrgent
 	}
 
 	// Urgent: direct mentions (if enabled)
-	if reason == github.ReasonMention && h.Weights.MentionIsUrgent {
+	if reason == model.ReasonMention && h.Weights.MentionIsUrgent {
 		return PriorityUrgent
 	}
 
 	// Authored PRs that are approved and mergeable are urgent (if enabled)
-	if reason == github.ReasonAuthor && n.Details != nil {
+	if reason == model.ReasonAuthor && n.Details != nil {
 		d := n.Details
 		if d.IsPR && d.ReviewState == constants.ReviewStateApproved && d.Mergeable && h.Weights.ApprovedMergeablePRIsUrgent {
 			return PriorityUrgent
@@ -199,7 +199,7 @@ func (h *Heuristics) DeterminePriority(n *github.Notification, score int) Priori
 	}
 
 	// Important: author notifications, assignments
-	if reason == github.ReasonAuthor || reason == github.ReasonAssign || reason == github.ReasonTeamMention {
+	if reason == model.ReasonAuthor || reason == model.ReasonAssign || reason == model.ReasonTeamMention {
 		return PriorityImportant
 	}
 
@@ -218,32 +218,32 @@ func (h *Heuristics) DeterminePriority(n *github.Notification, score int) Priori
 }
 
 // DetermineAction suggests what action the user should take
-func (h *Heuristics) DetermineAction(n *github.Notification) string {
+func (h *Heuristics) DetermineAction(n *model.Item) string {
 	reason := n.Reason
 	details := n.Details
 
 	switch reason {
-	case github.ReasonReviewRequested:
+	case model.ReasonReviewRequested:
 		return "Review PR"
-	case github.ReasonMention:
+	case model.ReasonMention:
 		return "Respond to mention"
-	case github.ReasonTeamMention:
+	case model.ReasonTeamMention:
 		return "Team mentioned - check if relevant"
-	case github.ReasonAuthor:
+	case model.ReasonAuthor:
 		if details == nil {
 			return "Check activity on your item"
 		}
 		return h.determineAuthoredPRAction(details)
-	case github.ReasonAssign:
+	case model.ReasonAssign:
 		return "Work on assigned item"
-	case github.ReasonComment:
+	case model.ReasonComment:
 		return "Review new comments"
-	case github.ReasonStateChange:
+	case model.ReasonStateChange:
 		if details != nil && (details.State == "closed" || details.State == "merged") {
 			return "Acknowledge closure"
 		}
 		return "Check state change"
-	case github.ReasonSubscribed:
+	case model.ReasonSubscribed:
 		return "Review activity (subscribed)"
 	default:
 		return "Review notification"
@@ -251,7 +251,7 @@ func (h *Heuristics) DetermineAction(n *github.Notification) string {
 }
 
 // determineAuthoredPRAction suggests actions for user's own PRs
-func (h *Heuristics) determineAuthoredPRAction(d *github.ItemDetails) string {
+func (h *Heuristics) determineAuthoredPRAction(d *model.ItemDetails) string {
 	if !d.IsPR {
 		return "Check activity on your issue"
 	}

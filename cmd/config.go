@@ -35,17 +35,17 @@ Subcommands:
 
 	cmd.Flags().StringVarP(&outputFormat, "output", "o", "yaml", "Output format (yaml, json)")
 
-	cmd.AddCommand(NewCmdConfigInit())
-	cmd.AddCommand(NewCmdConfigPath())
-	cmd.AddCommand(NewCmdConfigDefaults())
-	cmd.AddCommand(NewCmdConfigShow())
-	cmd.AddCommand(NewCmdConfigSet())
+	cmd.AddCommand(newCmdConfigInit())
+	cmd.AddCommand(newCmdConfigPath())
+	cmd.AddCommand(newCmdConfigDefaults())
+	cmd.AddCommand(newCmdConfigShow())
+	cmd.AddCommand(newCmdConfigSet())
 
 	return cmd
 }
 
-// NewCmdConfigInit creates the config init subcommand.
-func NewCmdConfigInit() *cobra.Command {
+// newCmdConfigInit creates the config init subcommand.
+func newCmdConfigInit() *cobra.Command {
 	var global, local bool
 
 	cmd := &cobra.Command{
@@ -67,8 +67,8 @@ Without flags, you'll be prompted to choose.`,
 	return cmd
 }
 
-// NewCmdConfigPath creates the config path subcommand.
-func NewCmdConfigPath() *cobra.Command {
+// newCmdConfigPath creates the config path subcommand.
+func newCmdConfigPath() *cobra.Command {
 	return &cobra.Command{
 		Use:   "path",
 		Short: "Show config file locations",
@@ -77,8 +77,8 @@ func NewCmdConfigPath() *cobra.Command {
 	}
 }
 
-// NewCmdConfigDefaults creates the config defaults subcommand.
-func NewCmdConfigDefaults() *cobra.Command {
+// newCmdConfigDefaults creates the config defaults subcommand.
+func newCmdConfigDefaults() *cobra.Command {
 	var outputFormat string
 
 	cmd := &cobra.Command{
@@ -98,8 +98,8 @@ This can be redirected to create a config file with all defaults:
 	return cmd
 }
 
-// NewCmdConfigShow creates the config show subcommand.
-func NewCmdConfigShow() *cobra.Command {
+// newCmdConfigShow creates the config show subcommand.
+func newCmdConfigShow() *cobra.Command {
 	var outputFormat string
 
 	cmd := &cobra.Command{
@@ -116,8 +116,8 @@ func NewCmdConfigShow() *cobra.Command {
 	return cmd
 }
 
-// NewCmdConfigSet creates the config set subcommand.
-func NewCmdConfigSet() *cobra.Command {
+// newCmdConfigSet creates the config set subcommand.
+func newCmdConfigSet() *cobra.Command {
 	return &cobra.Command{
 		Use:   "set <key> <value>",
 		Short: "Set a configuration value",

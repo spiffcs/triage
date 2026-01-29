@@ -26,7 +26,7 @@ type IconInput struct {
 // Hot topic (fire) takes precedence over quick win (lightning).
 // For issues, hot topic is suppressed if the current user was the last commenter.
 func DetermineIcon(input IconInput) IconType {
-	// Check for hot topic first (fire takes precedence)
+	// Check for hot topic first (fire takes precedence over quick win)
 	if input.HotTopicThreshold > 0 && input.CommentCount > input.HotTopicThreshold {
 		// Suppress for issues where current user was last commenter
 		suppressForIssue := !input.IsPR && input.LastCommenter == input.CurrentUser

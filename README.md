@@ -1,6 +1,6 @@
 # triage
 
-A terminal UI that helps you prioritize GitHub work. It pulls together unread notifications, PRs awaiting your review, PRs you've authored, and issues assigned to you, then scores and ranks them so you can focus on what matters most.
+A terminal UI that helps you prioritize GitHub work. It pulls together unread notifications, PRs awaiting your review, PRs you've authored, issues assigned to you, and orphaned work. It then scores and ranks them so you can focus on what matters most.
 
 ![Demo](.github/demo.png)
 
@@ -12,7 +12,9 @@ GITHUB_TOKEN=$(gh auth token) triage
 
 ## Interactive TUI
 
-The default interface is an interactive terminal UI with keyboard navigation:
+The default interface is a dual-pane terminal UI with keyboard navigation. The two panes are:
+- **Priority Pane**: Your notifications, review requests, authored PRs, and assigned issues sorted by priority
+- **Orphaned Pane**: External contributions lacking team engagement
 
 | Key | Action |
 |-----|--------|
@@ -22,6 +24,10 @@ The default interface is an interactive terminal UI with keyboard navigation:
 | `G` / `End` | Jump to bottom |
 | `Enter` | Open item in browser |
 | `d` | Mark item as done (removes from list) |
+| `Tab` | Switch between Priority and Orphaned panes |
+| `s` | Cycle sort column |
+| `S` | Toggle sort direction |
+| `r` | Reset sort to default |
 | `q` / `Esc` | Quit |
 
 The TUI displays color-coded priorities, PR review status, and size indicators (XS/S/M/L/XL based on lines changed). Items marked as done are persisted and will not reappear unless they have new activity.
@@ -56,13 +62,13 @@ go build -o triage ./cmd/triage
 triage
 
 # Limit time range (default: 1w)
-triage --since 30m     # Last 30 minutes
-triage --since 2h      # Last 2 hours
-triage --since 1d      # Last day
-triage --since 1w      # Last week
-triage --since 30d     # Last 30 days
-triage --since 6mo     # Last 6 months
-triage --since 1y      # Last year
+triage -s 30m          # Last 30 minutes
+triage -s 2h           # Last 2 hours
+triage -s 1d           # Last day
+triage -s 1w           # Last week
+triage -s 30d          # Last 30 days
+triage -s 6mo          # Last 6 months
+triage -s 1y           # Last year
 
 # Supported time units:
 #   Minutes: m, min, mins
@@ -72,46 +78,40 @@ triage --since 1y      # Last year
 #   Months:  mo, month, months (30 days)
 #   Years:   y, yr, yrs, year, years (365 days)
 
-# Filter by priority
-triage -p urgent
-triage -p important
-triage -p quick-win
-triage -p notable
-triage -p fyi
-
-# Filter by notification reason
-triage -r mention
-triage -r review_requested
-triage -r author
-
-# Filter by type
-triage -t pr          # Show only pull requests
-triage -t issue       # Show only issues
-
-# Filter by repository
-triage --repo owner/repo
-
-# Include merged/closed items (hidden by default)
-triage --include-merged
-triage --include-closed
-
-# Show only PRs with passing CI (excludes issues)
-triage --green-ci
-
 # Output formats
 triage               # Interactive TUI (default)
-triage -f json       # JSON for scripting
+triage -o json       # JSON for scripting
 
-# Limit results
-triage -l 20         # Show only first 20 items
+# TUI control
+triage --tui         # Force TUI mode
+triage --tui=false   # Disable TUI (plain table output)
+
+# Verbose output for debugging
+triage -v            # Info level
+triage -vv           # Debug level
+triage -vvv          # Trace level
 ```
+
+### Orphaned Contributions
+
+The Orphaned pane in the TUI shows external contributions (PRs and issues from non-team members) that haven't received team engagement. This helps teams identify community contributions that may be falling through the cracks.
+
+To enable orphaned detection, configure the repos to monitor in your config file (see [Configuring Orphaned Detection](#configuring-orphaned-detection)).
+
+**Detection criteria:**
+
+An item is flagged as orphaned when:
+- The author is an external contributor (not MEMBER, OWNER, or COLLABORATOR), AND
+- No team member has responded in the configured number of days (`stale_days`), OR
+- The author has posted multiple consecutive comments without a team response (`consecutive_author_comments`)
 
 ### Cache Management
 
-The tool uses a three-tier caching strategy to reduce API usage:
+The tool uses a multi-tier caching strategy to reduce API usage:
 - **Item details** (issue/PR metadata): cached for 24 hours
 - **Notification lists**: cached for 1 hour
-- **PR lists** (review-requested and authored PRs): cached for 5 minutes
+- **Orphaned lists**: cached for 15 minutes
+- **PR/Issue lists** (review-requested PRs, authored PRs, assigned issues): cached for 5 minutes
 
 ```bash
 triage cache stats    # Show cache statistics
@@ -389,6 +389,25 @@ exclude_authors:
 ```
 
 This removes items authored by these accounts from your triage list, reducing noise from automated dependency updates.
+
+### Configuring Orphaned Detection
+
+Configure orphaned contribution detection in your config file. You must specify repos to monitor - there is no auto-discovery:
+
+```yaml
+orphaned:
+  # Repos to monitor for orphaned contributions (required)
+  repos:
+    - myorg/repo1
+    - myorg/repo2
+
+  # Detection thresholds
+  stale_days: 7                      # Days without team response (default: 7)
+  consecutive_author_comments: 2     # Consecutive unanswered comments (default: 2)
+  max_items_per_repo: 50             # Limit per repository (default: 50)
+```
+
+With repos configured, orphaned contributions will appear in the Orphaned pane of the TUI (press `Tab` to switch panes).
 
 ### Customizing Urgency Triggers
 

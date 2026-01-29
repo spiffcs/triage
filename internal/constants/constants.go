@@ -37,13 +37,13 @@ const (
 	// they are considered stale and require re-fetching.
 	DetailCacheTTL = 24 * time.Hour
 
-	// PRListCacheTTL is the TTL for cached PR lists (shorter because
-	// PR lists change more frequently).
-	PRListCacheTTL = 5 * time.Minute
+	// ItemListCacheTTL is the TTL for cached item lists (PRs, issues).
+	// Shorter than details cache because lists change more frequently.
+	ItemListCacheTTL = 5 * time.Minute
 
-	// NotificationListCacheTTL is the maximum age before a full
-	// notification refresh is required.
-	NotificationListCacheTTL = 1 * time.Hour
+	// NotificationsCacheTTL is the maximum age before a full
+	// notification list refresh is required.
+	NotificationsCacheTTL = 1 * time.Hour
 )
 
 // Review state constants
@@ -95,6 +95,9 @@ const (
 
 	// ColType is the width of the type column (ISS/PR).
 	ColType = 5
+
+	// ColAuthor is the width of the author column.
+	ColAuthor = 15
 
 	// ColAssigned is the width of the assigned user column.
 	ColAssigned = 12

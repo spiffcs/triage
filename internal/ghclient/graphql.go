@@ -1,16 +1,19 @@
-package github
+package ghclient
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/spiffcs/triage/internal/log"
+	"github.com/spiffcs/triage/internal/model"
 )
 
 const (
@@ -89,8 +92,8 @@ type IssueGraphQLResult struct {
 // enrichmentItem tracks what we need to enrich.
 type enrichmentItem struct {
 	index  int    // Index in the notifications slice
-	owner  string // Repository owner
-	repo   string // Repository name
+	owner  string // model.Repository owner
+	repo   string // model.Repository name
 	number int    // Issue/PR number
 	isPR   bool   // True if PR, false if Issue
 }
@@ -105,20 +108,20 @@ type batchResult struct {
 	issueErr     error
 }
 
-// EnrichNotificationsGraphQL enriches notifications using GraphQL batch queries.
+// EnrichItemsGraphQL enriches items using GraphQL batch queries.
 // Returns the number of successfully enriched items.
-func (c *Client) EnrichNotificationsGraphQL(notifications []Notification, token string, onProgress func(completed, total int)) (int, error) {
+func (c *Client) EnrichItemsGraphQL(ctx context.Context, items []model.Item, token string, onProgress func(completed, total int)) (int, error) {
 	// Separate PRs and Issues, and identify items that need enrichment
-	var items []enrichmentItem
+	var enrichItems []enrichmentItem
 
-	for i := range notifications {
-		n := &notifications[i]
+	for i := range items {
+		n := &items[i]
 		if n.Subject.URL == "" {
-			log.Debug("skipping notification without Subject.URL", "id", n.ID)
+			log.Debug("skipping item without model.Subject.URL", "id", n.ID)
 			continue
 		}
 
-		number, err := ExtractIssueNumber(n.Subject.URL)
+		number, err := extractIssueNumber(n.Subject.URL)
 		if err != nil {
 			log.Debug("failed to extract issue number", "url", n.Subject.URL, "error", err)
 			continue
@@ -130,33 +133,33 @@ func (c *Client) EnrichNotificationsGraphQL(notifications []Notification, token 
 			continue
 		}
 
-		items = append(items, enrichmentItem{
+		enrichItems = append(enrichItems, enrichmentItem{
 			index:  i,
 			owner:  parts[0],
 			repo:   parts[1],
 			number: number,
-			isPR:   n.Subject.Type == SubjectPullRequest,
+			isPR:   n.Subject.Type == model.SubjectPullRequest,
 		})
 	}
 
-	if len(items) == 0 {
+	if len(enrichItems) == 0 {
 		log.Debug("no items to enrich via GraphQL")
 		return 0, nil
 	}
 
-	log.Debug("enriching items via GraphQL", "total", len(items))
+	log.Debug("enriching items via GraphQL", "total", len(enrichItems))
 
-	total := len(items)
+	total := len(enrichItems)
 	enriched := 0
 
 	// Create batch jobs
 	var batches [][]enrichmentItem
-	for batchStart := 0; batchStart < len(items); batchStart += graphqlBatchSize {
+	for batchStart := 0; batchStart < len(enrichItems); batchStart += graphqlBatchSize {
 		batchEnd := batchStart + graphqlBatchSize
-		if batchEnd > len(items) {
-			batchEnd = len(items)
+		if batchEnd > len(enrichItems) {
+			batchEnd = len(enrichItems)
 		}
-		batches = append(batches, items[batchStart:batchEnd])
+		batches = append(batches, enrichItems[batchStart:batchEnd])
 	}
 
 	log.Debug("processing batches concurrently", "batches", len(batches), "maxConcurrent", maxConcurrentBatches)
@@ -173,7 +176,7 @@ func (c *Client) EnrichNotificationsGraphQL(notifications []Notification, token 
 			sem <- struct{}{}        // Acquire semaphore
 			defer func() { <-sem }() // Release semaphore
 
-			result := c.processBatch(b, token)
+			result := c.processBatch(ctx, b, token)
 			result.batchIdx = idx
 			result.batchSize = len(b)
 			results <- result
@@ -188,6 +191,8 @@ func (c *Client) EnrichNotificationsGraphQL(notifications []Notification, token 
 
 	// Collect results and apply to notifications
 	for result := range results {
+		itemsProcessed := 0
+
 		// Apply PR results
 		if result.prErr != nil {
 			log.Debug("GraphQL PR enrichment failed", "batch", result.batchIdx, "error", result.prErr)
@@ -199,8 +204,13 @@ func (c *Client) EnrichNotificationsGraphQL(notifications []Notification, token 
 					"deletions", prResult.Deletions,
 					"reviewState", prResult.ReviewState,
 					"ciStatus", prResult.CIStatus)
-				applyPRResult(&notifications[idx], prResult)
+				applyPRResult(&items[idx], prResult)
 				enriched++
+				itemsProcessed++
+				// Report progress per item for smooth UI updates
+				if onProgress != nil {
+					onProgress(1, total)
+				}
 			}
 		}
 
@@ -209,14 +219,20 @@ func (c *Client) EnrichNotificationsGraphQL(notifications []Notification, token 
 			log.Debug("GraphQL Issue enrichment failed", "batch", result.batchIdx, "error", result.issueErr)
 		} else if result.issueResults != nil {
 			for idx, issueResult := range result.issueResults {
-				applyIssueResult(&notifications[idx], issueResult)
+				applyIssueResult(&items[idx], issueResult)
 				enriched++
+				itemsProcessed++
+				// Report progress per item for smooth UI updates
+				if onProgress != nil {
+					onProgress(1, total)
+				}
 			}
 		}
 
-		// Report batch progress
-		if onProgress != nil {
-			onProgress(result.batchSize, total)
+		// Report remaining items (failed or skipped) so progress reaches 100%
+		remaining := result.batchSize - itemsProcessed
+		if remaining > 0 && onProgress != nil {
+			onProgress(remaining, total)
 		}
 	}
 
@@ -224,7 +240,7 @@ func (c *Client) EnrichNotificationsGraphQL(notifications []Notification, token 
 }
 
 // processBatch processes a single batch, fetching PRs and Issues in parallel.
-func (c *Client) processBatch(batch []enrichmentItem, token string) batchResult {
+func (c *Client) processBatch(ctx context.Context, batch []enrichmentItem, token string) batchResult {
 	var prItems, issueItems []enrichmentItem
 	for _, item := range batch {
 		if item.isPR {
@@ -245,7 +261,7 @@ func (c *Client) processBatch(batch []enrichmentItem, token string) batchResult 
 		go func() {
 			defer wg.Done()
 			log.Debug("enriching PRs via GraphQL", "count", len(prItems))
-			prResults, prErr = c.batchEnrichPRs(prItems, token)
+			prResults, prErr = c.batchEnrichPRs(ctx, prItems, token)
 			if prErr == nil {
 				log.Debug("GraphQL PR enrichment returned", "results", len(prResults))
 			}
@@ -256,7 +272,7 @@ func (c *Client) processBatch(batch []enrichmentItem, token string) batchResult 
 		go func() {
 			defer wg.Done()
 			log.Debug("enriching Issues via GraphQL", "count", len(issueItems))
-			issueResults, issueErr = c.batchEnrichIssues(issueItems, token)
+			issueResults, issueErr = c.batchEnrichIssues(ctx, issueItems, token)
 		}()
 	}
 	wg.Wait()
@@ -270,13 +286,13 @@ func (c *Client) processBatch(batch []enrichmentItem, token string) batchResult 
 }
 
 // batchEnrichPRs fetches PR details for multiple items in a single GraphQL query.
-func (c *Client) batchEnrichPRs(items []enrichmentItem, token string) (map[int]*PRGraphQLResult, error) {
+func (c *Client) batchEnrichPRs(ctx context.Context, items []enrichmentItem, token string) (map[int]*PRGraphQLResult, error) {
 	if len(items) == 0 {
 		return nil, nil
 	}
 
 	query := buildPRQuery(items)
-	respData, err := c.executeGraphQL(query, token)
+	respData, err := c.executeGraphQL(ctx, query, token)
 	if err != nil {
 		return nil, err
 	}
@@ -285,13 +301,13 @@ func (c *Client) batchEnrichPRs(items []enrichmentItem, token string) (map[int]*
 }
 
 // batchEnrichIssues fetches Issue details for multiple items in a single GraphQL query.
-func (c *Client) batchEnrichIssues(items []enrichmentItem, token string) (map[int]*IssueGraphQLResult, error) {
+func (c *Client) batchEnrichIssues(ctx context.Context, items []enrichmentItem, token string) (map[int]*IssueGraphQLResult, error) {
 	if len(items) == 0 {
 		return nil, nil
 	}
 
 	query := buildIssueQuery(items)
-	respData, err := c.executeGraphQL(query, token)
+	respData, err := c.executeGraphQL(ctx, query, token)
 	if err != nil {
 		return nil, err
 	}
@@ -300,14 +316,14 @@ func (c *Client) batchEnrichIssues(items []enrichmentItem, token string) (map[in
 }
 
 // executeGraphQL executes a GraphQL query against GitHub's API.
-func (c *Client) executeGraphQL(query string, token string) (json.RawMessage, error) {
+func (c *Client) executeGraphQL(ctx context.Context, query string, token string) (json.RawMessage, error) {
 	reqBody := graphqlRequest{Query: query}
 	bodyBytes, err := json.Marshal(reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal GraphQL request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(c.ctx, "POST", graphqlEndpoint, bytes.NewReader(bodyBytes))
+	req, err := http.NewRequestWithContext(ctx, "POST", graphqlEndpoint, bytes.NewReader(bodyBytes))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create GraphQL request: %w", err)
 	}
@@ -327,7 +343,7 @@ func (c *Client) executeGraphQL(query string, token string) (json.RawMessage, er
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GraphQL request failed with status %d: %s", resp.StatusCode, string(respBody))
+		return nil, fmt.Errorf("GraphQL request failed with status %d", resp.StatusCode)
 	}
 
 	var gqlResp graphqlResponse
@@ -749,9 +765,9 @@ func getCIStatusFromCommits(commits []struct {
 }
 
 // applyPRResult applies GraphQL PR result to a notification.
-func applyPRResult(n *Notification, result *PRGraphQLResult) {
+func applyPRResult(n *model.Item, result *PRGraphQLResult) {
 	if n.Details == nil {
-		n.Details = &ItemDetails{}
+		n.Details = &model.ItemDetails{}
 	}
 
 	n.Details.Number = result.Number
@@ -783,9 +799,9 @@ func applyPRResult(n *Notification, result *PRGraphQLResult) {
 }
 
 // applyIssueResult applies GraphQL Issue result to a notification.
-func applyIssueResult(n *Notification, result *IssueGraphQLResult) {
+func applyIssueResult(n *model.Item, result *IssueGraphQLResult) {
 	if n.Details == nil {
-		n.Details = &ItemDetails{}
+		n.Details = &model.ItemDetails{}
 	}
 
 	n.Details.Number = result.Number
@@ -804,4 +820,22 @@ func applyIssueResult(n *Notification, result *IssueGraphQLResult) {
 	if n.Details.HTMLURL == "" && n.Repository.FullName != "" {
 		n.Details.HTMLURL = fmt.Sprintf("https://github.com/%s/issues/%d", n.Repository.FullName, result.Number)
 	}
+}
+
+// extractIssueNumber extracts the issue/PR number from a GitHub API URL.
+// URL format: https://api.github.com/repos/owner/repo/issues/123
+// or: https://api.github.com/repos/owner/repo/pulls/123
+func extractIssueNumber(apiURL string) (int, error) {
+	parts := strings.Split(apiURL, "/")
+	if len(parts) < 2 {
+		return 0, fmt.Errorf("invalid API URL format: %s", apiURL)
+	}
+
+	numStr := parts[len(parts)-1]
+	num, err := strconv.Atoi(numStr)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse issue number from URL %s: %w", apiURL, err)
+	}
+
+	return num, nil
 }

@@ -11,8 +11,8 @@ import (
 )
 
 // Run starts the TUI and blocks until it completes.
-func Run(events <-chan Event) error {
-	model := NewModel(events)
+func Run(events <-chan Event, opts ...ModelOption) error {
+	model := NewModel(events, opts...)
 	// Don't use alt screen - render inline
 	p := tea.NewProgram(model)
 	_, err := p.Run()
@@ -102,8 +102,8 @@ func WithError(err error) TaskEventOption {
 }
 
 // RunListUI starts the interactive list UI for triaging items
-func RunListUI(items []triage.PrioritizedItem, store *resolved.Store, weights config.ScoreWeights, currentUser string) error {
-	model := NewListModel(items, store, weights, currentUser)
+func RunListUI(items []triage.PrioritizedItem, store *resolved.Store, weights config.ScoreWeights, currentUser string, opts ...ListOption) error {
+	model := NewListModel(items, store, weights, currentUser, opts...)
 	p := tea.NewProgram(model, tea.WithAltScreen())
 	_, err := p.Run()
 	return err

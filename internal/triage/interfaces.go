@@ -1,27 +1,29 @@
 // Package triage provides notification prioritization functionality.
 package triage
 
-import "github.com/spiffcs/triage/internal/github"
+import (
+	"github.com/spiffcs/triage/internal/model"
+)
 
 // Prioritizer defines the interface for notification prioritization.
 // This interface enables mocking the prioritization engine in unit tests.
 type Prioritizer interface {
 	// Prioritize scores and sorts notifications by priority.
-	Prioritize(notifications []github.Notification) []PrioritizedItem
+	Prioritize(items []model.Item) []PrioritizedItem
 }
 
 // Scorer defines the interface for scoring individual notifications.
 // This interface enables testing scoring logic independently.
 type Scorer interface {
 	// Score calculates the priority score for a notification.
-	Score(n *github.Notification) int
+	Score(n *model.Item) int
 
 	// DeterminePriority determines the display priority based on
 	// the notification and its score.
-	DeterminePriority(n *github.Notification, score int) PriorityLevel
+	DeterminePriority(n *model.Item, score int) PriorityLevel
 
 	// DetermineAction suggests what action the user should take.
-	DetermineAction(n *github.Notification) string
+	DetermineAction(n *model.Item) string
 }
 
 // Ensure Engine implements Prioritizer interface.

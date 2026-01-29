@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/spiffcs/triage/config"
-	"github.com/spiffcs/triage/internal/github"
+	"github.com/spiffcs/triage/internal/ghclient"
 )
 
 // NewCmdRateLimit creates the ratelimit command.
@@ -16,12 +16,12 @@ func NewCmdRateLimit() *cobra.Command {
 		Short: "Check GitHub API rate limit status",
 		Long:  `Display current GitHub API rate limit status including remaining quota and reset time.`,
 	}
-	cmd.AddCommand(NewCmdRateLimitStatus())
+	cmd.AddCommand(newCmdRateLimitStatus())
 	return cmd
 }
 
-// NewCmdRateLimitStatus creates the ratelimit status subcommand.
-func NewCmdRateLimitStatus() *cobra.Command {
+// newCmdRateLimitStatus creates the ratelimit status subcommand.
+func newCmdRateLimitStatus() *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
 		Short: "Show current rate limit status",
@@ -43,12 +43,12 @@ func runRateLimitStatus(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("GitHub token not configured. Set the GITHUB_TOKEN environment variable")
 	}
 
-	client, err := github.NewClient(ctx, token)
+	client, err := ghclient.NewClient(ctx, token)
 	if err != nil {
 		return err
 	}
 
-	limits, _, err := client.RawClient().RateLimit.Get(client.Context())
+	limits, _, err := client.RawClient().RateLimit.Get(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get rate limits: %w", err)
 	}

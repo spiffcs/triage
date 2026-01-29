@@ -6,32 +6,22 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
-	"time"
 
-	"github.com/spiffcs/triage/internal/github"
+	"github.com/spiffcs/triage/internal/ghclient"
 	"github.com/spiffcs/triage/internal/log"
+	"github.com/spiffcs/triage/internal/model"
+	"github.com/spiffcs/triage/internal/service"
 	"github.com/spiffcs/triage/internal/tui"
+	"golang.org/x/sync/errgroup"
 )
 
-// handleFetchError processes a fetch error by either setting the rate limit flag
-// or logging a warning. It follows the guard clause pattern for early returns.
-func handleFetchError(err error, msg string, rateLimited *bool) {
-	if err == nil {
-		return
-	}
-	if errors.Is(err, github.ErrRateLimited) {
-		*rateLimited = true
-		return
-	}
-	log.Warn(msg, "error", err)
-}
-
-// FetchResult contains all data fetched from GitHub.
-type FetchResult struct {
-	Notifications  []github.Notification
-	ReviewPRs      []github.Notification
-	AuthoredPRs    []github.Notification
-	AssignedIssues []github.Notification
+// fetchResult contains all data fetched from GitHub.
+type fetchResult struct {
+	Notifications  []model.Item
+	ReviewPRs      []model.Item
+	AuthoredPRs    []model.Item
+	AssignedIssues []model.Item
+	Orphaned       []model.Item
 	RateLimited    bool
 
 	// Cache statistics
@@ -40,44 +30,32 @@ type FetchResult struct {
 	ReviewCached   bool
 	AuthoredCached bool
 	AssignedCached bool
+	OrphanedCached bool
 }
 
-// FetchCacheStats returns a summary of cache usage.
-type FetchCacheStats struct {
-	NotifCached    bool
-	NotifNewCount  int
-	ReviewCached   bool
-	AuthoredCached bool
-	AssignedCached bool
+// totalFetched returns the total number of items fetched.
+func (r *fetchResult) totalFetched() int {
+	return len(r.Notifications) + len(r.ReviewPRs) + len(r.AuthoredPRs) + len(r.AssignedIssues) + len(r.Orphaned)
 }
 
-// CacheStats returns the cache statistics from the fetch result.
-func (r *FetchResult) CacheStats() FetchCacheStats {
-	return FetchCacheStats{
-		NotifCached:    r.NotifCached,
-		NotifNewCount:  r.NotifNewCount,
-		ReviewCached:   r.ReviewCached,
-		AuthoredCached: r.AuthoredCached,
-		AssignedCached: r.AssignedCached,
+// fetchOptions configures the fetch operation.
+type fetchOptions struct {
+	SinceLabel string // Human-readable label like "1w"
+	Events     chan tui.Event
+
+	// Orphaned contribution options
+	IncludeOrphaned     bool
+	OrphanedRepos       []string
+	StaleDays           int
+	ConsecutiveComments int
+}
+
+// fetchAll fetches all data sources in parallel using errgroup for context propagation.
+func fetchAll(ctx context.Context, svc *service.ItemService, opts fetchOptions) (*fetchResult, error) {
+	totalFetches := 5
+	if !opts.IncludeOrphaned || len(opts.OrphanedRepos) == 0 {
+		totalFetches = 4
 	}
-}
-
-// TotalFetched returns the total number of items fetched.
-func (r *FetchResult) TotalFetched() int {
-	return len(r.Notifications) + len(r.ReviewPRs) + len(r.AuthoredPRs) + len(r.AssignedIssues)
-}
-
-// FetchOptions configures the fetch operation.
-type FetchOptions struct {
-	Since       time.Time
-	SinceLabel  string // Human-readable label like "1w"
-	CurrentUser string
-	Events      chan tui.Event
-}
-
-// FetchAll fetches all data sources in parallel.
-func FetchAll(ctx context.Context, client *github.Client, cache *github.Cache, opts FetchOptions) (*FetchResult, error) {
-	const totalFetches = 4
 
 	// Track progress of parallel fetches
 	var completedFetches int32
@@ -95,95 +73,168 @@ func FetchAll(ctx context.Context, client *github.Client, cache *github.Cache, o
 		tui.WithProgress(0.0),
 		tui.WithMessage(fmt.Sprintf("for the past %s (0/%d sources)", opts.SinceLabel, totalFetches)))
 
-	var wg sync.WaitGroup
-	result := &FetchResult{}
+	result := &fetchResult{}
+	var mu sync.Mutex
 
-	// Error tracking
-	var notifErr, reviewErr, authoredErr, assignedErr error
+	g, gctx := errgroup.WithContext(ctx)
 
 	// Fetch notifications (with caching)
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		notifResult, err := client.ListUnreadNotificationsCached(opts.CurrentUser, opts.Since, cache)
+	g.Go(func() error {
+		notifResult, err := svc.GetUnreadItems(gctx)
 		if err != nil {
-			notifErr = err
+			if errors.Is(err, ghclient.ErrRateLimited) {
+				mu.Lock()
+				result.RateLimited = true
+				mu.Unlock()
+				updateFetchProgress()
+				return nil
+			}
 			updateFetchProgress()
-			return
+			return fmt.Errorf("notifications: %w", err)
 		}
-		result.Notifications = notifResult.Notifications
+		mu.Lock()
+		result.Notifications = notifResult.Items
 		result.NotifCached = notifResult.FromCache
 		result.NotifNewCount = notifResult.NewCount
+		mu.Unlock()
 		updateFetchProgress()
-	}()
+		return nil
+	})
 
 	// Fetch review-requested PRs
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		result.ReviewPRs, result.ReviewCached, reviewErr = client.ListReviewRequestedPRsCached(opts.CurrentUser, cache)
+	g.Go(func() error {
+		prs, cached, err := svc.GetReviewRequestedPRs(gctx)
+		if err != nil {
+			if errors.Is(err, ghclient.ErrRateLimited) {
+				mu.Lock()
+				result.RateLimited = true
+				mu.Unlock()
+				updateFetchProgress()
+				return nil
+			}
+			updateFetchProgress()
+			return fmt.Errorf("review-requested PRs: %w", err)
+		}
+		mu.Lock()
+		result.ReviewPRs = prs
+		result.ReviewCached = cached
+		mu.Unlock()
 		updateFetchProgress()
-	}()
+		return nil
+	})
 
 	// Fetch authored PRs
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		result.AuthoredPRs, result.AuthoredCached, authoredErr = client.ListAuthoredPRsCached(opts.CurrentUser, cache)
+	g.Go(func() error {
+		prs, cached, err := svc.GetAuthoredPRs(gctx)
+		if err != nil {
+			if errors.Is(err, ghclient.ErrRateLimited) {
+				mu.Lock()
+				result.RateLimited = true
+				mu.Unlock()
+				updateFetchProgress()
+				return nil
+			}
+			updateFetchProgress()
+			return fmt.Errorf("authored PRs: %w", err)
+		}
+		mu.Lock()
+		result.AuthoredPRs = prs
+		result.AuthoredCached = cached
+		mu.Unlock()
 		updateFetchProgress()
-	}()
+		return nil
+	})
 
 	// Fetch assigned issues
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		result.AssignedIssues, result.AssignedCached, assignedErr = client.ListAssignedIssuesCached(opts.CurrentUser, cache)
-		updateFetchProgress()
-	}()
-
-	wg.Wait()
-
-	// Handle fetch errors - check for rate limiting
-	if notifErr != nil {
-		if errors.Is(notifErr, github.ErrRateLimited) {
-			result.RateLimited = true
-		} else {
-			sendTaskEvent(opts.Events, tui.TaskFetch, tui.StatusError, tui.WithError(notifErr))
-			return nil, fmt.Errorf("failed to fetch notifications: %w", notifErr)
+	g.Go(func() error {
+		issues, cached, err := svc.GetAssignedIssues(gctx)
+		if err != nil {
+			if errors.Is(err, ghclient.ErrRateLimited) {
+				mu.Lock()
+				result.RateLimited = true
+				mu.Unlock()
+				updateFetchProgress()
+				return nil
+			}
+			updateFetchProgress()
+			return fmt.Errorf("assigned issues: %w", err)
 		}
+		mu.Lock()
+		result.AssignedIssues = issues
+		result.AssignedCached = cached
+		mu.Unlock()
+		updateFetchProgress()
+		return nil
+	})
+
+	// Fetch orphaned contributions (if enabled)
+	if len(opts.OrphanedRepos) > 0 {
+		g.Go(func() error {
+			searchOpts := ghclient.OrphanedSearchOptions{
+				Repos:                     opts.OrphanedRepos,
+				StaleDays:                 opts.StaleDays,
+				ConsecutiveAuthorComments: opts.ConsecutiveComments,
+				MaxPerRepo:                50,
+			}
+			orphaned, cached, err := svc.GetOrphanedContributions(gctx, searchOpts)
+			if err != nil {
+				if errors.Is(err, ghclient.ErrRateLimited) {
+					mu.Lock()
+					result.RateLimited = true
+					mu.Unlock()
+					updateFetchProgress()
+					return nil
+				}
+				updateFetchProgress()
+				return fmt.Errorf("orphaned contributions: %w", err)
+			}
+			mu.Lock()
+			result.Orphaned = orphaned
+			result.OrphanedCached = cached
+			mu.Unlock()
+			updateFetchProgress()
+			return nil
+		})
 	}
-	handleFetchError(reviewErr, "failed to fetch review-requested PRs", &result.RateLimited)
-	handleFetchError(authoredErr, "failed to fetch authored PRs", &result.RateLimited)
-	handleFetchError(assignedErr, "failed to fetch assigned issues", &result.RateLimited)
+
+	// Wait for all goroutines and collect errors
+	err := g.Wait()
 
 	// Send rate limit event to TUI if rate limited
 	if result.RateLimited && opts.Events != nil {
-		_, _, resetAt, _ := github.GetRateLimitStatus()
+		_, _, resetAt, _ := ghclient.GetRateLimitStatus()
 		opts.Events <- tui.RateLimitEvent{
 			Limited: true,
 			ResetAt: resetAt,
 		}
 	}
 
-	totalFetched := result.TotalFetched()
+	totalFetched := result.totalFetched()
 	fetchMsg := fmt.Sprintf("for the past %s (%d items)", opts.SinceLabel, totalFetched)
 	if result.NotifCached && result.NotifNewCount > 0 {
 		fetchMsg = fmt.Sprintf("for the past %s (%d items, %d new)", opts.SinceLabel, totalFetched, result.NotifNewCount)
 	} else if result.NotifCached {
 		fetchMsg = fmt.Sprintf("for the past %s (%d items, cached)", opts.SinceLabel, totalFetched)
 	}
-	sendTaskEvent(opts.Events, tui.TaskFetch, tui.StatusComplete, tui.WithMessage(fetchMsg))
+
+	if err != nil {
+		sendTaskEvent(opts.Events, tui.TaskFetch, tui.StatusError, tui.WithError(err))
+	} else {
+		sendTaskEvent(opts.Events, tui.TaskFetch, tui.StatusComplete, tui.WithMessage(fetchMsg))
+	}
 
 	log.Info("fetched data",
 		"notifications", len(result.Notifications),
 		"reviewPRs", len(result.ReviewPRs),
 		"authoredPRs", len(result.AuthoredPRs),
 		"assignedIssues", len(result.AssignedIssues),
+		"orphaned", len(result.Orphaned),
 		"notifCached", result.NotifCached,
 		"notifNewCount", result.NotifNewCount,
 		"reviewCached", result.ReviewCached,
 		"authoredCached", result.AuthoredCached,
-		"assignedCached", result.AssignedCached)
+		"assignedCached", result.AssignedCached,
+		"orphanedCached", result.OrphanedCached)
 
-	return result, nil
+	return result, err
 }

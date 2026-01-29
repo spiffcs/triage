@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/spiffcs/triage/config"
-	"github.com/spiffcs/triage/internal/github"
+	"github.com/spiffcs/triage/internal/model"
 )
 
 func TestBaseScore(t *testing.T) {
@@ -12,20 +12,20 @@ func TestBaseScore(t *testing.T) {
 	h := NewHeuristics("testuser", weights, config.DefaultQuickWinLabels())
 
 	tests := []struct {
-		reason github.NotificationReason
+		reason model.ItemReason
 		want   int
 	}{
-		{github.ReasonReviewRequested, 100},
-		{github.ReasonMention, 90},
-		{github.ReasonTeamMention, 85},
-		{github.ReasonAuthor, 70},
-		{github.ReasonAssign, 60},
-		{github.ReasonComment, 30},
-		{github.ReasonStateChange, 25},
-		{github.ReasonSubscribed, 10},
-		{github.ReasonCIActivity, 5},
+		{model.ReasonReviewRequested, 100},
+		{model.ReasonMention, 90},
+		{model.ReasonTeamMention, 85},
+		{model.ReasonAuthor, 70},
+		{model.ReasonAssign, 60},
+		{model.ReasonComment, 30},
+		{model.ReasonStateChange, 25},
+		{model.ReasonSubscribed, 10},
+		{model.ReasonCIActivity, 5},
 		// Unknown reason should default to Subscribed weight
-		{github.NotificationReason("unknown"), 10},
+		{model.ItemReason("unknown"), 10},
 	}
 
 	for _, tt := range tests {
@@ -43,54 +43,54 @@ func TestIsLowHangingFruit(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		details *github.ItemDetails
+		details *model.ItemDetails
 		want    bool
 	}{
 		{
 			name: "matches good first issue label",
-			details: &github.ItemDetails{
+			details: &model.ItemDetails{
 				Labels: []string{"good first issue"},
 			},
 			want: true,
 		},
 		{
 			name: "matches label case insensitive",
-			details: &github.ItemDetails{
+			details: &model.ItemDetails{
 				Labels: []string{"Good First Issue"},
 			},
 			want: true,
 		},
 		{
 			name: "matches hyphenated label with space-separated config",
-			details: &github.ItemDetails{
+			details: &model.ItemDetails{
 				Labels: []string{"good-first-issue"},
 			},
 			want: true,
 		},
 		{
 			name: "matches help-wanted with hyphens",
-			details: &github.ItemDetails{
+			details: &model.ItemDetails{
 				Labels: []string{"Help-Wanted"},
 			},
 			want: true,
 		},
 		{
 			name: "matches documentation label",
-			details: &github.ItemDetails{
+			details: &model.ItemDetails{
 				Labels: []string{"Documentation"},
 			},
 			want: true,
 		},
 		{
 			name: "matches typo label",
-			details: &github.ItemDetails{
+			details: &model.ItemDetails{
 				Labels: []string{"typo"},
 			},
 			want: true,
 		},
 		{
 			name: "small PR is low hanging fruit",
-			details: &github.ItemDetails{
+			details: &model.ItemDetails{
 				IsPR:         true,
 				ChangedFiles: 2,
 				Additions:    30,
@@ -100,7 +100,7 @@ func TestIsLowHangingFruit(t *testing.T) {
 		},
 		{
 			name: "large PR is not low hanging fruit",
-			details: &github.ItemDetails{
+			details: &model.ItemDetails{
 				IsPR:         true,
 				ChangedFiles: 10,
 				Additions:    500,
@@ -110,14 +110,14 @@ func TestIsLowHangingFruit(t *testing.T) {
 		},
 		{
 			name: "no matching labels",
-			details: &github.ItemDetails{
+			details: &model.ItemDetails{
 				Labels: []string{"bug", "priority:high"},
 			},
 			want: false,
 		},
 		{
 			name: "empty labels and not small PR",
-			details: &github.ItemDetails{
+			details: &model.ItemDetails{
 				Labels: []string{},
 				IsPR:   false,
 			},
@@ -140,31 +140,31 @@ func TestDeterminePriority(t *testing.T) {
 
 	tests := []struct {
 		name         string
-		notification *github.Notification
+		notification *model.Item
 		score        int
 		want         PriorityLevel
 	}{
 		{
 			name: "review_requested is urgent",
-			notification: &github.Notification{
-				Reason: github.ReasonReviewRequested,
+			notification: &model.Item{
+				Reason: model.ReasonReviewRequested,
 			},
 			score: 0,
 			want:  PriorityUrgent,
 		},
 		{
 			name: "mention is FYI by default (urgency trigger disabled)",
-			notification: &github.Notification{
-				Reason: github.ReasonMention,
+			notification: &model.Item{
+				Reason: model.ReasonMention,
 			},
 			score: 0,
 			want:  PriorityFYI,
 		},
 		{
 			name: "authored PR approved and mergeable is urgent",
-			notification: &github.Notification{
-				Reason: github.ReasonAuthor,
-				Details: &github.ItemDetails{
+			notification: &model.Item{
+				Reason: model.ReasonAuthor,
+				Details: &model.ItemDetails{
 					IsPR:         true,
 					ReviewState:  "approved",
 					Mergeable:    true,
@@ -178,9 +178,9 @@ func TestDeterminePriority(t *testing.T) {
 		},
 		{
 			name: "authored PR with changes requested is important by default (urgency trigger disabled)",
-			notification: &github.Notification{
-				Reason: github.ReasonAuthor,
-				Details: &github.ItemDetails{
+			notification: &model.Item{
+				Reason: model.ReasonAuthor,
+				Details: &model.ItemDetails{
 					IsPR:         true,
 					ReviewState:  "changes_requested",
 					ChangedFiles: 10,
@@ -193,9 +193,9 @@ func TestDeterminePriority(t *testing.T) {
 		},
 		{
 			name: "low hanging fruit is quick win",
-			notification: &github.Notification{
-				Reason: github.ReasonSubscribed,
-				Details: &github.ItemDetails{
+			notification: &model.Item{
+				Reason: model.ReasonSubscribed,
+				Details: &model.ItemDetails{
 					Labels: []string{"good first issue"},
 				},
 			},
@@ -204,9 +204,9 @@ func TestDeterminePriority(t *testing.T) {
 		},
 		{
 			name: "author without urgent details is important",
-			notification: &github.Notification{
-				Reason: github.ReasonAuthor,
-				Details: &github.ItemDetails{
+			notification: &model.Item{
+				Reason: model.ReasonAuthor,
+				Details: &model.ItemDetails{
 					IsPR:         true,
 					ReviewState:  "pending",
 					ChangedFiles: 10,
@@ -219,64 +219,64 @@ func TestDeterminePriority(t *testing.T) {
 		},
 		{
 			name: "assign is important",
-			notification: &github.Notification{
-				Reason: github.ReasonAssign,
+			notification: &model.Item{
+				Reason: model.ReasonAssign,
 			},
 			score: 0,
 			want:  PriorityImportant,
 		},
 		{
 			name: "team_mention is important",
-			notification: &github.Notification{
-				Reason: github.ReasonTeamMention,
+			notification: &model.Item{
+				Reason: model.ReasonTeamMention,
 			},
 			score: 0,
 			want:  PriorityImportant,
 		},
 		{
 			name: "subscribed is FYI",
-			notification: &github.Notification{
-				Reason: github.ReasonSubscribed,
+			notification: &model.Item{
+				Reason: model.ReasonSubscribed,
 			},
 			score: 0,
 			want:  PriorityFYI,
 		},
 		{
 			name: "comment is FYI",
-			notification: &github.Notification{
-				Reason: github.ReasonComment,
+			notification: &model.Item{
+				Reason: model.ReasonComment,
 			},
 			score: 0,
 			want:  PriorityFYI,
 		},
 		{
 			name: "high score promoted to important (notable threshold)",
-			notification: &github.Notification{
-				Reason: github.ReasonSubscribed,
+			notification: &model.Item{
+				Reason: model.ReasonSubscribed,
 			},
 			score: 60, // meets notable promotion threshold
 			want:  PriorityImportant,
 		},
 		{
 			name: "medium score promoted to notable (fyi threshold)",
-			notification: &github.Notification{
-				Reason: github.ReasonSubscribed,
+			notification: &model.Item{
+				Reason: model.ReasonSubscribed,
 			},
 			score: 35, // meets fyi promotion threshold
 			want:  PriorityNotable,
 		},
 		{
 			name: "below threshold FYI stays FYI",
-			notification: &github.Notification{
-				Reason: github.ReasonSubscribed,
+			notification: &model.Item{
+				Reason: model.ReasonSubscribed,
 			},
 			score: 34, // below fyi promotion threshold
 			want:  PriorityFYI,
 		},
 		{
 			name: "very high score promoted to urgent (important threshold)",
-			notification: &github.Notification{
-				Reason: github.ReasonSubscribed,
+			notification: &model.Item{
+				Reason: model.ReasonSubscribed,
 			},
 			score: 100, // meets important promotion threshold
 			want:  PriorityUrgent,
@@ -305,47 +305,47 @@ func TestDeterminePriorityWithDisabledUrgencyTriggers(t *testing.T) {
 
 	tests := []struct {
 		name         string
-		notification *github.Notification
+		notification *model.Item
 		score        int
 		want         PriorityLevel
 	}{
 		{
 			name: "review_requested falls through when disabled (low score)",
-			notification: &github.Notification{
-				Reason: github.ReasonReviewRequested,
+			notification: &model.Item{
+				Reason: model.ReasonReviewRequested,
 			},
 			score: 0,
 			want:  PriorityFYI, // Falls through to score-based, low score = FYI
 		},
 		{
 			name: "review_requested promoted by high score when disabled",
-			notification: &github.Notification{
-				Reason: github.ReasonReviewRequested,
+			notification: &model.Item{
+				Reason: model.ReasonReviewRequested,
 			},
 			score: 100, // meets important promotion threshold
 			want:  PriorityUrgent,
 		},
 		{
 			name: "mention falls through when disabled (low score)",
-			notification: &github.Notification{
-				Reason: github.ReasonMention,
+			notification: &model.Item{
+				Reason: model.ReasonMention,
 			},
 			score: 0,
 			want:  PriorityFYI,
 		},
 		{
 			name: "mention promoted by score when disabled",
-			notification: &github.Notification{
-				Reason: github.ReasonMention,
+			notification: &model.Item{
+				Reason: model.ReasonMention,
 			},
 			score: 60, // meets notable promotion threshold
 			want:  PriorityImportant,
 		},
 		{
 			name: "authored PR approved+mergeable falls through when disabled",
-			notification: &github.Notification{
-				Reason: github.ReasonAuthor,
-				Details: &github.ItemDetails{
+			notification: &model.Item{
+				Reason: model.ReasonAuthor,
+				Details: &model.ItemDetails{
 					IsPR:         true,
 					ReviewState:  "approved",
 					Mergeable:    true,
@@ -359,9 +359,9 @@ func TestDeterminePriorityWithDisabledUrgencyTriggers(t *testing.T) {
 		},
 		{
 			name: "authored PR changes_requested falls through when disabled",
-			notification: &github.Notification{
-				Reason: github.ReasonAuthor,
-				Details: &github.ItemDetails{
+			notification: &model.Item{
+				Reason: model.ReasonAuthor,
+				Details: &model.ItemDetails{
 					IsPR:         true,
 					ReviewState:  "changes_requested",
 					ChangedFiles: 10, // Large PR to avoid quick-win
@@ -393,8 +393,8 @@ func TestDeterminePriorityWithPartialUrgencyOverrides(t *testing.T) {
 	h := NewHeuristics("testuser", weights, config.DefaultQuickWinLabels())
 
 	t.Run("mention urgent when enabled", func(t *testing.T) {
-		notification := &github.Notification{
-			Reason: github.ReasonMention,
+		notification := &model.Item{
+			Reason: model.ReasonMention,
 		}
 		got := h.DeterminePriority(notification, 0)
 		if got != PriorityUrgent {
@@ -403,8 +403,8 @@ func TestDeterminePriorityWithPartialUrgencyOverrides(t *testing.T) {
 	})
 
 	t.Run("review_requested still urgent (default)", func(t *testing.T) {
-		notification := &github.Notification{
-			Reason: github.ReasonReviewRequested,
+		notification := &model.Item{
+			Reason: model.ReasonReviewRequested,
 		}
 		got := h.DeterminePriority(notification, 0)
 		if got != PriorityUrgent {
@@ -413,9 +413,9 @@ func TestDeterminePriorityWithPartialUrgencyOverrides(t *testing.T) {
 	})
 
 	t.Run("approved PR falls through when disabled", func(t *testing.T) {
-		notification := &github.Notification{
-			Reason: github.ReasonAuthor,
-			Details: &github.ItemDetails{
+		notification := &model.Item{
+			Reason: model.ReasonAuthor,
+			Details: &model.ItemDetails{
 				IsPR:         true,
 				ReviewState:  "approved",
 				Mergeable:    true,
@@ -431,9 +431,9 @@ func TestDeterminePriorityWithPartialUrgencyOverrides(t *testing.T) {
 	})
 
 	t.Run("changes_requested PR not urgent (still disabled)", func(t *testing.T) {
-		notification := &github.Notification{
-			Reason: github.ReasonAuthor,
-			Details: &github.ItemDetails{
+		notification := &model.Item{
+			Reason: model.ReasonAuthor,
+			Details: &model.ItemDetails{
 				IsPR:         true,
 				ReviewState:  "changes_requested",
 				ChangedFiles: 10,
@@ -453,56 +453,56 @@ func TestDetermineAction(t *testing.T) {
 
 	tests := []struct {
 		name         string
-		notification *github.Notification
+		notification *model.Item
 		want         string
 	}{
 		{
 			name: "review_requested",
-			notification: &github.Notification{
-				Reason: github.ReasonReviewRequested,
+			notification: &model.Item{
+				Reason: model.ReasonReviewRequested,
 			},
 			want: "Review PR",
 		},
 		{
 			name: "mention",
-			notification: &github.Notification{
-				Reason: github.ReasonMention,
+			notification: &model.Item{
+				Reason: model.ReasonMention,
 			},
 			want: "Respond to mention",
 		},
 		{
 			name: "team_mention",
-			notification: &github.Notification{
-				Reason: github.ReasonTeamMention,
+			notification: &model.Item{
+				Reason: model.ReasonTeamMention,
 			},
 			want: "Team mentioned - check if relevant",
 		},
 		{
 			name: "assign",
-			notification: &github.Notification{
-				Reason: github.ReasonAssign,
+			notification: &model.Item{
+				Reason: model.ReasonAssign,
 			},
 			want: "Work on assigned item",
 		},
 		{
 			name: "comment",
-			notification: &github.Notification{
-				Reason: github.ReasonComment,
+			notification: &model.Item{
+				Reason: model.ReasonComment,
 			},
 			want: "Review new comments",
 		},
 		{
 			name: "subscribed",
-			notification: &github.Notification{
-				Reason: github.ReasonSubscribed,
+			notification: &model.Item{
+				Reason: model.ReasonSubscribed,
 			},
 			want: "Review activity (subscribed)",
 		},
 		{
 			name: "state_change closed",
-			notification: &github.Notification{
-				Reason: github.ReasonStateChange,
-				Details: &github.ItemDetails{
+			notification: &model.Item{
+				Reason: model.ReasonStateChange,
+				Details: &model.ItemDetails{
 					State: "closed",
 				},
 			},
@@ -510,9 +510,9 @@ func TestDetermineAction(t *testing.T) {
 		},
 		{
 			name: "state_change open",
-			notification: &github.Notification{
-				Reason: github.ReasonStateChange,
-				Details: &github.ItemDetails{
+			notification: &model.Item{
+				Reason: model.ReasonStateChange,
+				Details: &model.ItemDetails{
 					State: "open",
 				},
 			},
@@ -520,16 +520,16 @@ func TestDetermineAction(t *testing.T) {
 		},
 		{
 			name: "author without details",
-			notification: &github.Notification{
-				Reason: github.ReasonAuthor,
+			notification: &model.Item{
+				Reason: model.ReasonAuthor,
 			},
 			want: "Check activity on your item",
 		},
 		{
 			name: "author with approved mergeable PR",
-			notification: &github.Notification{
-				Reason: github.ReasonAuthor,
-				Details: &github.ItemDetails{
+			notification: &model.Item{
+				Reason: model.ReasonAuthor,
+				Details: &model.ItemDetails{
 					IsPR:        true,
 					ReviewState: "approved",
 					Mergeable:   true,

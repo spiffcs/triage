@@ -6,7 +6,7 @@ import (
 
 	"github.com/spiffcs/triage/config"
 	"github.com/spiffcs/triage/internal/constants"
-	"github.com/spiffcs/triage/internal/github"
+	"github.com/spiffcs/triage/internal/model"
 )
 
 // Engine orchestrates the prioritization process
@@ -22,16 +22,16 @@ func NewEngine(currentUser string, weights config.ScoreWeights, quickWinLabels [
 }
 
 // Prioritize scores and sorts notifications by priority
-func (e *Engine) Prioritize(notifications []github.Notification) []PrioritizedItem {
-	items := make([]PrioritizedItem, 0, len(notifications))
+func (e *Engine) Prioritize(items []model.Item) []PrioritizedItem {
+	pItems := make([]PrioritizedItem, 0, len(items))
 
-	for _, n := range notifications {
+	for _, n := range items {
 		score := e.heuristics.Score(&n)
 		priority := e.heuristics.DeterminePriority(&n, score)
 		action := e.heuristics.DetermineAction(&n)
 
-		items = append(items, PrioritizedItem{
-			Notification: n,
+		pItems = append(pItems, PrioritizedItem{
+			Item:         n,
 			Score:        score,
 			Priority:     priority,
 			ActionNeeded: action,
@@ -46,15 +46,16 @@ func (e *Engine) Prioritize(notifications []github.Notification) []PrioritizedIt
 		PriorityNotable:   3,
 		PriorityFYI:       4,
 	}
+
 	sort.Slice(items, func(i, j int) bool {
-		pi, pj := priorityOrder[items[i].Priority], priorityOrder[items[j].Priority]
+		pi, pj := priorityOrder[pItems[i].Priority], priorityOrder[pItems[j].Priority]
 		if pi != pj {
 			return pi < pj
 		}
-		return items[i].Score > items[j].Score
+		return pItems[i].Score > pItems[j].Score
 	})
 
-	return items
+	return pItems
 }
 
 // FilterByPriority filters items by a specific priority level
@@ -69,19 +70,19 @@ func FilterByPriority(items []PrioritizedItem, targetPriority PriorityLevel) []P
 }
 
 // FilterByReason filters items by notification reason
-func FilterByReason(items []PrioritizedItem, reasons []github.NotificationReason) []PrioritizedItem {
+func FilterByReason(items []PrioritizedItem, reasons []model.ItemReason) []PrioritizedItem {
 	if len(reasons) == 0 {
 		return items
 	}
 
-	reasonSet := make(map[github.NotificationReason]bool, len(reasons))
+	reasonSet := make(map[model.ItemReason]bool, len(reasons))
 	for _, r := range reasons {
 		reasonSet[r] = true
 	}
 
 	filtered := make([]PrioritizedItem, 0, len(items))
 	for _, item := range items {
-		if reasonSet[item.Notification.Reason] {
+		if reasonSet[item.Item.Reason] {
 			filtered = append(filtered, item)
 		}
 	}
@@ -93,7 +94,7 @@ func FilterOutMerged(items []PrioritizedItem) []PrioritizedItem {
 	filtered := make([]PrioritizedItem, 0, len(items))
 	for _, item := range items {
 		// Skip if it's a merged PR
-		if item.Notification.Details != nil && item.Notification.Details.Merged {
+		if item.Item.Details != nil && item.Item.Details.Merged {
 			continue
 		}
 		filtered = append(filtered, item)
@@ -105,8 +106,8 @@ func FilterOutMerged(items []PrioritizedItem) []PrioritizedItem {
 func FilterOutClosed(items []PrioritizedItem) []PrioritizedItem {
 	filtered := make([]PrioritizedItem, 0, len(items))
 	for _, item := range items {
-		if item.Notification.Details != nil {
-			state := item.Notification.Details.State
+		if item.Item.Details != nil {
+			state := item.Item.Details.State
 			if state == "closed" || state == "merged" {
 				continue
 			}
@@ -117,10 +118,10 @@ func FilterOutClosed(items []PrioritizedItem) []PrioritizedItem {
 }
 
 // FilterByType filters items by subject type (pr, issue)
-func FilterByType(items []PrioritizedItem, subjectType github.SubjectType) []PrioritizedItem {
+func FilterByType(items []PrioritizedItem, subjectType model.SubjectType) []PrioritizedItem {
 	filtered := make([]PrioritizedItem, 0, len(items))
 	for _, item := range items {
-		if item.Notification.Subject.Type == subjectType {
+		if item.Item.Subject.Type == subjectType {
 			filtered = append(filtered, item)
 		}
 	}
@@ -135,7 +136,7 @@ func FilterByRepo(items []PrioritizedItem, repo string) []PrioritizedItem {
 
 	filtered := make([]PrioritizedItem, 0, len(items))
 	for _, item := range items {
-		if item.Notification.Repository.FullName == repo {
+		if item.Item.Repository.FullName == repo {
 			filtered = append(filtered, item)
 		}
 	}
@@ -155,7 +156,7 @@ func FilterResolved(items []PrioritizedItem, store ResolvedStore) []PrioritizedI
 
 	filtered := make([]PrioritizedItem, 0, len(items))
 	for _, item := range items {
-		if store.ShouldShow(item.Notification.ID, item.Notification.UpdatedAt) {
+		if store.ShouldShow(item.Item.ID, item.Item.UpdatedAt) {
 			filtered = append(filtered, item)
 		}
 	}
@@ -178,13 +179,13 @@ func FilterByExcludedAuthors(items []PrioritizedItem, excludedAuthors []string) 
 	filtered := make([]PrioritizedItem, 0, len(items))
 	for _, item := range items {
 		// Skip items without details (can't determine author)
-		if item.Notification.Details == nil {
+		if item.Item.Details == nil {
 			filtered = append(filtered, item)
 			continue
 		}
 
 		// Skip if author is in the exclude list
-		if excludeSet[item.Notification.Details.Author] {
+		if excludeSet[item.Item.Details.Author] {
 			continue
 		}
 
@@ -199,15 +200,15 @@ func FilterByGreenCI(items []PrioritizedItem) []PrioritizedItem {
 	filtered := make([]PrioritizedItem, 0, len(items))
 	for _, item := range items {
 		// Exclude non-PRs (issues don't have CI)
-		if item.Notification.Subject.Type != github.SubjectPullRequest {
+		if item.Item.Subject.Type != model.SubjectPullRequest {
 			continue
 		}
 		// Exclude PRs without details (can't determine CI status)
-		if item.Notification.Details == nil {
+		if item.Item.Details == nil {
 			continue
 		}
 		// Keep PRs with successful CI
-		if item.Notification.Details.CIStatus == constants.CIStatusSuccess {
+		if item.Item.Details.CIStatus == constants.CIStatusSuccess {
 			filtered = append(filtered, item)
 		}
 	}
@@ -220,16 +221,16 @@ func FilterByGreenCI(items []PrioritizedItem) []PrioritizedItem {
 func FilterOutUnenriched(items []PrioritizedItem) []PrioritizedItem {
 	filtered := make([]PrioritizedItem, 0, len(items))
 	for _, item := range items {
-		subjectType := item.Notification.Subject.Type
+		subjectType := item.Item.Subject.Type
 
 		// Keep non-PR/Issue types - they don't have enrichment
-		if subjectType != github.SubjectPullRequest && subjectType != github.SubjectIssue {
+		if subjectType != model.SubjectPullRequest && subjectType != model.SubjectIssue {
 			filtered = append(filtered, item)
 			continue
 		}
 
 		// Keep PR/Issue items that were successfully enriched
-		if item.Notification.Details != nil {
+		if item.Item.Details != nil {
 			filtered = append(filtered, item)
 		}
 	}

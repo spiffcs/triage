@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/spiffcs/triage/internal/format"
-	"github.com/spiffcs/triage/internal/github"
+	"github.com/spiffcs/triage/internal/model"
 	"github.com/spiffcs/triage/internal/triage"
 )
 
@@ -71,15 +71,15 @@ func TestHotTopicSuppression(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// Build test item
 			item := triage.PrioritizedItem{
-				Notification: github.Notification{
-					Subject: github.Subject{
+				Item: model.Item{
+					Subject: model.Subject{
 						Title: "Test issue title",
-						Type:  github.SubjectIssue,
+						Type:  model.SubjectIssue,
 					},
-					Repository: github.Repository{
+					Repository: model.Repository{
 						FullName: "owner/repo",
 					},
-					Details: &github.ItemDetails{
+					Details: &model.ItemDetails{
 						IsPR:          tt.isPR,
 						CommentCount:  tt.commentCount,
 						LastCommenter: tt.lastCommenter,
@@ -210,15 +210,15 @@ func TestIconPrecedenceAndAlignment(t *testing.T) {
 			}
 
 			item := triage.PrioritizedItem{
-				Notification: github.Notification{
-					Subject: github.Subject{
+				Item: model.Item{
+					Subject: model.Subject{
 						Title: "Test title",
-						Type:  github.SubjectPullRequest,
+						Type:  model.SubjectPullRequest,
 					},
-					Repository: github.Repository{
+					Repository: model.Repository{
 						FullName: "owner/repo",
 					},
-					Details: &github.ItemDetails{
+					Details: &model.ItemDetails{
 						IsPR:          true,
 						CommentCount:  commentCount,
 						LastCommenter: "other-user",

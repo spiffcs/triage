@@ -2,19 +2,10 @@ package cmd
 
 // Options holds the shared command-line options for the triage CLI.
 type Options struct {
-	Format        string
-	Since         string
-	Priority      string
-	Reason        string
-	Repo          string
-	Type          string
-	Limit         int
-	Verbosity     int
-	Workers       int
-	IncludeMerged bool
-	IncludeClosed bool
-	GreenCI       bool  // Filter to only show PRs with passing CI (excludes issues)
-	TUI           *bool // nil = auto-detect, true = force TUI, false = disable TUI
+	Format    string
+	Since     string
+	Verbosity int
+	TUI       *bool // nil = auto-detect, true = force TUI, false = disable TUI
 
 	// Profiling options
 	CPUProfile string // Write CPU profile to file
@@ -28,8 +19,7 @@ type Option func(*Options)
 // NewOptions creates a new Options with defaults and applies any provided options.
 func NewOptions(opts ...Option) *Options {
 	o := &Options{
-		Since:   "1w",
-		Workers: 20,
+		Since: "1w",
 	}
 	for _, opt := range opts {
 		opt(o)
@@ -51,73 +41,10 @@ func WithSince(since string) Option {
 	}
 }
 
-// WithPriority sets the priority filter.
-func WithPriority(priority string) Option {
-	return func(o *Options) {
-		o.Priority = priority
-	}
-}
-
-// WithReason sets the reason filter.
-func WithReason(reason string) Option {
-	return func(o *Options) {
-		o.Reason = reason
-	}
-}
-
-// WithRepo sets the repository filter.
-func WithRepo(repo string) Option {
-	return func(o *Options) {
-		o.Repo = repo
-	}
-}
-
-// WithType sets the type filter (pr, issue).
-func WithType(t string) Option {
-	return func(o *Options) {
-		o.Type = t
-	}
-}
-
-// WithLimit sets the maximum number of results.
-func WithLimit(limit int) Option {
-	return func(o *Options) {
-		o.Limit = limit
-	}
-}
-
 // WithVerbosity sets the verbosity level.
 func WithVerbosity(v int) Option {
 	return func(o *Options) {
 		o.Verbosity = v
-	}
-}
-
-// WithWorkers sets the number of concurrent workers.
-func WithWorkers(workers int) Option {
-	return func(o *Options) {
-		o.Workers = workers
-	}
-}
-
-// WithIncludeMerged includes merged PRs in the results.
-func WithIncludeMerged(include bool) Option {
-	return func(o *Options) {
-		o.IncludeMerged = include
-	}
-}
-
-// WithIncludeClosed includes closed issues/PRs in the results.
-func WithIncludeClosed(include bool) Option {
-	return func(o *Options) {
-		o.IncludeClosed = include
-	}
-}
-
-// WithGreenCI filters to only show PRs with passing CI.
-func WithGreenCI(greenCI bool) Option {
-	return func(o *Options) {
-		o.GreenCI = greenCI
 	}
 }
 

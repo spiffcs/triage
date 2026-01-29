@@ -10,8 +10,8 @@ import (
 	"github.com/fatih/color"
 	"github.com/spiffcs/triage/internal/constants"
 	"github.com/spiffcs/triage/internal/format"
-	"github.com/spiffcs/triage/internal/github"
 	"github.com/spiffcs/triage/internal/log"
+	"github.com/spiffcs/triage/internal/model"
 	"github.com/spiffcs/triage/internal/triage"
 	"golang.org/x/term"
 )
@@ -62,7 +62,7 @@ func (f *TableFormatter) Format(items []triage.PrioritizedItem, w io.Writer) err
 	}
 
 	for _, item := range items {
-		n := item.Notification
+		n := item.Item
 
 		// Determine type indicator
 		typeStr := "ISS"
@@ -154,7 +154,7 @@ func (f *TableFormatter) Format(items []triage.PrioritizedItem, w io.Writer) err
 		assigned = format.PadRight(assigned, assignedWidth, constants.ColAssigned)
 
 		// Build status column (review state, PR size, or comment count)
-		statusRes := f.formatStatus(n, item)
+		statusRes := f.formatStatus(n)
 		statusText := statusRes.text
 		statusWidth := statusRes.visibleWidth
 		if statusWidth > constants.ColStatus {
@@ -190,7 +190,7 @@ type statusResult struct {
 
 // formatStatus builds the status column showing review state, PR size, or activity
 // Returns the formatted string and its visible width (excluding ANSI codes)
-func (f *TableFormatter) formatStatus(n github.Notification, _ triage.PrioritizedItem) statusResult {
+func (f *TableFormatter) formatStatus(n model.Item) statusResult {
 	if n.Details == nil {
 		reason := string(n.Reason)
 		return statusResult{reason, len(reason)}
@@ -245,6 +245,11 @@ func (f *TableFormatter) formatStatus(n github.Notification, _ triage.Prioritize
 		return statusResult{text, len(text)}
 	}
 
+	// For items with assignees but no comments, show "assign"
+	if len(d.Assignees) > 0 {
+		return statusResult{"assign", 6}
+	}
+
 	reason := string(n.Reason)
 	return statusResult{reason, len(reason)}
 }
@@ -278,7 +283,7 @@ func colorPriority(p triage.PriorityLevel) string {
 
 // formatAssigned returns the assigned user for display
 // Priority: assignee > latest reviewer > requested reviewer
-func formatAssigned(d *github.ItemDetails, maxWidth int) string {
+func formatAssigned(d *model.ItemDetails, maxWidth int) string {
 	if d == nil {
 		return "─"
 	}

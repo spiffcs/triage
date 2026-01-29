@@ -41,7 +41,7 @@ func (t Task) View(spinnerFrame string, prog progress.Model) string {
 
 	// Add progress bar if we have progress
 	if t.Status == StatusRunning && t.Progress > 0 {
-		bar := prog.ViewAs(t.Progress)
+		bar := prog.View()
 		percent := int(t.Progress * 100)
 		line += fmt.Sprintf(" %s %d%%", bar, percent)
 		if t.Message != "" {
