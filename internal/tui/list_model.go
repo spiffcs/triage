@@ -59,7 +59,7 @@ var prioritySortColumns = []SortColumn{SortPriority, SortUpdated, SortRepo}
 var orphanedSortColumns = []SortColumn{SortStale, SortUpdated, SortComments, SortSize, SortAuthor, SortRepo}
 
 // assignedSortColumns defines the cycling order for assigned pane
-var assignedSortColumns = []SortColumn{SortUpdated, SortRepo}
+var assignedSortColumns = []SortColumn{SortUpdated, SortAuthor, SortRepo}
 
 // Default sort columns
 const (
@@ -389,6 +389,16 @@ func (m *ListModel) sortAssignedItems() {
 		switch column {
 		case SortUpdated:
 			less = a.Item.UpdatedAt.Before(b.Item.UpdatedAt)
+		case SortAuthor:
+			// Inverted so that descending (▼) gives A-Z order
+			authorA, authorB := "", ""
+			if a.Item.Details != nil {
+				authorA = a.Item.Details.Author
+			}
+			if b.Item.Details != nil {
+				authorB = b.Item.Details.Author
+			}
+			less = authorA > authorB
 		case SortRepo:
 			// Inverted so that descending (▼) gives A-Z order
 			less = a.Item.Repository.FullName > b.Item.Repository.FullName
