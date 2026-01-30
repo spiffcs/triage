@@ -23,23 +23,23 @@ func TestGetAssignedUser(t *testing.T) {
 			expected: "alice",
 		},
 		{
-			name: "PR with latest reviewer, no assignee",
+			name: "PR with latest reviewer but no assignee returns empty",
 			input: AssignedInput{
 				IsPR:           true,
 				LatestReviewer: "reviewer1",
 			},
-			expected: "reviewer1",
+			expected: "",
 		},
 		{
-			name: "PR with requested reviewer, no assignee or latest",
+			name: "PR with requested reviewer but no assignee returns empty",
 			input: AssignedInput{
 				IsPR:               true,
 				RequestedReviewers: []string{"req1", "req2"},
 			},
-			expected: "req1",
+			expected: "",
 		},
 		{
-			name: "issue with latest reviewer is ignored",
+			name: "issue with latest reviewer returns empty",
 			input: AssignedInput{
 				IsPR:           false,
 				LatestReviewer: "reviewer1",
@@ -47,22 +47,13 @@ func TestGetAssignedUser(t *testing.T) {
 			expected: "",
 		},
 		{
-			name: "assignee takes precedence over reviewer",
+			name: "assignee is returned even when reviewers exist",
 			input: AssignedInput{
 				Assignees:      []string{"assignee1"},
 				IsPR:           true,
 				LatestReviewer: "reviewer1",
 			},
 			expected: "assignee1",
-		},
-		{
-			name: "latest reviewer takes precedence over requested",
-			input: AssignedInput{
-				IsPR:               true,
-				LatestReviewer:     "latest",
-				RequestedReviewers: []string{"requested"},
-			},
-			expected: "latest",
 		},
 	}
 

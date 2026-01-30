@@ -9,24 +9,12 @@ type AssignedInput struct {
 }
 
 // GetAssignedUser returns the user to display in the assigned column.
-// Priority: assignee > latest reviewer (for PRs) > requested reviewer (for PRs).
-// Returns empty string if no one is assigned; callers should add their own placeholder.
+// Returns the first assignee or empty string if no one is assigned.
+// Callers should add their own placeholder for empty values.
 func GetAssignedUser(input AssignedInput) string {
-	// Prefer assignees first
 	if len(input.Assignees) > 0 {
 		return input.Assignees[0]
 	}
-
-	// For PRs without assignee, show the most recent reviewer
-	if input.IsPR && input.LatestReviewer != "" {
-		return input.LatestReviewer
-	}
-
-	// Fall back to requested reviewers for PRs
-	if input.IsPR && len(input.RequestedReviewers) > 0 {
-		return input.RequestedReviewers[0]
-	}
-
 	return ""
 }
 

@@ -32,20 +32,28 @@ func renderListView(m ListModel) string {
 	cursor := m.activeCursor()
 
 	// Determine view flags based on active pane
+	// Orphaned pane: hide Assigned/CI, show Author/Signal, hide Priority
+	// Assigned pane: show Author AND Assigned, hide CI/Signal, hide Priority
+	// Priority pane: show Assigned/CI, hide Author, show Priority
 	hideAssignedCI := m.activePane == paneOrphaned
-	hidePriority := m.activePane == paneOrphaned
+	hidePriority := m.activePane == paneOrphaned || m.activePane == paneAssigned
+	showAuthor := m.activePane == paneOrphaned || m.activePane == paneAssigned
 
 	// Render tab bar with top padding
 	b.WriteString("\n")
-	b.WriteString(renderTabBar(m.activePane, len(m.priorityItems), len(m.orphanedItems),
+	b.WriteString(renderTabBar(m.activePane, len(m.priorityItems), len(m.orphanedItems), m.GetAssignedCount(),
 		m.GetPrioritySortColumn(), m.GetPrioritySortDesc(),
-		m.GetOrphanedSortColumn(), m.GetOrphanedSortDesc()))
+		m.GetOrphanedSortColumn(), m.GetOrphanedSortDesc(),
+		m.GetAssignedSortColumn(), m.GetAssignedSortDesc()))
 	b.WriteString("\n\n")
 
 	if len(items) == 0 {
-		if m.activePane == paneOrphaned {
+		switch m.activePane {
+		case paneOrphaned:
 			b.WriteString(renderOrphanedEmptyState())
-		} else {
+		case paneAssigned:
+			b.WriteString(renderAssignedEmptyState())
+		default:
 			b.WriteString(renderEmptyState())
 		}
 		b.WriteString("\n\n")
@@ -54,9 +62,9 @@ func renderListView(m ListModel) string {
 	}
 
 	// Render header
-	b.WriteString(renderHeader(hideAssignedCI, hidePriority))
+	b.WriteString(renderHeader(hideAssignedCI, hidePriority, showAuthor))
 	b.WriteString("\n")
-	b.WriteString(renderSeparator(hideAssignedCI, hidePriority))
+	b.WriteString(renderSeparator(hideAssignedCI, hidePriority, showAuthor))
 	b.WriteString("\n")
 
 	// Calculate scroll window
@@ -65,7 +73,7 @@ func renderListView(m ListModel) string {
 	// Render visible items
 	for i := start; i < end; i++ {
 		selected := i == cursor
-		b.WriteString(renderRow(items[i], selected, m.hotTopicThreshold, m.prSizeXS, m.prSizeS, m.prSizeM, m.prSizeL, m.currentUser, hideAssignedCI, hidePriority))
+		b.WriteString(renderRow(items[i], selected, m.hotTopicThreshold, m.prSizeXS, m.prSizeS, m.prSizeM, m.prSizeL, m.currentUser, hideAssignedCI, hidePriority, showAuthor))
 		b.WriteString("\n")
 	}
 
@@ -89,9 +97,10 @@ func renderListView(m ListModel) string {
 }
 
 // renderTabBar renders the tab bar at the top of the view
-func renderTabBar(activePane pane, priorityCount, orphanedCount int,
+func renderTabBar(activePane pane, priorityCount, orphanedCount, assignedCount int,
 	prioritySortCol SortColumn, prioritySortDesc bool,
-	orphanedSortCol SortColumn, orphanedSortDesc bool) string {
+	orphanedSortCol SortColumn, orphanedSortDesc bool,
+	assignedSortCol SortColumn, assignedSortDesc bool) string {
 
 	// Format sort indicator
 	priorityDir := "▼"
@@ -102,25 +111,42 @@ func renderTabBar(activePane pane, priorityCount, orphanedCount int,
 	if !orphanedSortDesc {
 		orphanedDir = "▲"
 	}
+	assignedDir := "▼"
+	if !assignedSortDesc {
+		assignedDir = "▲"
+	}
 
-	priority := fmt.Sprintf("[ 1: Priority (%d) %s%s ]", priorityCount, priorityDir, prioritySortCol)
-	orphaned := fmt.Sprintf("[ 2: Orphaned (%d) %s%s ]", orphanedCount, orphanedDir, orphanedSortCol)
+	assigned := fmt.Sprintf("[ 1: Assigned (%d) %s%s ]", assignedCount, assignedDir, assignedSortCol)
+	priority := fmt.Sprintf("[ 2: Priority (%d) %s%s ]", priorityCount, priorityDir, prioritySortCol)
+	orphaned := fmt.Sprintf("[ 3: Orphaned (%d) %s%s ]", orphanedCount, orphanedDir, orphanedSortCol)
 
-	var priorityStyled, orphanedStyled string
-	if activePane == panePriority {
+	var assignedStyled, priorityStyled, orphanedStyled string
+	switch activePane {
+	case paneAssigned:
+		assignedStyled = tabActiveStyle.Render(assigned)
+		priorityStyled = tabInactiveStyle.Render(priority)
+		orphanedStyled = tabInactiveStyle.Render(orphaned)
+	case panePriority:
+		assignedStyled = tabInactiveStyle.Render(assigned)
 		priorityStyled = tabActiveStyle.Render(priority)
 		orphanedStyled = tabInactiveStyle.Render(orphaned)
-	} else {
+	case paneOrphaned:
+		assignedStyled = tabInactiveStyle.Render(assigned)
 		priorityStyled = tabInactiveStyle.Render(priority)
 		orphanedStyled = tabActiveStyle.Render(orphaned)
 	}
 
-	return fmt.Sprintf("%s    %s", priorityStyled, orphanedStyled)
+	return fmt.Sprintf("%s    %s    %s", assignedStyled, priorityStyled, orphanedStyled)
 }
 
 // renderOrphanedEmptyState renders the empty state message for the orphaned pane
 func renderOrphanedEmptyState() string {
 	return listEmptyStyle.Render("No orphaned contributions.\nOrphaned items are external PRs/issues that need team attention.")
+}
+
+// renderAssignedEmptyState renders the empty state message for the assigned pane
+func renderAssignedEmptyState() string {
+	return listEmptyStyle.Render("No items assigned to you.\nItems where you are an assignee will appear here.")
 }
 
 // calculateScrollWindow determines which items to show based on cursor position
@@ -147,7 +173,8 @@ func calculateScrollWindow(cursor, total, viewHeight int) (start, end int) {
 }
 
 // renderHeader renders the table header
-func renderHeader(hideAssignedCI, hidePriority bool) string {
+func renderHeader(hideAssignedCI, hidePriority, showAuthor bool) string {
+	// Orphaned pane: Type, Author, Repo, Title, Status, Signal, Updated
 	if hideAssignedCI {
 		if hidePriority {
 			return listHeaderStyle.Render(fmt.Sprintf(
@@ -172,18 +199,20 @@ func renderHeader(hideAssignedCI, hidePriority bool) string {
 			"Age",
 		))
 	}
-	if hidePriority {
+	// Assigned pane: Type, Author, Assigned, Repo, Title, Status, Age
+	if hidePriority && showAuthor {
 		return listHeaderStyle.Render(fmt.Sprintf(
 			"  %-*s  %-*s  %-*s  %-*s  %-*s  %-*s  %s",
 			constants.ColType, "Type",
+			constants.ColAuthor, "Author",
 			constants.ColAssigned, "Assigned",
-			constants.ColCI, "CI",
 			constants.ColRepo, "Repository",
 			constants.ColTitle, "Title",
 			constants.ColStatus, "Status",
 			"Age",
 		))
 	}
+	// Priority pane: Priority, Type, Assigned, CI, Repo, Title, Status, Age
 	return listHeaderStyle.Render(fmt.Sprintf(
 		"  %-*s  %-*s  %-*s  %-*s  %-*s  %-*s  %-*s  %s",
 		constants.ColPriority, "Priority",
@@ -198,24 +227,30 @@ func renderHeader(hideAssignedCI, hidePriority bool) string {
 }
 
 // tableWidth calculates the width of the table based on column visibility
-func tableWidth(hideAssignedCI, hidePriority bool) int {
+func tableWidth(hideAssignedCI, hidePriority, showAuthor bool) int {
 	priorityWidth := constants.ColPriority + 2 // column + spacing
 	if hidePriority {
 		priorityWidth = 0
 	}
+	// Orphaned pane: Type, Author, Repo, Title, Status, Signal, Updated
 	if hideAssignedCI {
 		return 2 + priorityWidth + constants.ColType + 2 + constants.ColAuthor + 2 + constants.ColRepo + 2 + constants.ColTitle + 2 + constants.ColStatus + 2 + colSignal + 2 + constants.ColAge
 	}
+	// Assigned pane: Type, Author, Assigned, Repo, Title, Status, Age
+	if hidePriority && showAuthor {
+		return 2 + constants.ColType + 2 + constants.ColAuthor + 2 + constants.ColAssigned + 2 + constants.ColRepo + 2 + constants.ColTitle + 2 + constants.ColStatus + 2 + constants.ColAge
+	}
+	// Priority pane: Priority, Type, Assigned, CI, Repo, Title, Status, Age
 	return 2 + priorityWidth + constants.ColType + 2 + constants.ColAssigned + 2 + constants.ColCI + 2 + constants.ColRepo + 2 + constants.ColTitle + 2 + constants.ColStatus + 2 + constants.ColAge
 }
 
 // renderSeparator renders the header separator line
-func renderSeparator(hideAssignedCI, hidePriority bool) string {
-	return listSeparatorStyle.Render(strings.Repeat("─", tableWidth(hideAssignedCI, hidePriority)))
+func renderSeparator(hideAssignedCI, hidePriority, showAuthor bool) string {
+	return listSeparatorStyle.Render(strings.Repeat("─", tableWidth(hideAssignedCI, hidePriority, showAuthor)))
 }
 
 // renderRow renders a single item row
-func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, prSizeXS, prSizeS, prSizeM, prSizeL int, currentUser string, hideAssignedCI, hidePriority bool) string {
+func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, prSizeXS, prSizeS, prSizeM, prSizeL int, currentUser string, hideAssignedCI, hidePriority, showAuthor bool) string {
 	n := item.Item
 
 	// Cursor indicator
@@ -318,8 +353,29 @@ func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, pr
 			signal,
 			age,
 		)
+	} else if hidePriority && showAuthor {
+		// Assigned view: Author and Assigned columns, no CI
+		author := "─"
+		if n.Details != nil && n.Details.Author != "" {
+			author, _ = format.TruncateToWidth(n.Details.Author, constants.ColAuthor)
+		}
+		author = format.PadRight(author, len(author), constants.ColAuthor)
+
+		assigned, assignedWidth := renderAssigned(n.Details, selected)
+		assigned = format.PadRight(assigned, assignedWidth, constants.ColAssigned)
+
+		row = fmt.Sprintf("%s%s  %s  %s  %s  %s  %s  %s",
+			cursor,
+			typeStr,
+			author,
+			assigned,
+			repo,
+			title,
+			status,
+			age,
+		)
 	} else {
-		// Standard view with Assigned and CI columns
+		// Priority view: Assigned and CI columns
 		assigned, assignedWidth := renderAssigned(n.Details, selected)
 		assigned = format.PadRight(assigned, assignedWidth, constants.ColAssigned)
 
@@ -340,7 +396,7 @@ func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, pr
 	}
 
 	if selected {
-		return listSelectedStyle.Width(tableWidth(hideAssignedCI, hidePriority)).Render(row)
+		return listSelectedStyle.Width(tableWidth(hideAssignedCI, hidePriority, showAuthor)).Render(row)
 	}
 	return row
 }
@@ -560,7 +616,7 @@ func renderAge(d time.Duration, selected bool) (string, int) {
 
 // renderHelp renders the help text
 func renderHelp() string {
-	return listHelpStyle.Render("Tab/1/2: panes   j/k: nav   s/S: sort   r: reset   d: done   enter: open   q: quit")
+	return listHelpStyle.Render("Tab/1/2/3: panes   j/k: nav   s/S: sort   r: reset   d: done   enter: open   q: quit")
 }
 
 // renderEmptyState renders the empty state message
