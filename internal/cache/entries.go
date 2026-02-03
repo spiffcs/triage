@@ -8,7 +8,7 @@ import (
 
 // Version should be incremented when the cache format changes
 // or when enrichment data structure changes to invalidate old entries
-const Version = 1
+const Version = 2
 
 // ListType identifies the source of a list of items
 type ListType string
@@ -49,11 +49,12 @@ type ListCacheEntry struct {
 }
 
 // DetailsCacheEntry caches enrichment data for an item (PR or Issue)
+// Note: Details is stored as raw JSON to handle the polymorphic Details interface
 type DetailsCacheEntry struct {
-	Details   *model.ItemDetails `json:"details"`
-	CachedAt  time.Time          `json:"cachedAt"`
-	UpdatedAt time.Time          `json:"updatedAt"` // model.Item's UpdatedAt for invalidation
-	Version   int                `json:"version"`   // Cache version for invalidation
+	Item      model.Item `json:"item"`      // Full item with promoted fields and Details
+	CachedAt  time.Time  `json:"cachedAt"`
+	UpdatedAt time.Time  `json:"updatedAt"` // model.Item's UpdatedAt for invalidation
+	Version   int        `json:"version"`   // Cache version for invalidation
 }
 
 // CacheStats contains detailed cache statistics

@@ -2,26 +2,14 @@ package model
 
 import "time"
 
-// ItemDetails contains enriched information about an issue or PR
-type ItemDetails struct {
-	Number    int        `json:"number"`
-	State     string     `json:"state"` // open, closed, merged
-	HTMLURL   string     `json:"htmlUrl"`
-	CreatedAt time.Time  `json:"createdAt"`
-	UpdatedAt time.Time  `json:"updatedAt"`
-	ClosedAt  *time.Time `json:"closedAt,omitempty"`
+// Details is an interface for type-specific details.
+// Use type assertions to access PRDetails or IssueDetails.
+type Details interface {
+	isDetails() // marker method
+}
 
-	// User info
-	Author    string   `json:"author"`
-	Assignees []string `json:"assignees"`
-
-	// Metadata
-	Labels        []string `json:"labels"`
-	CommentCount  int      `json:"commentCount"`
-	LastCommenter string   `json:"lastCommenter,omitempty"`
-
-	// PR-specific
-	IsPR               bool       `json:"isPR"`
+// PRDetails contains PR-specific enriched information
+type PRDetails struct {
 	Merged             bool       `json:"merged,omitempty"`
 	MergedAt           *time.Time `json:"mergedAt,omitempty"`
 	Additions          int        `json:"additions,omitempty"`
@@ -34,9 +22,37 @@ type ItemDetails struct {
 	Draft              bool       `json:"draft,omitempty"`
 	RequestedReviewers []string   `json:"requestedReviewers,omitempty"`
 	LatestReviewer     string     `json:"latestReviewer,omitempty"`
+}
 
-	// Orphaned contribution detection
-	AuthorAssociation         string     `json:"authorAssociation,omitempty"` // MEMBER, COLLABORATOR, CONTRIBUTOR, etc.
-	LastTeamActivityAt        *time.Time `json:"lastTeamActivityAt,omitempty"`
-	ConsecutiveAuthorComments int        `json:"consecutiveAuthorComments,omitempty"`
+func (*PRDetails) isDetails() {}
+
+// IssueDetails contains issue-specific enriched information
+type IssueDetails struct {
+	LastCommenter string `json:"lastCommenter,omitempty"`
+}
+
+func (*IssueDetails) isDetails() {}
+
+// IsPR returns true if the item is a pull request.
+// This is a convenience method that checks the Type field.
+func (i *Item) IsPR() bool {
+	return i.Type == ItemTypePullRequest
+}
+
+// GetPRDetails returns the PRDetails if this is a PR, nil otherwise.
+func (i *Item) GetPRDetails() *PRDetails {
+	if i.Details == nil {
+		return nil
+	}
+	pr, _ := i.Details.(*PRDetails)
+	return pr
+}
+
+// GetIssueDetails returns the IssueDetails if this is an issue, nil otherwise.
+func (i *Item) GetIssueDetails() *IssueDetails {
+	if i.Details == nil {
+		return nil
+	}
+	issue, _ := i.Details.(*IssueDetails)
+	return issue
 }

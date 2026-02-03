@@ -174,10 +174,10 @@ func (m *ListModel) splitItems() {
 
 // isAssignedToCurrentUser checks if the item is assigned to the current user
 func (m *ListModel) isAssignedToCurrentUser(item triage.PrioritizedItem) bool {
-	if m.currentUser == "" || item.Item.Details == nil {
+	if m.currentUser == "" {
 		return false
 	}
-	for _, assignee := range item.Item.Details.Assignees {
+	for _, assignee := range item.Item.Assignees {
 		if assignee == m.currentUser {
 			return true
 		}
@@ -187,10 +187,7 @@ func (m *ListModel) isAssignedToCurrentUser(item triage.PrioritizedItem) bool {
 
 // hasAnyAssignee checks if the item is assigned to anyone
 func (m *ListModel) hasAnyAssignee(item triage.PrioritizedItem) bool {
-	if item.Item.Details == nil {
-		return false
-	}
-	return len(item.Item.Details.Assignees) > 0
+	return len(item.Item.Assignees) > 0
 }
 
 // loadSortPreferences loads sort preferences from config
@@ -286,15 +283,12 @@ func (m *ListModel) sortPriorityItems() {
 // daysSinceTeamActivity calculates how many days since the last team activity on an item.
 // Falls back to CreatedAt if LastTeamActivityAt is not set (matching display logic).
 func daysSinceTeamActivity(item triage.PrioritizedItem) int {
-	if item.Item.Details == nil {
-		return 0
+	n := item.Item
+	if n.LastTeamActivityAt != nil {
+		return int(time.Since(*n.LastTeamActivityAt).Hours() / 24)
 	}
-	d := item.Item.Details
-	if d.LastTeamActivityAt != nil {
-		return int(time.Since(*d.LastTeamActivityAt).Hours() / 24)
-	}
-	if !d.CreatedAt.IsZero() {
-		return int(time.Since(d.CreatedAt).Hours() / 24)
+	if !n.CreatedAt.IsZero() {
+		return int(time.Since(n.CreatedAt).Hours() / 24)
 	}
 	return 0
 }
@@ -317,26 +311,12 @@ func (m *ListModel) sortOrphanedItems() {
 			less = a.Item.UpdatedAt.Before(b.Item.UpdatedAt)
 		case SortAuthor:
 			// Inverted so that descending (▼) gives A-Z order
-			authorA, authorB := "", ""
-			if a.Item.Details != nil {
-				authorA = a.Item.Details.Author
-			}
-			if b.Item.Details != nil {
-				authorB = b.Item.Details.Author
-			}
-			less = authorA > authorB
+			less = a.Item.Author > b.Item.Author
 		case SortRepo:
 			// Inverted so that descending (▼) gives A-Z order
 			less = a.Item.Repository.FullName > b.Item.Repository.FullName
 		case SortComments:
-			commentsA, commentsB := 0, 0
-			if a.Item.Details != nil {
-				commentsA = a.Item.Details.CommentCount
-			}
-			if b.Item.Details != nil {
-				commentsB = b.Item.Details.CommentCount
-			}
-			less = commentsA < commentsB
+			less = a.Item.CommentCount < b.Item.CommentCount
 		case SortStale:
 			// Calculate days since last team activity
 			staleA := daysSinceTeamActivity(a)
@@ -346,19 +326,15 @@ func (m *ListModel) sortOrphanedItems() {
 			// For PRs: sort by review size (additions + deletions)
 			// For issues: sort by comment count
 			sizeA, sizeB := 0, 0
-			if a.Item.Details != nil {
-				if a.Item.Details.IsPR {
-					sizeA = a.Item.Details.Additions + a.Item.Details.Deletions
-				} else {
-					sizeA = a.Item.Details.CommentCount
-				}
+			if prA := a.Item.GetPRDetails(); prA != nil {
+				sizeA = prA.Additions + prA.Deletions
+			} else {
+				sizeA = a.Item.CommentCount
 			}
-			if b.Item.Details != nil {
-				if b.Item.Details.IsPR {
-					sizeB = b.Item.Details.Additions + b.Item.Details.Deletions
-				} else {
-					sizeB = b.Item.Details.CommentCount
-				}
+			if prB := b.Item.GetPRDetails(); prB != nil {
+				sizeB = prB.Additions + prB.Deletions
+			} else {
+				sizeB = b.Item.CommentCount
 			}
 			less = sizeA < sizeB
 		default:
@@ -391,14 +367,7 @@ func (m *ListModel) sortAssignedItems() {
 			less = a.Item.UpdatedAt.Before(b.Item.UpdatedAt)
 		case SortAuthor:
 			// Inverted so that descending (▼) gives A-Z order
-			authorA, authorB := "", ""
-			if a.Item.Details != nil {
-				authorA = a.Item.Details.Author
-			}
-			if b.Item.Details != nil {
-				authorB = b.Item.Details.Author
-			}
-			less = authorA > authorB
+			less = a.Item.Author > b.Item.Author
 		case SortRepo:
 			// Inverted so that descending (▼) gives A-Z order
 			less = a.Item.Repository.FullName > b.Item.Repository.FullName
@@ -606,8 +575,8 @@ func (m ListModel) openInBrowser() (tea.Model, tea.Cmd) {
 	item := items[cursor]
 	url := ""
 
-	if item.Item.Details != nil && item.Item.Details.HTMLURL != "" {
-		url = item.Item.Details.HTMLURL
+	if item.Item.HTMLURL != "" {
+		url = item.Item.HTMLURL
 	} else if item.Item.Repository.HTMLURL != "" {
 		url = item.Item.Repository.HTMLURL
 	}

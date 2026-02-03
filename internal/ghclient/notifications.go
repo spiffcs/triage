@@ -214,6 +214,13 @@ func convertNotification(n *gh.Notification) model.Item {
 			URL:   subject.GetURL(),
 			Type:  model.SubjectType(subject.GetType()),
 		}
+		// Set Type based on Subject.Type
+		switch item.Subject.Type {
+		case model.SubjectPullRequest:
+			item.Type = model.ItemTypePullRequest
+		case model.SubjectIssue:
+			item.Type = model.ItemTypeIssue
+		}
 	}
 
 	return item

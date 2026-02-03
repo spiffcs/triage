@@ -79,13 +79,18 @@ func TestHotTopicSuppression(t *testing.T) {
 					Repository: model.Repository{
 						FullName: "owner/repo",
 					},
-					Details: &model.ItemDetails{
-						IsPR:          tt.isPR,
-						CommentCount:  tt.commentCount,
-						LastCommenter: tt.lastCommenter,
-					},
+					CommentCount: tt.commentCount,
 				},
 				Priority: triage.PriorityFYI,
+			}
+			if tt.isPR {
+				item.Item.Type = model.ItemTypePullRequest
+				item.Item.Details = &model.PRDetails{}
+			} else {
+				item.Item.Type = model.ItemTypeIssue
+				item.Item.Details = &model.IssueDetails{
+					LastCommenter: tt.lastCommenter,
+				}
 			}
 
 			formatter := &TableFormatter{
@@ -211,6 +216,7 @@ func TestIconPrecedenceAndAlignment(t *testing.T) {
 
 			item := triage.PrioritizedItem{
 				Item: model.Item{
+					Type: model.ItemTypePullRequest,
 					Subject: model.Subject{
 						Title: "Test title",
 						Type:  model.SubjectPullRequest,
@@ -218,11 +224,8 @@ func TestIconPrecedenceAndAlignment(t *testing.T) {
 					Repository: model.Repository{
 						FullName: "owner/repo",
 					},
-					Details: &model.ItemDetails{
-						IsPR:          true,
-						CommentCount:  commentCount,
-						LastCommenter: "other-user",
-					},
+					CommentCount: commentCount,
+					Details:      &model.PRDetails{},
 				},
 				Priority: priority,
 			}

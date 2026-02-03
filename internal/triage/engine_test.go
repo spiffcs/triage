@@ -6,14 +6,22 @@ import (
 	"github.com/spiffcs/triage/internal/model"
 )
 
+// testItemOpts holds optional fields for creating test items
+type testItemOpts struct {
+	Author   string
+	State    string
+	Merged   bool
+	CIStatus string
+}
+
 // Helper to create a test item
-func makeItem(id string, reason model.ItemReason, subjectType model.SubjectType, details *model.ItemDetails) model.Item {
-	return makeItemWithRepo(id, reason, subjectType, details, "")
+func makeItem(id string, reason model.ItemReason, subjectType model.SubjectType, opts *testItemOpts) model.Item {
+	return makeItemWithRepo(id, reason, subjectType, opts, "")
 }
 
 // Helper to create a test item with repo
-func makeItemWithRepo(id string, reason model.ItemReason, subjectType model.SubjectType, details *model.ItemDetails, repo string) model.Item {
-	return model.Item{
+func makeItemWithRepo(id string, reason model.ItemReason, subjectType model.SubjectType, opts *testItemOpts, repo string) model.Item {
+	item := model.Item{
 		ID:     id,
 		Reason: reason,
 		Subject: model.Subject{
@@ -22,14 +30,30 @@ func makeItemWithRepo(id string, reason model.ItemReason, subjectType model.Subj
 		Repository: model.Repository{
 			FullName: repo,
 		},
-		Details: details,
 	}
+
+	if opts != nil {
+		item.Author = opts.Author
+		item.State = opts.State
+		if subjectType == model.SubjectPullRequest {
+			item.Type = model.ItemTypePullRequest
+			item.Details = &model.PRDetails{
+				Merged:   opts.Merged,
+				CIStatus: opts.CIStatus,
+			}
+		} else if subjectType == model.SubjectIssue {
+			item.Type = model.ItemTypeIssue
+			item.Details = &model.IssueDetails{}
+		}
+	}
+
+	return item
 }
 
 // Helper to create a prioritized item
-func makePrioritizedItem(id string, reason model.ItemReason, subjectType model.SubjectType, priority PriorityLevel, details *model.ItemDetails) PrioritizedItem {
+func makePrioritizedItem(id string, reason model.ItemReason, subjectType model.SubjectType, priority PriorityLevel, opts *testItemOpts) PrioritizedItem {
 	return PrioritizedItem{
-		Item:     makeItem(id, reason, subjectType, details),
+		Item:     makeItem(id, reason, subjectType, opts),
 		Priority: priority,
 	}
 }
@@ -138,8 +162,8 @@ func TestFilterByReason(t *testing.T) {
 
 func TestFilterOutMerged(t *testing.T) {
 	items := []PrioritizedItem{
-		makePrioritizedItem("1", model.ReasonAuthor, model.SubjectPullRequest, PriorityImportant, &model.ItemDetails{Merged: true}),
-		makePrioritizedItem("2", model.ReasonAuthor, model.SubjectPullRequest, PriorityImportant, &model.ItemDetails{Merged: false}),
+		makePrioritizedItem("1", model.ReasonAuthor, model.SubjectPullRequest, PriorityImportant, &testItemOpts{Merged: true}),
+		makePrioritizedItem("2", model.ReasonAuthor, model.SubjectPullRequest, PriorityImportant, &testItemOpts{Merged: false}),
 		makePrioritizedItem("3", model.ReasonSubscribed, model.SubjectIssue, PriorityFYI, nil), // nil Details
 	}
 
@@ -159,9 +183,9 @@ func TestFilterOutMerged(t *testing.T) {
 
 func TestFilterOutClosed(t *testing.T) {
 	items := []PrioritizedItem{
-		makePrioritizedItem("1", model.ReasonAuthor, model.SubjectPullRequest, PriorityImportant, &model.ItemDetails{State: "closed"}),
-		makePrioritizedItem("2", model.ReasonAuthor, model.SubjectPullRequest, PriorityImportant, &model.ItemDetails{State: "merged"}),
-		makePrioritizedItem("3", model.ReasonAuthor, model.SubjectPullRequest, PriorityImportant, &model.ItemDetails{State: "open"}),
+		makePrioritizedItem("1", model.ReasonAuthor, model.SubjectPullRequest, PriorityImportant, &testItemOpts{State: "closed"}),
+		makePrioritizedItem("2", model.ReasonAuthor, model.SubjectPullRequest, PriorityImportant, &testItemOpts{State: "merged"}),
+		makePrioritizedItem("3", model.ReasonAuthor, model.SubjectPullRequest, PriorityImportant, &testItemOpts{State: "open"}),
 		makePrioritizedItem("4", model.ReasonSubscribed, model.SubjectIssue, PriorityFYI, nil), // nil Details - should be kept
 	}
 
@@ -180,9 +204,9 @@ func TestFilterOutClosed(t *testing.T) {
 }
 
 // Helper to create a prioritized item with repo
-func makePrioritizedItemWithRepo(id string, reason model.ItemReason, subjectType model.SubjectType, priority PriorityLevel, details *model.ItemDetails, repo string) PrioritizedItem {
+func makePrioritizedItemWithRepo(id string, reason model.ItemReason, subjectType model.SubjectType, priority PriorityLevel, opts *testItemOpts, repo string) PrioritizedItem {
 	return PrioritizedItem{
-		Item:     makeItemWithRepo(id, reason, subjectType, details, repo),
+		Item:     makeItemWithRepo(id, reason, subjectType, opts, repo),
 		Priority: priority,
 	}
 }
@@ -286,9 +310,9 @@ func TestFilterByType(t *testing.T) {
 
 func TestFilterByExcludedAuthors(t *testing.T) {
 	items := []PrioritizedItem{
-		makePrioritizedItem("1", model.ReasonReviewRequested, model.SubjectPullRequest, PriorityUrgent, &model.ItemDetails{Author: "dependabot[bot]"}),
-		makePrioritizedItem("2", model.ReasonReviewRequested, model.SubjectPullRequest, PriorityUrgent, &model.ItemDetails{Author: "renovate[bot]"}),
-		makePrioritizedItem("3", model.ReasonReviewRequested, model.SubjectPullRequest, PriorityUrgent, &model.ItemDetails{Author: "human-user"}),
+		makePrioritizedItem("1", model.ReasonReviewRequested, model.SubjectPullRequest, PriorityUrgent, &testItemOpts{Author: "dependabot[bot]"}),
+		makePrioritizedItem("2", model.ReasonReviewRequested, model.SubjectPullRequest, PriorityUrgent, &testItemOpts{Author: "renovate[bot]"}),
+		makePrioritizedItem("3", model.ReasonReviewRequested, model.SubjectPullRequest, PriorityUrgent, &testItemOpts{Author: "human-user"}),
 		makePrioritizedItem("4", model.ReasonSubscribed, model.SubjectIssue, PriorityFYI, nil), // nil Details - should be kept
 	}
 
@@ -342,12 +366,12 @@ func TestFilterByExcludedAuthors(t *testing.T) {
 
 func TestFilterByGreenCI(t *testing.T) {
 	items := []PrioritizedItem{
-		makePrioritizedItem("1", model.ReasonReviewRequested, model.SubjectPullRequest, PriorityUrgent, &model.ItemDetails{CIStatus: "success"}),
-		makePrioritizedItem("2", model.ReasonReviewRequested, model.SubjectPullRequest, PriorityUrgent, &model.ItemDetails{CIStatus: "failure"}),
-		makePrioritizedItem("3", model.ReasonReviewRequested, model.SubjectPullRequest, PriorityUrgent, &model.ItemDetails{CIStatus: "pending"}),
-		makePrioritizedItem("4", model.ReasonReviewRequested, model.SubjectPullRequest, PriorityUrgent, &model.ItemDetails{CIStatus: ""}),
-		makePrioritizedItem("5", model.ReasonReviewRequested, model.SubjectPullRequest, PriorityUrgent, nil),                // nil Details - excluded
-		makePrioritizedItem("6", model.ReasonSubscribed, model.SubjectIssue, PriorityFYI, &model.ItemDetails{CIStatus: ""}), // Issue - excluded
+		makePrioritizedItem("1", model.ReasonReviewRequested, model.SubjectPullRequest, PriorityUrgent, &testItemOpts{CIStatus: "success"}),
+		makePrioritizedItem("2", model.ReasonReviewRequested, model.SubjectPullRequest, PriorityUrgent, &testItemOpts{CIStatus: "failure"}),
+		makePrioritizedItem("3", model.ReasonReviewRequested, model.SubjectPullRequest, PriorityUrgent, &testItemOpts{CIStatus: "pending"}),
+		makePrioritizedItem("4", model.ReasonReviewRequested, model.SubjectPullRequest, PriorityUrgent, &testItemOpts{CIStatus: ""}),
+		makePrioritizedItem("5", model.ReasonReviewRequested, model.SubjectPullRequest, PriorityUrgent, nil),            // nil Details - excluded
+		makePrioritizedItem("6", model.ReasonSubscribed, model.SubjectIssue, PriorityFYI, &testItemOpts{CIStatus: ""}), // Issue - excluded
 	}
 
 	tests := []struct {
@@ -378,11 +402,11 @@ func TestFilterByGreenCI(t *testing.T) {
 
 func TestFilterOutUnenriched(t *testing.T) {
 	items := []PrioritizedItem{
-		makePrioritizedItem("1", model.ReasonReviewRequested, model.SubjectPullRequest, PriorityUrgent, &model.ItemDetails{State: "open"}), // PR with Details - kept
-		makePrioritizedItem("2", model.ReasonReviewRequested, model.SubjectPullRequest, PriorityUrgent, nil),                               // PR without Details - filtered
-		makePrioritizedItem("3", model.ReasonSubscribed, model.SubjectIssue, PriorityFYI, &model.ItemDetails{State: "open"}),               // Issue with Details - kept
-		makePrioritizedItem("4", model.ReasonSubscribed, model.SubjectIssue, PriorityFYI, nil),                                             // Issue without Details - filtered
-		makePrioritizedItem("5", model.ReasonSubscribed, model.SubjectRelease, PriorityFYI, nil),                                           // Release without Details - kept (different type)
+		makePrioritizedItem("1", model.ReasonReviewRequested, model.SubjectPullRequest, PriorityUrgent, &testItemOpts{State: "open"}), // PR with Details - kept
+		makePrioritizedItem("2", model.ReasonReviewRequested, model.SubjectPullRequest, PriorityUrgent, nil),                          // PR without Details - filtered
+		makePrioritizedItem("3", model.ReasonSubscribed, model.SubjectIssue, PriorityFYI, &testItemOpts{State: "open"}),               // Issue with Details - kept
+		makePrioritizedItem("4", model.ReasonSubscribed, model.SubjectIssue, PriorityFYI, nil),                                        // Issue without Details - filtered
+		makePrioritizedItem("5", model.ReasonSubscribed, model.SubjectRelease, PriorityFYI, nil),                                      // Release without Details - kept (different type)
 	}
 
 	got := FilterOutUnenriched(items)

@@ -183,6 +183,18 @@ func (c *Client) prToItem(issue *gh.Issue) model.Item {
 		repoName = parts[1]
 	}
 
+	// Extract labels
+	var labels []string
+	for _, label := range issue.Labels {
+		labels = append(labels, label.GetName())
+	}
+
+	// Extract assignees
+	var assignees []string
+	for _, assignee := range issue.Assignees {
+		assignees = append(assignees, assignee.GetLogin())
+	}
+
 	notification := model.Item{
 		ID:        fmt.Sprintf("review-requested-%d", issue.GetID()),
 		Reason:    model.ReasonReviewRequested,
@@ -199,27 +211,20 @@ func (c *Client) prToItem(issue *gh.Issue) model.Item {
 			Type:  model.SubjectPullRequest,
 		},
 		URL: issue.GetURL(),
-		Details: &model.ItemDetails{
-			Number:       issue.GetNumber(),
-			State:        issue.GetState(),
-			HTMLURL:      issue.GetHTMLURL(),
-			CreatedAt:    issue.GetCreatedAt().Time,
-			UpdatedAt:    issue.GetUpdatedAt().Time,
-			Author:       issue.GetUser().GetLogin(),
-			CommentCount: issue.GetComments(),
-			IsPR:         true,
-			ReviewState:  "pending",
+		// Promoted common fields
+		Type:         model.ItemTypePullRequest,
+		Number:       issue.GetNumber(),
+		State:        issue.GetState(),
+		HTMLURL:      issue.GetHTMLURL(),
+		CreatedAt:    issue.GetCreatedAt().Time,
+		Author:       issue.GetUser().GetLogin(),
+		CommentCount: issue.GetComments(),
+		Labels:       labels,
+		Assignees:    assignees,
+		// PR-specific details
+		Details: &model.PRDetails{
+			ReviewState: "pending",
 		},
-	}
-
-	// Extract labels
-	for _, label := range issue.Labels {
-		notification.Details.Labels = append(notification.Details.Labels, label.GetName())
-	}
-
-	// Extract assignees
-	for _, assignee := range issue.Assignees {
-		notification.Details.Assignees = append(notification.Details.Assignees, assignee.GetLogin())
 	}
 
 	return notification
@@ -311,6 +316,18 @@ func (c *Client) assignedIssueToItem(issue *gh.Issue) model.Item {
 		repoName = parts[1]
 	}
 
+	// Extract labels
+	var labels []string
+	for _, label := range issue.Labels {
+		labels = append(labels, label.GetName())
+	}
+
+	// Extract assignees
+	var assignees []string
+	for _, assignee := range issue.Assignees {
+		assignees = append(assignees, assignee.GetLogin())
+	}
+
 	notification := model.Item{
 		ID:        fmt.Sprintf("assigned-%d", issue.GetID()),
 		Reason:    model.ReasonAssign,
@@ -327,26 +344,18 @@ func (c *Client) assignedIssueToItem(issue *gh.Issue) model.Item {
 			Type:  model.SubjectIssue,
 		},
 		URL: issue.GetURL(),
-		Details: &model.ItemDetails{
-			Number:       issue.GetNumber(),
-			State:        issue.GetState(),
-			HTMLURL:      issue.GetHTMLURL(),
-			CreatedAt:    issue.GetCreatedAt().Time,
-			UpdatedAt:    issue.GetUpdatedAt().Time,
-			Author:       issue.GetUser().GetLogin(),
-			CommentCount: issue.GetComments(),
-			IsPR:         false,
-		},
-	}
-
-	// Extract labels
-	for _, label := range issue.Labels {
-		notification.Details.Labels = append(notification.Details.Labels, label.GetName())
-	}
-
-	// Extract assignees
-	for _, assignee := range issue.Assignees {
-		notification.Details.Assignees = append(notification.Details.Assignees, assignee.GetLogin())
+		// Promoted common fields
+		Type:         model.ItemTypeIssue,
+		Number:       issue.GetNumber(),
+		State:        issue.GetState(),
+		HTMLURL:      issue.GetHTMLURL(),
+		CreatedAt:    issue.GetCreatedAt().Time,
+		Author:       issue.GetUser().GetLogin(),
+		CommentCount: issue.GetComments(),
+		Labels:       labels,
+		Assignees:    assignees,
+		// Issue-specific details
+		Details: &model.IssueDetails{},
 	}
 
 	return notification
@@ -399,6 +408,18 @@ func (c *Client) authoredPRToItem(issue *gh.Issue) model.Item {
 		fullName = owner + "/" + repoName
 	}
 
+	// Extract labels
+	var labels []string
+	for _, label := range issue.Labels {
+		labels = append(labels, label.GetName())
+	}
+
+	// Extract assignees
+	var assignees []string
+	for _, assignee := range issue.Assignees {
+		assignees = append(assignees, assignee.GetLogin())
+	}
+
 	notification := model.Item{
 		ID:        fmt.Sprintf("authored-%d", issue.GetID()),
 		Reason:    model.ReasonAuthor,
@@ -415,27 +436,20 @@ func (c *Client) authoredPRToItem(issue *gh.Issue) model.Item {
 			Type:  model.SubjectPullRequest,
 		},
 		URL: issue.GetURL(),
-		Details: &model.ItemDetails{
-			Number:       issue.GetNumber(),
-			State:        issue.GetState(),
-			HTMLURL:      issue.GetHTMLURL(),
-			CreatedAt:    issue.GetCreatedAt().Time,
-			UpdatedAt:    issue.GetUpdatedAt().Time,
-			Author:       issue.GetUser().GetLogin(),
-			CommentCount: issue.GetComments(),
-			IsPR:         true,
-			Draft:        issue.GetDraft(),
+		// Promoted common fields
+		Type:         model.ItemTypePullRequest,
+		Number:       issue.GetNumber(),
+		State:        issue.GetState(),
+		HTMLURL:      issue.GetHTMLURL(),
+		CreatedAt:    issue.GetCreatedAt().Time,
+		Author:       issue.GetUser().GetLogin(),
+		CommentCount: issue.GetComments(),
+		Labels:       labels,
+		Assignees:    assignees,
+		// PR-specific details
+		Details: &model.PRDetails{
+			Draft: issue.GetDraft(),
 		},
-	}
-
-	// Extract labels
-	for _, label := range issue.Labels {
-		notification.Details.Labels = append(notification.Details.Labels, label.GetName())
-	}
-
-	// Extract assignees
-	for _, assignee := range issue.Assignees {
-		notification.Details.Assignees = append(notification.Details.Assignees, assignee.GetLogin())
 	}
 
 	return notification
