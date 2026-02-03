@@ -4,6 +4,26 @@ A terminal UI that helps you prioritize GitHub work. It pulls together unread no
 
 ![Demo](.github/demo.png)
 
+## Installation
+
+```bash
+curl -sSfL https://tools.aithirne.com/triage | sudo sh -s -- -b /usr/local/bin
+```
+
+Or install with Go:
+
+```bash
+go install github.com/spiffcs/triage@latest
+```
+
+Or build from source:
+
+```bash
+git clone https://github.com/spiffcs/triage.git
+cd triage
+go build -o triage ./cmd/triage
+```
+
 ## Quick Start
 
 ```bash
@@ -31,26 +51,6 @@ The default interface is a dual-pane terminal UI with keyboard navigation. The t
 | `q` / `Esc` | Quit |
 
 The TUI displays color-coded priorities, PR review status, and size indicators (XS/S/M/L/XL based on lines changed). Items marked as done are persisted and will not reappear unless they have new activity.
-
-## Installation
-
-```bash
-curl -sSfL https://tools.aithirne.com/triage | sudo sh -s -- -b /usr/local/bin
-```
-
-Or install with Go:
-
-```bash
-go install github.com/spiffcs/triage@latest
-```
-
-Or build from source:
-
-```bash
-git clone https://github.com/spiffcs/triage.git
-cd triage
-go build -o triage ./cmd/triage
-```
 
 ## Usage
 
