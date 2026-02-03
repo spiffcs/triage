@@ -43,7 +43,11 @@ const (
 
 	// NotificationsCacheTTL is the maximum age before a full
 	// notification list refresh is required.
-	NotificationsCacheTTL = 1 * time.Hour
+	NotificationsCacheTTL = 30 * time.Minute
+
+	// OrphanedCacheTTL is the TTL for the orphaned contributions list.
+	// Longer TTL since orphaned status changes slowly.
+	OrphanedCacheTTL = 24 * time.Hour
 )
 
 // Review state constants

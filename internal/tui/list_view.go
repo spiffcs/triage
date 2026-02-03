@@ -50,7 +50,7 @@ func renderListView(m ListModel) string {
 	if len(items) == 0 {
 		switch m.activePane {
 		case paneOrphaned:
-			b.WriteString(renderOrphanedEmptyState())
+			b.WriteString(m.renderOrphanedEmptyState())
 		case paneAssigned:
 			b.WriteString(renderAssignedEmptyState())
 		default:
@@ -140,7 +140,17 @@ func renderTabBar(activePane pane, priorityCount, orphanedCount, assignedCount i
 }
 
 // renderOrphanedEmptyState renders the empty state message for the orphaned pane
-func renderOrphanedEmptyState() string {
+func (m ListModel) renderOrphanedEmptyState() string {
+	// Check if orphaned repos are configured
+	if m.config == nil || m.config.Orphaned == nil || len(m.config.Orphaned.Repos) == 0 {
+		return listEmptyStyle.Render(
+			"Orphaned pane not configured.\n\n" +
+				"Add repos to monitor in ~/.config/triage/config.yaml:\n\n" +
+				"  orphaned:\n" +
+				"    repos:\n" +
+				"      - owner/repo\n" +
+				"    stale_days: 7")
+	}
 	return listEmptyStyle.Render("No orphaned contributions.\nOrphaned items are external PRs/issues that need team attention.")
 }
 

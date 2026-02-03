@@ -174,7 +174,7 @@ func ttlForListType(listType ListType) time.Duration {
 	case ListTypeNotifications:
 		return constants.NotificationsCacheTTL
 	case ListTypeOrphaned:
-		return 15 * time.Minute
+		return constants.OrphanedCacheTTL
 	default:
 		// review-requested, authored, assigned-issues
 		return constants.ItemListCacheTTL

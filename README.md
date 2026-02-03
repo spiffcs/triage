@@ -108,9 +108,9 @@ An item is flagged as orphaned when:
 ### Cache Management
 
 The tool uses a multi-tier caching strategy to reduce API usage:
-- **Item details** (issue/PR metadata): cached for 24 hours
-- **Notification lists**: cached for 1 hour
-- **Orphaned lists**: cached for 15 minutes
+- **Items** (full issue/PR data): cached for 24 hours
+- **Notification lists**: cached for 30 minutes
+- **Orphaned lists**: cached for 24 hours
 - **PR/Issue lists** (review-requested PRs, authored PRs, assigned issues): cached for 5 minutes
 
 ```bash
