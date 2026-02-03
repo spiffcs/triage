@@ -65,7 +65,7 @@ func fetchAll(ctx context.Context, svc *service.ItemService, opts fetchOptions) 
 	updateFetchProgress := func() {
 		current := atomic.AddInt32(&completedFetches, 1)
 		progress := float64(current) / float64(totalFetches)
-		msg := fmt.Sprintf("for the past %s (%d/%d sources)", opts.SinceLabel, current, totalFetches)
+		msg := fmt.Sprintf("%s (%d/%d sources)", opts.SinceLabel, current, totalFetches)
 		sendTaskEvent(opts.Events, tui.TaskFetch, tui.StatusRunning,
 			tui.WithProgress(progress),
 			tui.WithMessage(msg))
