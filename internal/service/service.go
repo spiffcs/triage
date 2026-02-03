@@ -297,8 +297,22 @@ func (s *ItemService) Enrich(ctx context.Context, items []model.Item, onProgress
 		if c != nil {
 			key, ok := buildCacheKey(&items[i])
 			if ok {
-				if details, cacheOk := c.Get(key, items[i].UpdatedAt); cacheOk {
-					items[i].Details = details
+				if cachedItem, cacheOk := c.Get(key, items[i].UpdatedAt); cacheOk {
+					// Copy enriched data from cached item
+					items[i].Type = cachedItem.Type
+					items[i].Number = cachedItem.Number
+					items[i].State = cachedItem.State
+					items[i].HTMLURL = cachedItem.HTMLURL
+					items[i].CreatedAt = cachedItem.CreatedAt
+					items[i].ClosedAt = cachedItem.ClosedAt
+					items[i].Author = cachedItem.Author
+					items[i].Assignees = cachedItem.Assignees
+					items[i].Labels = cachedItem.Labels
+					items[i].CommentCount = cachedItem.CommentCount
+					items[i].AuthorAssociation = cachedItem.AuthorAssociation
+					items[i].LastTeamActivityAt = cachedItem.LastTeamActivityAt
+					items[i].ConsecutiveAuthorComments = cachedItem.ConsecutiveAuthorComments
+					items[i].Details = cachedItem.Details
 					cacheHits++
 					// Report each cache hit individually for smooth progress
 					if onProgress != nil {
@@ -340,13 +354,20 @@ func (s *ItemService) Enrich(ctx context.Context, items []model.Item, onProgress
 		// Log what we're copying back
 		n := &items[origIdx]
 		if n.Details != nil {
-			log.Debug("enriched item",
-				"id", n.ID,
-				"repo", n.Repository.FullName,
-				"isPR", n.Details.IsPR,
-				"additions", n.Details.Additions,
-				"deletions", n.Details.Deletions,
-				"reviewState", n.Details.ReviewState)
+			if pr := n.GetPRDetails(); pr != nil {
+				log.Debug("enriched item",
+					"id", n.ID,
+					"repo", n.Repository.FullName,
+					"isPR", true,
+					"additions", pr.Additions,
+					"deletions", pr.Deletions,
+					"reviewState", pr.ReviewState)
+			} else {
+				log.Debug("enriched item",
+					"id", n.ID,
+					"repo", n.Repository.FullName,
+					"isPR", false)
+			}
 		} else {
 			log.Debug("item not enriched - Details is nil", "id", n.ID, "repo", n.Repository.FullName)
 		}
@@ -354,7 +375,7 @@ func (s *ItemService) Enrich(ctx context.Context, items []model.Item, onProgress
 		if c != nil && uncachedItems[i].Details != nil {
 			key, ok := buildCacheKey(&items[origIdx])
 			if ok {
-				if err := c.Set(key, items[origIdx].UpdatedAt, items[origIdx].Details); err != nil {
+				if err := c.Set(key, items[origIdx].UpdatedAt, &items[origIdx]); err != nil {
 					log.Debug("failed to cache item", "id", items[origIdx].ID, "error", err)
 				}
 			}

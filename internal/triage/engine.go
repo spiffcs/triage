@@ -94,7 +94,7 @@ func FilterOutMerged(items []PrioritizedItem) []PrioritizedItem {
 	filtered := make([]PrioritizedItem, 0, len(items))
 	for _, item := range items {
 		// Skip if it's a merged PR
-		if item.Item.Details != nil && item.Item.Details.Merged {
+		if pr := item.Item.GetPRDetails(); pr != nil && pr.Merged {
 			continue
 		}
 		filtered = append(filtered, item)
@@ -106,11 +106,9 @@ func FilterOutMerged(items []PrioritizedItem) []PrioritizedItem {
 func FilterOutClosed(items []PrioritizedItem) []PrioritizedItem {
 	filtered := make([]PrioritizedItem, 0, len(items))
 	for _, item := range items {
-		if item.Item.Details != nil {
-			state := item.Item.Details.State
-			if state == "closed" || state == "merged" {
-				continue
-			}
+		state := item.Item.State
+		if state == "closed" || state == "merged" {
+			continue
 		}
 		filtered = append(filtered, item)
 	}
@@ -178,14 +176,14 @@ func FilterByExcludedAuthors(items []PrioritizedItem, excludedAuthors []string) 
 
 	filtered := make([]PrioritizedItem, 0, len(items))
 	for _, item := range items {
-		// Skip items without details (can't determine author)
-		if item.Item.Details == nil {
+		// Skip items without author (can't determine author)
+		if item.Item.Author == "" {
 			filtered = append(filtered, item)
 			continue
 		}
 
 		// Skip if author is in the exclude list
-		if excludeSet[item.Item.Details.Author] {
+		if excludeSet[item.Item.Author] {
 			continue
 		}
 
@@ -200,15 +198,16 @@ func FilterByGreenCI(items []PrioritizedItem) []PrioritizedItem {
 	filtered := make([]PrioritizedItem, 0, len(items))
 	for _, item := range items {
 		// Exclude non-PRs (issues don't have CI)
-		if item.Item.Subject.Type != model.SubjectPullRequest {
+		if item.Item.Type != model.ItemTypePullRequest {
 			continue
 		}
-		// Exclude PRs without details (can't determine CI status)
-		if item.Item.Details == nil {
+		// Exclude PRs without PR details (can't determine CI status)
+		pr := item.Item.GetPRDetails()
+		if pr == nil {
 			continue
 		}
 		// Keep PRs with successful CI
-		if item.Item.Details.CIStatus == constants.CIStatusSuccess {
+		if pr.CIStatus == constants.CIStatusSuccess {
 			filtered = append(filtered, item)
 		}
 	}

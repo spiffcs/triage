@@ -38,30 +38,39 @@ func TestItemTypes(t *testing.T) {
 	}
 }
 
-func TestItemDetails(t *testing.T) {
-	details := &model.ItemDetails{
+func TestItemWithPRDetails(t *testing.T) {
+	item := model.Item{
+		Type:         model.ItemTypePullRequest,
 		Number:       42,
 		State:        "open",
-		HTMLURL:      "https://github.com/owner/repo/issues/42",
+		HTMLURL:      "https://github.com/owner/repo/pull/42",
 		CreatedAt:    time.Now().Add(-24 * time.Hour),
 		UpdatedAt:    time.Now(),
 		Author:       "testuser",
 		Assignees:    []string{"user1", "user2"},
 		Labels:       []string{"bug", "help wanted"},
 		CommentCount: 5,
-		IsPR:         true,
-		Additions:    100,
-		Deletions:    50,
-		ChangedFiles: 3,
-		ReviewState:  "approved",
-		Draft:        false,
+		Details: &model.PRDetails{
+			Additions:    100,
+			Deletions:    50,
+			ChangedFiles: 3,
+			ReviewState:  "approved",
+			Draft:        false,
+		},
 	}
 
-	if details.Number != 42 {
-		t.Errorf("expected number 42, got %d", details.Number)
+	if item.Number != 42 {
+		t.Errorf("expected number 42, got %d", item.Number)
 	}
-	if !details.IsPR {
-		t.Error("expected IsPR to be true")
+	if !item.IsPR() {
+		t.Error("expected IsPR() to be true")
+	}
+	pr := item.GetPRDetails()
+	if pr == nil {
+		t.Fatal("expected PRDetails to be non-nil")
+	}
+	if pr.Additions != 100 {
+		t.Errorf("expected additions 100, got %d", pr.Additions)
 	}
 }
 

@@ -48,7 +48,7 @@ func mergeOrphaned(notifications []model.Item, orphaned []model.Item) ([]model.I
 			existingURLs[n.Subject.URL] = true
 		}
 		if n.Details != nil {
-			key := fmt.Sprintf("%s#%d", n.Repository.FullName, n.Details.Number)
+			key := fmt.Sprintf("%s#%d", n.Repository.FullName, n.Number)
 			existing[key] = true
 		}
 	}
@@ -60,7 +60,7 @@ func mergeOrphaned(notifications []model.Item, orphaned []model.Item) ([]model.I
 			continue
 		}
 
-		key := fmt.Sprintf("%s#%d", item.Repository.FullName, item.Details.Number)
+		key := fmt.Sprintf("%s#%d", item.Repository.FullName, item.Number)
 		if existing[key] || existingURLs[item.Subject.URL] {
 			continue
 		}
@@ -91,7 +91,7 @@ func mergeItems(
 				existingURLs[n.Subject.URL] = true
 			}
 			if n.Details != nil {
-				key := fmt.Sprintf("%s#%d", n.Repository.FullName, n.Details.Number)
+				key := fmt.Sprintf("%s#%d", n.Repository.FullName, n.Number)
 				existing[key] = true
 			}
 		}
@@ -104,7 +104,7 @@ func mergeItems(
 			continue
 		}
 
-		key := fmt.Sprintf("%s#%d", item.Repository.FullName, item.Details.Number)
+		key := fmt.Sprintf("%s#%d", item.Repository.FullName, item.Number)
 		if existing[key] || existingURLs[item.Subject.URL] {
 			continue
 		}

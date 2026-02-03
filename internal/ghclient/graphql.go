@@ -766,59 +766,64 @@ func getCIStatusFromCommits(commits []struct {
 
 // applyPRResult applies GraphQL PR result to a notification.
 func applyPRResult(n *model.Item, result *PRGraphQLResult) {
-	if n.Details == nil {
-		n.Details = &model.ItemDetails{}
-	}
-
-	n.Details.Number = result.Number
-	n.Details.State = result.State
-	n.Details.Additions = result.Additions
-	n.Details.Deletions = result.Deletions
-	n.Details.ChangedFiles = result.ChangedFiles
-	n.Details.Draft = result.IsDraft
-	n.Details.Mergeable = result.Mergeable == "MERGEABLE"
-	n.Details.CreatedAt = result.CreatedAt
-	n.Details.UpdatedAt = result.UpdatedAt
-	n.Details.ClosedAt = result.ClosedAt
-	n.Details.MergedAt = result.MergedAt
-	n.Details.Merged = result.MergedAt != nil
-	n.Details.Author = result.Author
-	n.Details.Assignees = result.Assignees
-	n.Details.Labels = result.Labels
-	n.Details.ReviewState = result.ReviewState
-	n.Details.CIStatus = result.CIStatus
-	n.Details.CommentCount = result.CommentCount
-	n.Details.RequestedReviewers = result.RequestedReviewers
-	n.Details.LatestReviewer = result.LatestReviewer
-	n.Details.IsPR = true
+	// Set type and common fields on Item
+	n.Type = model.ItemTypePullRequest
+	n.Number = result.Number
+	n.State = result.State
+	n.CreatedAt = result.CreatedAt
+	n.ClosedAt = result.ClosedAt
+	n.Author = result.Author
+	n.Assignees = result.Assignees
+	n.Labels = result.Labels
+	n.CommentCount = result.CommentCount
 
 	// Set HTMLURL if not already set
-	if n.Details.HTMLURL == "" && n.Repository.FullName != "" {
-		n.Details.HTMLURL = fmt.Sprintf("https://github.com/%s/pull/%d", n.Repository.FullName, result.Number)
+	if n.HTMLURL == "" && n.Repository.FullName != "" {
+		n.HTMLURL = fmt.Sprintf("https://github.com/%s/pull/%d", n.Repository.FullName, result.Number)
+	}
+
+	// Set PR-specific details
+	n.Details = &model.PRDetails{
+		Merged:             result.MergedAt != nil,
+		MergedAt:           result.MergedAt,
+		Additions:          result.Additions,
+		Deletions:          result.Deletions,
+		ChangedFiles:       result.ChangedFiles,
+		ReviewState:        result.ReviewState,
+		Mergeable:          result.Mergeable == "MERGEABLE",
+		CIStatus:           result.CIStatus,
+		Draft:              result.IsDraft,
+		RequestedReviewers: result.RequestedReviewers,
+		LatestReviewer:     result.LatestReviewer,
+	}
+
+	// Update state to "merged" if merged
+	if result.MergedAt != nil {
+		n.State = "merged"
 	}
 }
 
 // applyIssueResult applies GraphQL Issue result to a notification.
 func applyIssueResult(n *model.Item, result *IssueGraphQLResult) {
-	if n.Details == nil {
-		n.Details = &model.ItemDetails{}
-	}
-
-	n.Details.Number = result.Number
-	n.Details.State = result.State
-	n.Details.CreatedAt = result.CreatedAt
-	n.Details.UpdatedAt = result.UpdatedAt
-	n.Details.ClosedAt = result.ClosedAt
-	n.Details.Author = result.Author
-	n.Details.Assignees = result.Assignees
-	n.Details.Labels = result.Labels
-	n.Details.CommentCount = result.CommentCount
-	n.Details.LastCommenter = result.LastCommenter
-	n.Details.IsPR = false
+	// Set type and common fields on Item
+	n.Type = model.ItemTypeIssue
+	n.Number = result.Number
+	n.State = result.State
+	n.CreatedAt = result.CreatedAt
+	n.ClosedAt = result.ClosedAt
+	n.Author = result.Author
+	n.Assignees = result.Assignees
+	n.Labels = result.Labels
+	n.CommentCount = result.CommentCount
 
 	// Set HTMLURL if not already set
-	if n.Details.HTMLURL == "" && n.Repository.FullName != "" {
-		n.Details.HTMLURL = fmt.Sprintf("https://github.com/%s/issues/%d", n.Repository.FullName, result.Number)
+	if n.HTMLURL == "" && n.Repository.FullName != "" {
+		n.HTMLURL = fmt.Sprintf("https://github.com/%s/issues/%d", n.Repository.FullName, result.Number)
+	}
+
+	// Set issue-specific details
+	n.Details = &model.IssueDetails{
+		LastCommenter: result.LastCommenter,
 	}
 }
 
