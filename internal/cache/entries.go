@@ -18,6 +18,7 @@ const (
 	ListTypeReviewRequested ListType = "review-requested"
 	ListTypeAuthored        ListType = "authored"
 	ListTypeAssignedIssues  ListType = "assigned-issues"
+	ListTypeAssignedPRs     ListType = "assigned-prs"
 	ListTypeOrphaned        ListType = "orphaned"
 )
 
@@ -28,6 +29,7 @@ func AllListTypes() []ListType {
 		ListTypeReviewRequested,
 		ListTypeAuthored,
 		ListTypeAssignedIssues,
+		ListTypeAssignedPRs,
 		ListTypeOrphaned,
 	}
 }

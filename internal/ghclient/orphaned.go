@@ -148,6 +148,9 @@ func buildOrphanedQuery(owner, repo string) string {
         assignees(first: 5) {
           nodes { login }
         }
+        labels(first: 10) {
+          nodes { name }
+        }
         comments(last: 10) {
           totalCount
           nodes {
@@ -172,6 +175,9 @@ func buildOrphanedQuery(owner, repo string) string {
         reviewDecision
         assignees(first: 5) {
           nodes { login }
+        }
+        labels(first: 10) {
+          nodes { name }
         }
         comments(last: 10) {
           totalCount
@@ -218,6 +224,11 @@ type orphanedIssueNode struct {
 	Assignees         struct {
 		Nodes []actorRef `json:"nodes"`
 	} `json:"assignees"`
+	Labels struct {
+		Nodes []struct {
+			Name string `json:"name"`
+		} `json:"nodes"`
+	} `json:"labels"`
 	Comments struct {
 		TotalCount int           `json:"totalCount"`
 		Nodes      []commentNode `json:"nodes"`
@@ -238,6 +249,11 @@ type orphanedPRNode struct {
 	Assignees         struct {
 		Nodes []actorRef `json:"nodes"`
 	} `json:"assignees"`
+	Labels struct {
+		Nodes []struct {
+			Name string `json:"name"`
+		} `json:"nodes"`
+	} `json:"labels"`
 	Comments struct {
 		TotalCount int           `json:"totalCount"`
 		Nodes      []commentNode `json:"nodes"`
@@ -299,6 +315,12 @@ func parseOrphanedResponse(data json.RawMessage, owner, repo string, opts Orphan
 			assignees = append(assignees, a.Login)
 		}
 
+		// Extract labels
+		var labels []string
+		for _, l := range issue.Labels.Nodes {
+			labels = append(labels, l.Name)
+		}
+
 		items = append(items, model.Item{
 			ID:        fmt.Sprintf("orphaned-%s-%d", fullName, issue.Number),
 			Reason:    model.ReasonOrphaned,
@@ -323,6 +345,7 @@ func parseOrphanedResponse(data json.RawMessage, owner, repo string, opts Orphan
 				UpdatedAt:                 issue.UpdatedAt,
 				Author:                    issue.Author.Login,
 				Assignees:                 assignees,
+				Labels:                    labels,
 				CommentCount:              issue.Comments.TotalCount,
 				IsPR:                      false,
 				AuthorAssociation:         issue.AuthorAssociation,
@@ -367,6 +390,12 @@ func parseOrphanedResponse(data json.RawMessage, owner, repo string, opts Orphan
 			assignees = append(assignees, a.Login)
 		}
 
+		// Extract labels
+		var labels []string
+		for _, l := range pr.Labels.Nodes {
+			labels = append(labels, l.Name)
+		}
+
 		items = append(items, model.Item{
 			ID:        fmt.Sprintf("orphaned-%s-%d", fullName, pr.Number),
 			Reason:    model.ReasonOrphaned,
@@ -391,6 +420,7 @@ func parseOrphanedResponse(data json.RawMessage, owner, repo string, opts Orphan
 				UpdatedAt:                 pr.UpdatedAt,
 				Author:                    pr.Author.Login,
 				Assignees:                 assignees,
+				Labels:                    labels,
 				CommentCount:              pr.Comments.TotalCount,
 				IsPR:                      true,
 				AuthorAssociation:         pr.AuthorAssociation,

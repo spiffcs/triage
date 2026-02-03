@@ -79,6 +79,7 @@ func runCacheStats(cmd *cobra.Command, args []string) error {
 		{cache.ListTypeReviewRequested, "Review PRs", "5m"},
 		{cache.ListTypeAuthored, "Authored PRs", "5m"},
 		{cache.ListTypeAssignedIssues, "Assigned Issues", "5m"},
+		{cache.ListTypeAssignedPRs, "Assigned PRs", "5m"},
 		{cache.ListTypeOrphaned, "Orphaned", "15m"},
 	}
 

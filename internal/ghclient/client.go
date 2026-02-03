@@ -352,6 +352,92 @@ func (c *Client) assignedIssueToItem(issue *gh.Issue) model.Item {
 	return notification
 }
 
+// ListAssignedPRs fetches open PRs assigned to the user
+func (c *Client) ListAssignedPRs(ctx context.Context, username string) ([]model.Item, error) {
+	query := fmt.Sprintf("is:pr is:open assignee:%s", username)
+
+	opts := &gh.SearchOptions{
+		Sort:  "updated",
+		Order: "desc",
+		ListOptions: gh.ListOptions{
+			PerPage: 100,
+		},
+	}
+
+	var items []model.Item
+
+	for {
+		result, resp, err := c.client.Search.Issues(ctx, query, opts)
+		if err != nil {
+			return nil, fmt.Errorf("failed to search for assigned PRs: %w", err)
+		}
+
+		for _, issue := range result.Issues {
+			item := c.assignedPRToItem(issue)
+			items = append(items, item)
+		}
+
+		if resp.NextPage == 0 {
+			break
+		}
+		opts.Page = resp.NextPage
+	}
+
+	return items, nil
+}
+
+// assignedPRToItem converts an assigned PR to a model.Item
+func (c *Client) assignedPRToItem(issue *gh.Issue) model.Item {
+	repoURL := issue.GetRepositoryURL()
+	parts := splitRepoURL(repoURL)
+	fullName := ""
+	repoName := ""
+	if len(parts) >= 2 {
+		fullName = parts[0] + "/" + parts[1]
+		repoName = parts[1]
+	}
+
+	item := model.Item{
+		ID:        fmt.Sprintf("assigned-pr-%d", issue.GetID()),
+		Reason:    model.ReasonAssign,
+		Unread:    true,
+		UpdatedAt: issue.GetUpdatedAt().Time,
+		Repository: model.Repository{
+			Name:     repoName,
+			FullName: fullName,
+			HTMLURL:  fmt.Sprintf("https://github.com/%s", fullName),
+		},
+		Subject: model.Subject{
+			Title: issue.GetTitle(),
+			URL:   issue.GetURL(),
+			Type:  model.SubjectPullRequest,
+		},
+		URL: issue.GetURL(),
+		Details: &model.ItemDetails{
+			Number:       issue.GetNumber(),
+			State:        issue.GetState(),
+			HTMLURL:      issue.GetHTMLURL(),
+			CreatedAt:    issue.GetCreatedAt().Time,
+			UpdatedAt:    issue.GetUpdatedAt().Time,
+			Author:       issue.GetUser().GetLogin(),
+			CommentCount: issue.GetComments(),
+			IsPR:         true,
+		},
+	}
+
+	// Extract labels
+	for _, label := range issue.Labels {
+		item.Details.Labels = append(item.Details.Labels, label.GetName())
+	}
+
+	// Extract assignees
+	for _, assignee := range issue.Assignees {
+		item.Details.Assignees = append(item.Details.Assignees, assignee.GetLogin())
+	}
+
+	return item
+}
+
 // ListAuthoredPRs fetches open PRs authored by the user
 func (c *Client) ListAuthoredPRs(ctx context.Context, username string) ([]model.Item, error) {
 	query := fmt.Sprintf("is:pr is:open author:%s", username)

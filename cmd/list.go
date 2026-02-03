@@ -254,6 +254,9 @@ func processResults(result *fetchResult, cfg *config.Config, currentUser string,
 	if mergeRes.AssignedIssuesAdded > 0 {
 		log.Info("issues assigned to you", "count", mergeRes.AssignedIssuesAdded)
 	}
+	if mergeRes.AssignedPRsAdded > 0 {
+		log.Info("PRs assigned to you", "count", mergeRes.AssignedPRsAdded)
+	}
 	if mergeRes.OrphanedAdded > 0 {
 		log.Info("orphaned contributions", "count", mergeRes.OrphanedAdded)
 	}

@@ -33,6 +33,8 @@ type UIPreferences struct {
 	OrphanedSortDesc   *bool  `yaml:"orphaned_sort_desc,omitempty"`
 	AssignedSortColumn string `yaml:"assigned_sort_column,omitempty"`
 	AssignedSortDesc   *bool  `yaml:"assigned_sort_desc,omitempty"`
+	BlockedSortColumn  string `yaml:"blocked_sort_column,omitempty"`
+	BlockedSortDesc    *bool  `yaml:"blocked_sort_desc,omitempty"`
 }
 
 // OrphanedConfig configures orphaned contribution detection
@@ -582,6 +584,8 @@ func mergeUIPreferences(global, local *UIPreferences) *UIPreferences {
 		result.OrphanedSortDesc = global.OrphanedSortDesc
 		result.AssignedSortColumn = global.AssignedSortColumn
 		result.AssignedSortDesc = global.AssignedSortDesc
+		result.BlockedSortColumn = global.BlockedSortColumn
+		result.BlockedSortDesc = global.BlockedSortDesc
 	}
 
 	if local != nil {
@@ -603,12 +607,19 @@ func mergeUIPreferences(global, local *UIPreferences) *UIPreferences {
 		if local.AssignedSortDesc != nil {
 			result.AssignedSortDesc = local.AssignedSortDesc
 		}
+		if local.BlockedSortColumn != "" {
+			result.BlockedSortColumn = local.BlockedSortColumn
+		}
+		if local.BlockedSortDesc != nil {
+			result.BlockedSortDesc = local.BlockedSortDesc
+		}
 	}
 
 	// Return nil if effectively empty
 	if result.PrioritySortColumn == "" && result.PrioritySortDesc == nil &&
 		result.OrphanedSortColumn == "" && result.OrphanedSortDesc == nil &&
-		result.AssignedSortColumn == "" && result.AssignedSortDesc == nil {
+		result.AssignedSortColumn == "" && result.AssignedSortDesc == nil &&
+		result.BlockedSortColumn == "" && result.BlockedSortDesc == nil {
 		return nil
 	}
 

@@ -11,6 +11,7 @@ type mergeResult struct {
 	ReviewPRsAdded      int
 	AuthoredPRsAdded    int
 	AssignedIssuesAdded int
+	AssignedPRsAdded    int
 	OrphanedAdded       int
 }
 
@@ -27,6 +28,9 @@ func mergeAll(result *fetchResult) mergeResult {
 	}
 	if len(result.AssignedIssues) > 0 {
 		result.Notifications, res.AssignedIssuesAdded = mergeAssignedIssues(result.Notifications, result.AssignedIssues)
+	}
+	if len(result.AssignedPRs) > 0 {
+		result.Notifications, res.AssignedPRsAdded = mergeAssignedPRs(result.Notifications, result.AssignedPRs)
 	}
 	if len(result.Orphaned) > 0 {
 		result.Notifications, res.OrphanedAdded = mergeOrphaned(result.Notifications, result.Orphaned)
@@ -133,4 +137,10 @@ func mergeAuthoredPRs(notifications []model.Item, authoredPRs []model.Item) ([]m
 // Returns the merged list and the count of newly added items.
 func mergeAssignedIssues(notifications []model.Item, assignedIssues []model.Item) ([]model.Item, int) {
 	return mergeItems(notifications, assignedIssues, model.SubjectIssue)
+}
+
+// mergeAssignedPRs adds user's assigned PRs that aren't already in notifications.
+// Returns the merged list and the count of newly added items.
+func mergeAssignedPRs(notifications []model.Item, assignedPRs []model.Item) ([]model.Item, int) {
+	return mergeItems(notifications, assignedPRs, model.SubjectPullRequest)
 }
