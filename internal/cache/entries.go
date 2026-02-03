@@ -51,7 +51,7 @@ type ListCacheEntry struct {
 // DetailsCacheEntry caches enrichment data for an item (PR or Issue)
 // Note: Details is stored as raw JSON to handle the polymorphic Details interface
 type DetailsCacheEntry struct {
-	Item      model.Item `json:"item"`      // Full item with promoted fields and Details
+	Item      model.Item `json:"item"` // Full item with promoted fields and Details
 	CachedAt  time.Time  `json:"cachedAt"`
 	UpdatedAt time.Time  `json:"updatedAt"` // model.Item's UpdatedAt for invalidation
 	Version   int        `json:"version"`   // Cache version for invalidation

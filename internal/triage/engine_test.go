@@ -370,7 +370,7 @@ func TestFilterByGreenCI(t *testing.T) {
 		makePrioritizedItem("2", model.ReasonReviewRequested, model.SubjectPullRequest, PriorityUrgent, &testItemOpts{CIStatus: "failure"}),
 		makePrioritizedItem("3", model.ReasonReviewRequested, model.SubjectPullRequest, PriorityUrgent, &testItemOpts{CIStatus: "pending"}),
 		makePrioritizedItem("4", model.ReasonReviewRequested, model.SubjectPullRequest, PriorityUrgent, &testItemOpts{CIStatus: ""}),
-		makePrioritizedItem("5", model.ReasonReviewRequested, model.SubjectPullRequest, PriorityUrgent, nil),            // nil Details - excluded
+		makePrioritizedItem("5", model.ReasonReviewRequested, model.SubjectPullRequest, PriorityUrgent, nil),           // nil Details - excluded
 		makePrioritizedItem("6", model.ReasonSubscribed, model.SubjectIssue, PriorityFYI, &testItemOpts{CIStatus: ""}), // Issue - excluded
 	}
 
