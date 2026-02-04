@@ -319,6 +319,10 @@ func enrichItems(
 	var lastTUIUpdate int64 = 0 // Unix nanoseconds
 	tuiUpdateInterval := int64(constants.TUIUpdateInterval)
 
+	// Simulated progress state for smooth TUI updates between batch completions
+	var simulatedProgress float64
+	var simulatedMu sync.Mutex
+
 	onProgress := func(delta int, _ int) {
 		completed := atomic.AddInt64(totalCompleted, int64(delta))
 		cacheHits := atomic.LoadInt64(totalCacheHits)
@@ -330,6 +334,13 @@ func enrichItems(
 			if now-lastUpdate >= tuiUpdateInterval || completed == int64(totalToEnrich) {
 				if atomic.CompareAndSwapInt64(&lastTUIUpdate, lastUpdate, now) {
 					progress := float64(completed) / float64(totalToEnrich)
+					// Update simulated progress to match real progress
+					simulatedMu.Lock()
+					if progress > simulatedProgress {
+						simulatedProgress = progress
+					}
+					simulatedMu.Unlock()
+
 					msg := fmt.Sprintf("%d/%d", completed, totalToEnrich)
 					if cacheHits > 0 {
 						msg = fmt.Sprintf("%d/%d (%d cached)", completed, totalToEnrich, cacheHits)
@@ -347,6 +358,41 @@ func enrichItems(
 				log.Progress("Enriching items: %d/%d (%d%%)...", completed, totalToEnrich, percent)
 			}
 		}
+	}
+
+	// Start progress simulation ticker for smooth TUI updates
+	simulationDone := make(chan struct{})
+	if useTUI {
+		go func() {
+			ticker := time.NewTicker(constants.ProgressSimulationInterval)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-simulationDone:
+					return
+				case <-ticker.C:
+					simulatedMu.Lock()
+					realProgress := float64(atomic.LoadInt64(totalCompleted)) / float64(totalToEnrich)
+					// Only simulate if we haven't caught up to real progress
+					if simulatedProgress < realProgress {
+						simulatedProgress = realProgress
+					} else if simulatedProgress < 0.95 {
+						// Increment slowly, capped at 95% to avoid jumping to 100% prematurely
+						simulatedProgress += constants.ProgressSimulationIncrement
+						if simulatedProgress > 0.95 {
+							simulatedProgress = 0.95
+						}
+					}
+					progress := simulatedProgress
+					simulatedMu.Unlock()
+
+					// Send simulated progress update
+					sendTaskEvent(events, tui.TaskEnrich, tui.StatusRunning,
+						tui.WithProgress(progress),
+						tui.WithMessage("enriching..."))
+				}
+			}
+		}()
 	}
 
 	// Enrich all three sources concurrently
@@ -392,6 +438,9 @@ func enrichItems(
 	}
 
 	enrichWg.Wait()
+
+	// Stop the simulation ticker
+	close(simulationDone)
 
 	if !useTUI {
 		log.ProgressDone()
