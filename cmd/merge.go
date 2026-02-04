@@ -120,4 +120,3 @@ func mergeItems(
 
 	return notifications, added
 }
-
