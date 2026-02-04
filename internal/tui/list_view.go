@@ -14,7 +14,7 @@ import (
 
 // Column widths for orphaned view
 const (
-	colSignal = 30
+	colSignal = 26
 )
 
 // tabBarLines is the number of lines used for the tab bar (including top padding)
@@ -207,13 +207,14 @@ func calculateScrollWindow(cursor, total, viewHeight int) (start, end int) {
 
 // renderHeader renders the table header
 func renderHeader(hideAssignedCI, hidePriority, showAuthor bool) string {
-	// Orphaned pane: Type, Author, Repo, Title, Status, Signal, Updated
+	// Orphaned pane: Type, Author, CI, Repo, Title, Status, Signal, Updated
 	if hideAssignedCI {
 		if hidePriority {
 			return listHeaderStyle.Render(fmt.Sprintf(
-				"  %-*s  %-*s  %-*s  %-*s  %-*s  %-*s  %s",
+				"  %-*s  %-*s  %-*s  %-*s  %-*s  %-*s  %-*s  %s",
 				constants.ColType, "Type",
 				constants.ColAuthor, "Author",
+				constants.ColCI, "CI",
 				constants.ColRepo, "Repository",
 				constants.ColTitle, "Title",
 				constants.ColStatus, "Status",
@@ -232,13 +233,14 @@ func renderHeader(hideAssignedCI, hidePriority, showAuthor bool) string {
 			"Age",
 		))
 	}
-	// Assigned pane: Type, Author, Assigned, Repo, Title, Status, Updated
+	// Assigned pane: Type, Author, Assigned, CI, Repo, Title, Status, Updated
 	if hidePriority && showAuthor {
 		return listHeaderStyle.Render(fmt.Sprintf(
-			"  %-*s  %-*s  %-*s  %-*s  %-*s  %-*s  %s",
+			"  %-*s  %-*s  %-*s  %-*s  %-*s  %-*s  %-*s  %s",
 			constants.ColType, "Type",
 			constants.ColAuthor, "Author",
 			constants.ColAssigned, "Assigned",
+			constants.ColCI, "CI",
 			constants.ColRepo, "Repository",
 			constants.ColTitle, "Title",
 			constants.ColStatus, "Status",
@@ -269,9 +271,9 @@ func tableWidth(hideAssignedCI, hidePriority, showAuthor bool) int {
 	if hideAssignedCI {
 		return 2 + priorityWidth + constants.ColType + 2 + constants.ColAuthor + 2 + constants.ColRepo + 2 + constants.ColTitle + 2 + constants.ColStatus + 2 + colSignal + 2 + constants.ColAge
 	}
-	// Assigned pane: Type, Author, Assigned, Repo, Title, Status, Updated
+	// Assigned pane: Type, Author, Assigned, CI, Repo, Title, Status, Updated
 	if hidePriority && showAuthor {
-		return 2 + constants.ColType + 2 + constants.ColAuthor + 2 + constants.ColAssigned + 2 + constants.ColRepo + 2 + constants.ColTitle + 2 + constants.ColStatus + 2 + constants.ColAge
+		return 2 + constants.ColType + 2 + constants.ColAuthor + 2 + constants.ColAssigned + 2 + constants.ColCI + 2 + constants.ColRepo + 2 + constants.ColTitle + 2 + constants.ColStatus + 2 + constants.ColAge
 	}
 	// Priority pane: Priority, Type, Assigned, CI, Repo, Title, Status, Updated
 	return 2 + priorityWidth + constants.ColType + 2 + constants.ColAssigned + 2 + constants.ColCI + 2 + constants.ColRepo + 2 + constants.ColTitle + 2 + constants.ColStatus + 2 + constants.ColAge
@@ -365,7 +367,7 @@ func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, pr
 
 	var row string
 	if hideAssignedCI {
-		// Orphaned view: no Assigned/CI, but add Signal and Author columns
+		// Orphaned view: no Assigned, but add Signal, Author, and CI columns
 		signal, signalWidth := renderSignal(&n, selected)
 		signal = format.PadRight(signal, signalWidth, colSignal)
 
@@ -375,11 +377,15 @@ func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, pr
 		}
 		author = format.PadRight(author, len(author), constants.ColAuthor)
 
-		row = fmt.Sprintf("%s%s%s  %s  %s  %s  %s  %s  %s",
+		ci, ciWidth := renderCI(&n, isPR, selected)
+		ci = format.PadRight(ci, ciWidth, constants.ColCI)
+
+		row = fmt.Sprintf("%s%s%s  %s  %s  %s  %s  %s  %s  %s",
 			cursor,
 			priority,
 			typeStr,
 			author,
+			ci,
 			repo,
 			title,
 			status,
@@ -387,7 +393,7 @@ func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, pr
 			age,
 		)
 	} else if hidePriority && showAuthor {
-		// Assigned view: Author and Assigned columns, no CI
+		// Assigned view: Author, Assigned, and CI columns
 		author := "─"
 		if n.Author != "" {
 			author, _ = format.TruncateToWidth(n.Author, constants.ColAuthor)
@@ -397,11 +403,15 @@ func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, pr
 		assigned, assignedWidth := renderAssigned(&n, selected)
 		assigned = format.PadRight(assigned, assignedWidth, constants.ColAssigned)
 
-		row = fmt.Sprintf("%s%s  %s  %s  %s  %s  %s  %s",
+		ci, ciWidth := renderCI(&n, isPR, selected)
+		ci = format.PadRight(ci, ciWidth, constants.ColCI)
+
+		row = fmt.Sprintf("%s%s  %s  %s  %s  %s  %s  %s  %s",
 			cursor,
 			typeStr,
 			author,
 			assigned,
+			ci,
 			repo,
 			title,
 			status,

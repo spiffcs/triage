@@ -80,6 +80,15 @@ query OrphanedContributions($owner: String!, $repo: String!) {
             state
           }
         }
+        commits(last: 1) {
+          nodes {
+            commit {
+              statusCheckRollup {
+                state
+              }
+            }
+          }
+        }
       }
     }
   }

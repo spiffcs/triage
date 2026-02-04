@@ -9,6 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spiffcs/triage/config"
+	"github.com/spiffcs/triage/internal/constants"
 	"github.com/spiffcs/triage/internal/model"
 	"github.com/spiffcs/triage/internal/resolved"
 	"github.com/spiffcs/triage/internal/triage"
@@ -40,6 +41,15 @@ var priorityOrder = map[triage.PriorityLevel]int{
 	triage.PriorityFYI:       4,
 }
 
+// ciStatusOrder maps CI status to sort order (lower = higher priority for descending)
+// Success at top when descending, failure/none at bottom
+var ciStatusOrder = map[string]int{
+	constants.CIStatusSuccess: 0,
+	constants.CIStatusPending: 1,
+	constants.CIStatusFailure: 2,
+	"":                        3, // no CI status
+}
+
 // Priority pane sort columns
 const (
 	SortPriority SortColumn = "priority"
@@ -53,19 +63,20 @@ const (
 	SortComments SortColumn = "comments"
 	SortSize     SortColumn = "size"
 	SortAuthor   SortColumn = "author"
+	SortCI       SortColumn = "ci"
 )
 
 // prioritySortColumns defines the cycling order for priority pane
-var prioritySortColumns = []SortColumn{SortPriority, SortUpdated, SortRepo, SortSize}
+var prioritySortColumns = []SortColumn{SortPriority, SortUpdated, SortRepo, SortSize, SortCI}
 
 // orphanedSortColumns defines the cycling order for orphaned pane
-var orphanedSortColumns = []SortColumn{SortStale, SortUpdated, SortSize, SortAuthor, SortRepo}
+var orphanedSortColumns = []SortColumn{SortStale, SortUpdated, SortSize, SortAuthor, SortRepo, SortCI}
 
 // assignedSortColumns defines the cycling order for assigned pane
-var assignedSortColumns = []SortColumn{SortUpdated, SortSize, SortAuthor, SortRepo}
+var assignedSortColumns = []SortColumn{SortUpdated, SortSize, SortAuthor, SortRepo, SortCI}
 
 // blockedSortColumns defines the cycling order for blocked pane
-var blockedSortColumns = []SortColumn{SortUpdated, SortSize, SortAuthor, SortRepo}
+var blockedSortColumns = []SortColumn{SortUpdated, SortSize, SortAuthor, SortRepo, SortCI}
 
 // Default sort columns
 const (
@@ -358,6 +369,22 @@ func (m *ListModel) sortPriorityItems() {
 				return a.CommentCount > b.CommentCount
 			}
 			return a.CommentCount < b.CommentCount
+		case SortCI:
+			// Sort by CI status: success > pending > failure > none
+			// Non-PRs are treated as having no CI status
+			prA := a.GetPRDetails()
+			prB := b.GetPRDetails()
+			var ciA, ciB string
+			if prA != nil {
+				ciA = prA.CIStatus
+			}
+			if prB != nil {
+				ciB = prB.CIStatus
+			}
+			orderA := ciStatusOrder[ciA]
+			orderB := ciStatusOrder[ciB]
+			// Lower order value = higher priority (success first when descending)
+			less = orderA > orderB
 		default:
 			// Default to priority
 			if a.Priority != b.Priority {
@@ -457,6 +484,22 @@ func (m *ListModel) sortOrphanedItems() {
 				return a.CommentCount > b.CommentCount
 			}
 			return a.CommentCount < b.CommentCount
+		case SortCI:
+			// Sort by CI status: success > pending > failure > none
+			// Non-PRs are treated as having no CI status
+			prA := a.GetPRDetails()
+			prB := b.GetPRDetails()
+			var ciA, ciB string
+			if prA != nil {
+				ciA = prA.CIStatus
+			}
+			if prB != nil {
+				ciB = prB.CIStatus
+			}
+			orderA := ciStatusOrder[ciA]
+			orderB := ciStatusOrder[ciB]
+			// Lower order value = higher priority (success first when descending)
+			less = orderA > orderB
 		default:
 			less = a.UpdatedAt.Before(b.UpdatedAt)
 		}
@@ -531,6 +574,22 @@ func (m *ListModel) sortAssignedItems() {
 			// Inverted so that descending (▼) gives A-Z order
 			// Case insensitive comparison
 			less = strings.ToLower(a.Repository.FullName) > strings.ToLower(b.Repository.FullName)
+		case SortCI:
+			// Sort by CI status: success > pending > failure > none
+			// Non-PRs are treated as having no CI status
+			prA := a.GetPRDetails()
+			prB := b.GetPRDetails()
+			var ciA, ciB string
+			if prA != nil {
+				ciA = prA.CIStatus
+			}
+			if prB != nil {
+				ciB = prB.CIStatus
+			}
+			orderA := ciStatusOrder[ciA]
+			orderB := ciStatusOrder[ciB]
+			// Lower order value = higher priority (success first when descending)
+			less = orderA > orderB
 		default:
 			less = a.UpdatedAt.Before(b.UpdatedAt)
 		}
@@ -605,6 +664,22 @@ func (m *ListModel) sortBlockedItems() {
 			// Inverted so that descending (▼) gives A-Z order
 			// Case insensitive comparison
 			less = strings.ToLower(a.Repository.FullName) > strings.ToLower(b.Repository.FullName)
+		case SortCI:
+			// Sort by CI status: success > pending > failure > none
+			// Non-PRs are treated as having no CI status
+			prA := a.GetPRDetails()
+			prB := b.GetPRDetails()
+			var ciA, ciB string
+			if prA != nil {
+				ciA = prA.CIStatus
+			}
+			if prB != nil {
+				ciB = prB.CIStatus
+			}
+			orderA := ciStatusOrder[ciA]
+			orderB := ciStatusOrder[ciB]
+			// Lower order value = higher priority (success first when descending)
+			less = orderA > orderB
 		default:
 			less = a.UpdatedAt.Before(b.UpdatedAt)
 		}
