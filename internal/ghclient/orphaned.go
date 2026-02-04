@@ -123,7 +123,7 @@ func (c *Client) ListOrphanedContributions(ctx context.Context, opts OrphanedSea
 
 // fetchOrphanedForRepo fetches orphaned contributions for a single repository
 func (c *Client) fetchOrphanedForRepo(ctx context.Context, owner, repo string, opts OrphanedSearchOptions) ([]model.Item, error) {
-	query := buildOrphanedQuery(owner, repo)
+	query := BuildOrphanedQuery(owner, repo)
 	respData, err := c.executeGraphQL(ctx, query, c.token)
 	if err != nil {
 		return nil, err
@@ -132,74 +132,6 @@ func (c *Client) fetchOrphanedForRepo(ctx context.Context, owner, repo string, o
 	return parseOrphanedResponse(respData, owner, repo, opts)
 }
 
-// buildOrphanedQuery builds a GraphQL query to fetch open issues and PRs with comment analysis
-func buildOrphanedQuery(owner, repo string) string {
-	return fmt.Sprintf(`query {
-  repository(owner: "%s", name: "%s") {
-    issues(first: 50, states: OPEN, orderBy: {field: UPDATED_AT, direction: DESC}) {
-      nodes {
-        number
-        title
-        createdAt
-        updatedAt
-        url
-        author { login }
-        authorAssociation
-        assignees(first: 5) {
-          nodes { login }
-        }
-        labels(first: 10) {
-          nodes { name }
-        }
-        comments(last: 10) {
-          totalCount
-          nodes {
-            author { login }
-            authorAssociation
-            createdAt
-          }
-        }
-      }
-    }
-    pullRequests(first: 50, states: OPEN, orderBy: {field: UPDATED_AT, direction: DESC}) {
-      nodes {
-        number
-        title
-        createdAt
-        updatedAt
-        url
-        author { login }
-        authorAssociation
-        additions
-        deletions
-        reviewDecision
-        assignees(first: 5) {
-          nodes { login }
-        }
-        labels(first: 10) {
-          nodes { name }
-        }
-        comments(last: 10) {
-          totalCount
-          nodes {
-            author { login }
-            authorAssociation
-            createdAt
-          }
-        }
-        reviews(last: 5) {
-          nodes {
-            author { login }
-            authorAssociation
-            submittedAt
-            state
-          }
-        }
-      }
-    }
-  }
-}`, owner, repo)
-}
 
 // orphanedGraphQLResponse represents the response structure for orphaned queries
 type orphanedGraphQLResponse struct {

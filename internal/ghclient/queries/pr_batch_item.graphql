@@ -1,0 +1,67 @@
+# Single PR item template for batch queries
+# Template variables: Alias, Owner, Repo, Number
+
+{{.Alias}}: repository(owner: "{{.Owner}}", name: "{{.Repo}}") {
+  pullRequest(number: {{.Number}}) {
+    number
+    state
+    additions
+    deletions
+    changedFiles
+    isDraft
+    mergeable
+    createdAt
+    updatedAt
+    closedAt
+    mergedAt
+    author {
+      login
+    }
+    assignees(first: 10) {
+      nodes {
+        login
+      }
+    }
+    labels(first: 20) {
+      nodes {
+        name
+      }
+    }
+    reviewDecision
+    reviewRequests(first: 10) {
+      nodes {
+        requestedReviewer {
+          ... on User {
+            login
+          }
+          ... on Team {
+            name
+          }
+        }
+      }
+    }
+    latestReviews(first: 10) {
+      nodes {
+        author {
+          login
+        }
+        submittedAt
+      }
+    }
+    commits(last: 1) {
+      nodes {
+        commit {
+          statusCheckRollup {
+            state
+          }
+        }
+      }
+    }
+    comments {
+      totalCount
+    }
+    reviewThreads {
+      totalCount
+    }
+  }
+}

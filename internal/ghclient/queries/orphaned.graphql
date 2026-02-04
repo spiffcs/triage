@@ -1,0 +1,86 @@
+# Query for fetching open issues and PRs to detect orphaned contributions
+# Variables: Owner, Repo
+
+query OrphanedContributions($owner: String!, $repo: String!) {
+  repository(owner: $owner, name: $repo) {
+    issues(first: 50, states: OPEN, orderBy: {field: UPDATED_AT, direction: DESC}) {
+      nodes {
+        number
+        title
+        createdAt
+        updatedAt
+        url
+        author {
+          login
+        }
+        authorAssociation
+        assignees(first: 5) {
+          nodes {
+            login
+          }
+        }
+        labels(first: 10) {
+          nodes {
+            name
+          }
+        }
+        comments(last: 10) {
+          totalCount
+          nodes {
+            author {
+              login
+            }
+            authorAssociation
+            createdAt
+          }
+        }
+      }
+    }
+    pullRequests(first: 50, states: OPEN, orderBy: {field: UPDATED_AT, direction: DESC}) {
+      nodes {
+        number
+        title
+        createdAt
+        updatedAt
+        url
+        author {
+          login
+        }
+        authorAssociation
+        additions
+        deletions
+        reviewDecision
+        assignees(first: 5) {
+          nodes {
+            login
+          }
+        }
+        labels(first: 10) {
+          nodes {
+            name
+          }
+        }
+        comments(last: 10) {
+          totalCount
+          nodes {
+            author {
+              login
+            }
+            authorAssociation
+            createdAt
+          }
+        }
+        reviews(last: 5) {
+          nodes {
+            author {
+              login
+            }
+            authorAssociation
+            submittedAt
+            state
+          }
+        }
+      }
+    }
+  }
+}

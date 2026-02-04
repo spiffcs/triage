@@ -291,7 +291,21 @@ func (c *Client) batchEnrichPRs(ctx context.Context, items []enrichmentItem, tok
 		return nil, nil
 	}
 
-	query := buildPRQuery(items)
+	// Convert enrichmentItem to BatchItem for query building
+	batchItems := make([]BatchItem, len(items))
+	for i, item := range items {
+		batchItems[i] = BatchItem{
+			Alias:  fmt.Sprintf("pr%d", i),
+			Owner:  item.owner,
+			Repo:   item.repo,
+			Number: item.number,
+		}
+	}
+
+	query, err := BuildPRBatchQuery(batchItems)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build PR query: %w", err)
+	}
 	respData, err := c.executeGraphQL(ctx, query, token)
 	if err != nil {
 		return nil, err
@@ -306,7 +320,21 @@ func (c *Client) batchEnrichIssues(ctx context.Context, items []enrichmentItem, 
 		return nil, nil
 	}
 
-	query := buildIssueQuery(items)
+	// Convert enrichmentItem to BatchItem for query building
+	batchItems := make([]BatchItem, len(items))
+	for i, item := range items {
+		batchItems[i] = BatchItem{
+			Alias:  fmt.Sprintf("issue%d", i),
+			Owner:  item.owner,
+			Repo:   item.repo,
+			Number: item.number,
+		}
+	}
+
+	query, err := BuildIssueBatchQuery(batchItems)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build Issue query: %w", err)
+	}
 	respData, err := c.executeGraphQL(ctx, query, token)
 	if err != nil {
 		return nil, err
@@ -359,96 +387,6 @@ func (c *Client) executeGraphQL(ctx context.Context, query string, token string)
 	}
 
 	return gqlResp.Data, nil
-}
-
-// buildPRQuery builds a GraphQL query for multiple PRs using aliases.
-func buildPRQuery(items []enrichmentItem) string {
-	var sb strings.Builder
-	sb.WriteString("query {\n")
-
-	for i, item := range items {
-		alias := fmt.Sprintf("pr%d", i)
-		sb.WriteString(fmt.Sprintf(`  %s: repository(owner: "%s", name: "%s") {
-    pullRequest(number: %d) {
-      number
-      state
-      additions
-      deletions
-      changedFiles
-      isDraft
-      mergeable
-      createdAt
-      updatedAt
-      closedAt
-      mergedAt
-      author { login }
-      assignees(first: 10) { nodes { login } }
-      labels(first: 20) { nodes { name } }
-      reviewDecision
-      reviewRequests(first: 10) {
-        nodes {
-          requestedReviewer {
-            ... on User { login }
-            ... on Team { name }
-          }
-        }
-      }
-      latestReviews(first: 10) {
-        nodes {
-          author { login }
-          submittedAt
-        }
-      }
-      commits(last: 1) {
-        nodes {
-          commit {
-            statusCheckRollup {
-              state
-            }
-          }
-        }
-      }
-      comments { totalCount }
-      reviewThreads { totalCount }
-    }
-  }
-`, alias, item.owner, item.repo, item.number))
-	}
-
-	sb.WriteString("}")
-	return sb.String()
-}
-
-// buildIssueQuery builds a GraphQL query for multiple Issues using aliases.
-func buildIssueQuery(items []enrichmentItem) string {
-	var sb strings.Builder
-	sb.WriteString("query {\n")
-
-	for i, item := range items {
-		alias := fmt.Sprintf("issue%d", i)
-		sb.WriteString(fmt.Sprintf(`  %s: repository(owner: "%s", name: "%s") {
-    issue(number: %d) {
-      number
-      state
-      createdAt
-      updatedAt
-      closedAt
-      author { login }
-      assignees(first: 10) { nodes { login } }
-      labels(first: 20) { nodes { name } }
-      comments(last: 1) {
-        totalCount
-        nodes {
-          author { login }
-        }
-      }
-    }
-  }
-`, alias, item.owner, item.repo, item.number))
-	}
-
-	sb.WriteString("}")
-	return sb.String()
 }
 
 // parsePRResponse parses the GraphQL response for PRs.
