@@ -247,6 +247,21 @@ func runConfigShow(_ *cobra.Command, _ []string, format string) error {
 	if err != nil {
 		return err
 	}
+
+	// Show which config files were loaded (to stderr so stdout is parseable)
+	paths := config.GetConfigPaths()
+	fmt.Fprintln(os.Stderr, "Loaded from:")
+	if paths.GlobalExists {
+		fmt.Fprintf(os.Stderr, "  %s\n", paths.GlobalPath)
+	}
+	if paths.LocalExists {
+		fmt.Fprintf(os.Stderr, "  %s\n", paths.LocalPath)
+	}
+	if !paths.GlobalExists && !paths.LocalExists {
+		fmt.Fprintln(os.Stderr, "  (defaults only, no config files found)")
+	}
+	fmt.Fprintln(os.Stderr)
+
 	return printConfig(cfg, format)
 }
 
