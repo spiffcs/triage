@@ -35,8 +35,8 @@ func (p PriorityLevel) Display() string {
 
 // PrioritizedItem wraps an item with priority information
 type PrioritizedItem struct {
-	model.Item               // embedded
-	Score        int         `json:"score"`
+	model.Item                 // embedded
+	Score        int           `json:"score"`
 	Priority     PriorityLevel `json:"priority"`
 	ActionNeeded string        `json:"actionNeeded"`
 }

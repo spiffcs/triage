@@ -132,7 +132,6 @@ func (c *Client) fetchOrphanedForRepo(ctx context.Context, owner, repo string, o
 	return parseOrphanedResponse(respData, owner, repo, opts)
 }
 
-
 // orphanedGraphQLResponse represents the response structure for orphaned queries
 type orphanedGraphQLResponse struct {
 	Repository struct {

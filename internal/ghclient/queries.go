@@ -13,9 +13,9 @@ var queryFiles embed.FS
 
 // Query templates parsed at init time
 var (
-	orphanedQueryTemplate    string
-	prBatchItemTemplate      *template.Template
-	issueBatchItemTemplate   *template.Template
+	orphanedQueryTemplate  string
+	prBatchItemTemplate    *template.Template
+	issueBatchItemTemplate *template.Template
 )
 
 func init() {
@@ -49,8 +49,8 @@ func BuildOrphanedQuery(owner, repo string) string {
 	// since we're using raw HTTP requests without a GraphQL client library.
 	// Convert the parameterized query to an inline query.
 	query := strings.Replace(orphanedQueryTemplate, "$owner: String!, $repo: String!", "", 1)
-	query = strings.Replace(query, "$owner", fmt.Sprintf(`"%s"`, owner), -1)
-	query = strings.Replace(query, "$repo", fmt.Sprintf(`"%s"`, repo), -1)
+	query = strings.ReplaceAll(query, "$owner", fmt.Sprintf(`"%s"`, owner))
+	query = strings.ReplaceAll(query, "$repo", fmt.Sprintf(`"%s"`, repo))
 	query = strings.Replace(query, "query OrphanedContributions()", "query", 1)
 	return query
 }
