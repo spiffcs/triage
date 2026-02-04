@@ -11,10 +11,11 @@ import (
 
 // Config represents the application configuration
 type Config struct {
-	DefaultFormat  string   `yaml:"default_format,omitempty"`
-	ExcludeRepos   []string `yaml:"exclude_repos,omitempty"`
-	ExcludeAuthors []string `yaml:"exclude_authors,omitempty"`
-	QuickWinLabels []string `yaml:"quick_win_labels,omitempty"`
+	DefaultFormat  string    `yaml:"default_format,omitempty"`
+	ExcludeRepos   []string  `yaml:"exclude_repos,omitempty"`
+	ExcludeAuthors []string  `yaml:"exclude_authors,omitempty"`
+	QuickWinLabels []string  `yaml:"quick_win_labels,omitempty"`
+	BlockedLabels  *[]string `yaml:"blocked_labels,omitempty"`
 
 	// Top-level config sections
 	BaseScores *BaseScoreOverrides `yaml:"base_scores,omitempty"`
@@ -445,6 +446,13 @@ func mergeConfig(global, local *Config) *Config {
 		result.QuickWinLabels = global.QuickWinLabels
 	}
 
+	// Merge BlockedLabels (pointer semantics: local non-nil overrides global)
+	if local.BlockedLabels != nil {
+		result.BlockedLabels = local.BlockedLabels
+	} else {
+		result.BlockedLabels = global.BlockedLabels
+	}
+
 	// Merge BaseScores
 	result.BaseScores = mergeBaseScores(global.BaseScores, local.BaseScores)
 
@@ -728,17 +736,28 @@ func (c *Config) GetQuickWinLabels() []string {
 	return DefaultQuickWinLabels()
 }
 
+// GetBlockedLabels returns the blocked labels, using defaults if not configured.
+// Returns empty slice if explicitly set to empty (disables blocked pane).
+func (c *Config) GetBlockedLabels() []string {
+	if c.BlockedLabels == nil {
+		return []string{"blocked"} // default when not configured
+	}
+	return *c.BlockedLabels // returns empty slice if explicitly disabled
+}
+
 // DefaultConfig returns a fully populated config with all default values.
 // This is useful for generating a complete config file template.
 func DefaultConfig() *Config {
 	weights := DefaultScoreWeights()
 	labels := DefaultQuickWinLabels()
+	blockedLabels := []string{"blocked"}
 
 	return &Config{
 		DefaultFormat:  "table",
 		ExcludeRepos:   []string{},
 		ExcludeAuthors: []string{},
 		QuickWinLabels: labels,
+		BlockedLabels:  &blockedLabels,
 		BaseScores: &BaseScoreOverrides{
 			ReviewRequested: &weights.ReviewRequested,
 			Mention:         &weights.Mention,
@@ -849,6 +868,12 @@ default_format: table
 # exclude_authors:
 #   - dependabot[bot]
 #   - renovate[bot]
+
+# Blocked labels - items with these labels appear in the Blocked pane (optional)
+# Default: ["blocked"]. Set to empty list to disable the Blocked pane.
+# blocked_labels:
+#   - blocked
+#   - on-hold
 
 # Override scoring weights (optional)
 # base_scores:

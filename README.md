@@ -12,7 +12,9 @@ GITHUB_TOKEN=$(gh auth token) triage
 
 ## Interactive TUI
 
-The default interface is a dual-pane terminal UI with keyboard navigation. The two panes are:
+The default interface is a multi-pane terminal UI with keyboard navigation. The panes are:
+- **Assigned Pane**: Items assigned to you
+- **Blocked Pane**: Items with a "blocked" label (configurable)
 - **Priority Pane**: Your notifications, review requests, authored PRs, and assigned issues sorted by priority
 - **Orphaned Pane**: External contributions lacking team engagement
 
@@ -24,7 +26,8 @@ The default interface is a dual-pane terminal UI with keyboard navigation. The t
 | `G` / `End` | Jump to bottom |
 | `Enter` | Open item in browser |
 | `d` | Mark item as done (removes from list) |
-| `Tab` | Switch between Priority and Orphaned panes |
+| `Tab` | Cycle through panes (Assigned → Blocked → Priority → Orphaned) |
+| `1`-`4` | Jump directly to pane (1=Assigned, 2=Blocked, 3=Priority, 4=Orphaned) |
 | `s` | Cycle sort column |
 | `S` | Toggle sort direction |
 | `r` | Reset sort to default |
@@ -376,6 +379,27 @@ quick_win_labels:
 ```
 
 Labels are matched case-insensitively, use substring matching (e.g., `doc` matches `documentation`), and treat hyphens and spaces as equivalent (e.g., `good first issue` matches `good-first-issue`).
+
+### Configuring Blocked Labels
+
+Items with a "blocked" label are shown in a separate Blocked pane in the TUI. You can customize which labels trigger this behavior:
+
+```yaml
+# Default: items with "blocked" label appear in blocked pane
+blocked_labels:
+  - blocked
+
+# Custom labels (any of these will put item in blocked pane)
+blocked_labels:
+  - blocked
+  - on-hold
+  - waiting-for-feedback
+
+# Disable blocked pane entirely
+blocked_labels: []
+```
+
+Labels are matched case-insensitively (e.g., `Blocked` matches `blocked`).
 
 ### Excluding Bot Authors
 

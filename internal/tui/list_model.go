@@ -112,6 +112,9 @@ type ListModel struct {
 
 	// Config for persisting preferences
 	config *config.Config
+
+	// Configurable labels for blocked pane
+	blockedLabels []string
 }
 
 // ListOption is a functional option for configuring ListModel
@@ -121,6 +124,14 @@ type ListOption func(*ListModel)
 func WithConfig(cfg *config.Config) ListOption {
 	return func(m *ListModel) {
 		m.config = cfg
+	}
+}
+
+// WithBlockedLabels sets the labels used to identify blocked items.
+// If empty, the blocked pane is effectively disabled.
+func WithBlockedLabels(labels []string) ListOption {
+	return func(m *ListModel) {
+		m.blockedLabels = labels
 	}
 }
 
@@ -214,14 +225,20 @@ func (m *ListModel) hasAnyAssignee(item triage.PrioritizedItem) bool {
 	return len(item.Item.Details.Assignees) > 0
 }
 
-// hasBlockedLabel checks if the item has a "blocked" label (case-insensitive)
+// hasBlockedLabel checks if the item has any of the configured blocked labels (case-insensitive).
+// If blockedLabels is empty, always returns false (blocked pane is disabled).
 func (m *ListModel) hasBlockedLabel(item triage.PrioritizedItem) bool {
+	if len(m.blockedLabels) == 0 {
+		return false
+	}
 	if item.Item.Details == nil {
 		return false
 	}
-	for _, label := range item.Item.Details.Labels {
-		if strings.EqualFold(label, "blocked") {
-			return true
+	for _, itemLabel := range item.Item.Details.Labels {
+		for _, blockedLabel := range m.blockedLabels {
+			if strings.EqualFold(itemLabel, blockedLabel) {
+				return true
+			}
 		}
 	}
 	return false

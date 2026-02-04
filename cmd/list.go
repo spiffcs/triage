@@ -295,7 +295,8 @@ func renderOutput(items []triage.PrioritizedItem, opts *Options, cfg *config.Con
 	// If running in a TTY with table format, launch interactive UI
 	if shouldUseTUI(opts) && (format == "" || format == output.FormatTable) {
 		weights := cfg.GetScoreWeights()
-		return tui.RunListUI(items, resolvedStore, weights, currentUser, tui.WithConfig(cfg))
+		blockedLabels := cfg.GetBlockedLabels()
+		return tui.RunListUI(items, resolvedStore, weights, currentUser, tui.WithConfig(cfg), tui.WithBlockedLabels(blockedLabels))
 	}
 
 	weights := cfg.GetScoreWeights()
