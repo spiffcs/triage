@@ -70,7 +70,7 @@ const (
 var prioritySortColumns = []SortColumn{SortPriority, SortUpdated, SortRepo, SortSize, SortCI}
 
 // orphanedSortColumns defines the cycling order for orphaned pane
-var orphanedSortColumns = []SortColumn{SortStale, SortUpdated, SortSize, SortAuthor, SortRepo}
+var orphanedSortColumns = []SortColumn{SortStale, SortUpdated, SortSize, SortAuthor, SortRepo, SortCI}
 
 // assignedSortColumns defines the cycling order for assigned pane
 var assignedSortColumns = []SortColumn{SortUpdated, SortSize, SortAuthor, SortRepo, SortCI}
@@ -484,6 +484,22 @@ func (m *ListModel) sortOrphanedItems() {
 				return a.CommentCount > b.CommentCount
 			}
 			return a.CommentCount < b.CommentCount
+		case SortCI:
+			// Sort by CI status: success > pending > failure > none
+			// Non-PRs are treated as having no CI status
+			prA := a.GetPRDetails()
+			prB := b.GetPRDetails()
+			var ciA, ciB string
+			if prA != nil {
+				ciA = prA.CIStatus
+			}
+			if prB != nil {
+				ciB = prB.CIStatus
+			}
+			orderA := ciStatusOrder[ciA]
+			orderB := ciStatusOrder[ciB]
+			// Lower order value = higher priority (success first when descending)
+			less = orderA > orderB
 		default:
 			less = a.UpdatedAt.Before(b.UpdatedAt)
 		}

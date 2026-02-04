@@ -192,6 +192,15 @@ type orphanedPRNode struct {
 	Reviews struct {
 		Nodes []reviewNode `json:"nodes"`
 	} `json:"reviews"`
+	Commits struct {
+		Nodes []struct {
+			Commit struct {
+				StatusCheckRollup *struct {
+					State string `json:"state"`
+				} `json:"statusCheckRollup"`
+			} `json:"commit"`
+		} `json:"nodes"`
+	} `json:"commits"`
 }
 
 type actorRef struct {
@@ -361,6 +370,7 @@ func parseOrphanedResponse(data json.RawMessage, owner, repo string, opts Orphan
 				Additions:   pr.Additions,
 				Deletions:   pr.Deletions,
 				ReviewState: reviewState,
+				CIStatus:    getOrphanedCIStatus(pr.Commits.Nodes),
 			},
 		})
 	}
@@ -489,4 +499,34 @@ func isOrphaned(updatedAt time.Time, lastTeamActivity *time.Time, consecutiveAut
 	}
 
 	return false
+}
+
+// getOrphanedCIStatus extracts CI status from the commit's status check rollup.
+func getOrphanedCIStatus(commits []struct {
+	Commit struct {
+		StatusCheckRollup *struct {
+			State string `json:"state"`
+		} `json:"statusCheckRollup"`
+	} `json:"commit"`
+}) string {
+	if len(commits) == 0 {
+		return ""
+	}
+
+	commit := commits[0]
+	if commit.Commit.StatusCheckRollup == nil {
+		return ""
+	}
+
+	state := strings.ToLower(commit.Commit.StatusCheckRollup.State)
+	switch state {
+	case "success":
+		return "success"
+	case "failure", "error":
+		return "failure"
+	case "pending":
+		return "pending"
+	default:
+		return ""
+	}
 }
