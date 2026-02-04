@@ -42,84 +42,88 @@ func TestIsLowHangingFruit(t *testing.T) {
 	h := NewHeuristics("testuser", config.DefaultScoreWeights(), config.DefaultQuickWinLabels())
 
 	tests := []struct {
-		name    string
-		details *model.ItemDetails
-		want    bool
+		name string
+		item *model.Item
+		want bool
 	}{
 		{
 			name: "matches good first issue label",
-			details: &model.ItemDetails{
+			item: &model.Item{
 				Labels: []string{"good first issue"},
 			},
 			want: true,
 		},
 		{
 			name: "matches label case insensitive",
-			details: &model.ItemDetails{
+			item: &model.Item{
 				Labels: []string{"Good First Issue"},
 			},
 			want: true,
 		},
 		{
 			name: "matches hyphenated label with space-separated config",
-			details: &model.ItemDetails{
+			item: &model.Item{
 				Labels: []string{"good-first-issue"},
 			},
 			want: true,
 		},
 		{
 			name: "matches help-wanted with hyphens",
-			details: &model.ItemDetails{
+			item: &model.Item{
 				Labels: []string{"Help-Wanted"},
 			},
 			want: true,
 		},
 		{
 			name: "matches documentation label",
-			details: &model.ItemDetails{
+			item: &model.Item{
 				Labels: []string{"Documentation"},
 			},
 			want: true,
 		},
 		{
 			name: "matches typo label",
-			details: &model.ItemDetails{
+			item: &model.Item{
 				Labels: []string{"typo"},
 			},
 			want: true,
 		},
 		{
 			name: "small PR is low hanging fruit",
-			details: &model.ItemDetails{
-				IsPR:         true,
-				ChangedFiles: 2,
-				Additions:    30,
-				Deletions:    10,
+			item: &model.Item{
+				Type: model.ItemTypePullRequest,
+				Details: &model.PRDetails{
+					ChangedFiles: 2,
+					Additions:    30,
+					Deletions:    10,
+				},
 			},
 			want: true,
 		},
 		{
 			name: "large PR is not low hanging fruit",
-			details: &model.ItemDetails{
-				IsPR:         true,
-				ChangedFiles: 10,
-				Additions:    500,
-				Deletions:    200,
+			item: &model.Item{
+				Type: model.ItemTypePullRequest,
+				Details: &model.PRDetails{
+					ChangedFiles: 10,
+					Additions:    500,
+					Deletions:    200,
+				},
 			},
 			want: false,
 		},
 		{
 			name: "no matching labels",
-			details: &model.ItemDetails{
+			item: &model.Item{
 				Labels: []string{"bug", "priority:high"},
 			},
 			want: false,
 		},
 		{
 			name: "empty labels and not small PR",
-			details: &model.ItemDetails{
+			item: &model.Item{
+				Type:   model.ItemTypeIssue,
 				Labels: []string{},
-				IsPR:   false,
 			},
 			want: false,
 		},
@@ -127,7 +131,7 @@ func TestIsLowHangingFruit(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := h.isLowHangingFruit(tt.details)
+			got := h.isLowHangingFruit(tt.item)
 			if got != tt.want {
 				t.Errorf("isLowHangingFruit() = %v, want %v", got, tt.want)
 			}
@@ -164,8 +168,8 @@ func TestDeterminePriority(t *testing.T) {
 			name: "authored PR approved and mergeable is urgent",
 			notification: &model.Item{
 				Reason: model.ReasonAuthor,
-				Details: &model.ItemDetails{
-					IsPR:         true,
+				Type:   model.ItemTypePullRequest,
+				Details: &model.PRDetails{
 					ReviewState:  "approved",
 					Mergeable:    true,
 					ChangedFiles: 10,
@@ -180,8 +184,8 @@ func TestDeterminePriority(t *testing.T) {
 			name: "authored PR with changes requested is important by default (urgency trigger disabled)",
 			notification: &model.Item{
 				Reason: model.ReasonAuthor,
-				Details: &model.ItemDetails{
-					IsPR:         true,
+				Type:   model.ItemTypePullRequest,
+				Details: &model.PRDetails{
 					ReviewState:  "changes_requested",
 					ChangedFiles: 10,
 					Additions:    200,
@@ -195,9 +199,7 @@ func TestDeterminePriority(t *testing.T) {
 			name: "low hanging fruit is quick win",
 			notification: &model.Item{
 				Reason: model.ReasonSubscribed,
-				Details: &model.ItemDetails{
-					Labels: []string{"good first issue"},
-				},
+				Labels: []string{"good first issue"},
 			},
 			score: 0,
 			want:  PriorityQuickWin,
@@ -206,8 +208,8 @@ func TestDeterminePriority(t *testing.T) {
 			name: "author without urgent details is important",
 			notification: &model.Item{
 				Reason: model.ReasonAuthor,
-				Details: &model.ItemDetails{
-					IsPR:         true,
+				Type:   model.ItemTypePullRequest,
+				Details: &model.PRDetails{
 					ReviewState:  "pending",
 					ChangedFiles: 10,
 					Additions:    200,
@@ -345,8 +347,8 @@ func TestDeterminePriorityWithDisabledUrgencyTriggers(t *testing.T) {
 			name: "authored PR approved+mergeable falls through when disabled",
 			notification: &model.Item{
 				Reason: model.ReasonAuthor,
-				Details: &model.ItemDetails{
-					IsPR:         true,
+				Type:   model.ItemTypePullRequest,
+				Details: &model.PRDetails{
 					ReviewState:  "approved",
 					Mergeable:    true,
 					ChangedFiles: 10, // Large PR to avoid quick-win
@@ -361,8 +363,8 @@ func TestDeterminePriorityWithDisabledUrgencyTriggers(t *testing.T) {
 			name: "authored PR changes_requested falls through when disabled",
 			notification: &model.Item{
 				Reason: model.ReasonAuthor,
-				Details: &model.ItemDetails{
-					IsPR:         true,
+				Type:   model.ItemTypePullRequest,
+				Details: &model.PRDetails{
 					ReviewState:  "changes_requested",
 					ChangedFiles: 10, // Large PR to avoid quick-win
 					Additions:    500,
@@ -415,8 +417,8 @@ func TestDeterminePriorityWithPartialUrgencyOverrides(t *testing.T) {
 	t.Run("approved PR falls through when disabled", func(t *testing.T) {
 		notification := &model.Item{
 			Reason: model.ReasonAuthor,
-			Details: &model.ItemDetails{
-				IsPR:         true,
+			Type:   model.ItemTypePullRequest,
+			Details: &model.PRDetails{
 				ReviewState:  "approved",
 				Mergeable:    true,
 				ChangedFiles: 10,
@@ -433,8 +435,8 @@ func TestDeterminePriorityWithPartialUrgencyOverrides(t *testing.T) {
 	t.Run("changes_requested PR not urgent (still disabled)", func(t *testing.T) {
 		notification := &model.Item{
 			Reason: model.ReasonAuthor,
-			Details: &model.ItemDetails{
-				IsPR:         true,
+			Type:   model.ItemTypePullRequest,
+			Details: &model.PRDetails{
 				ReviewState:  "changes_requested",
 				ChangedFiles: 10,
 				Additions:    200,
@@ -502,9 +504,7 @@ func TestDetermineAction(t *testing.T) {
 			name: "state_change closed",
 			notification: &model.Item{
 				Reason: model.ReasonStateChange,
-				Details: &model.ItemDetails{
-					State: "closed",
-				},
+				State:  "closed",
 			},
 			want: "Acknowledge closure",
 		},
@@ -512,9 +512,7 @@ func TestDetermineAction(t *testing.T) {
 			name: "state_change open",
 			notification: &model.Item{
 				Reason: model.ReasonStateChange,
-				Details: &model.ItemDetails{
-					State: "open",
-				},
+				State:  "open",
 			},
 			want: "Check state change",
 		},
@@ -523,14 +521,14 @@ func TestDetermineAction(t *testing.T) {
 			notification: &model.Item{
 				Reason: model.ReasonAuthor,
 			},
-			want: "Check activity on your item",
+			want: "Check activity on your issue",
 		},
 		{
 			name: "author with approved mergeable PR",
 			notification: &model.Item{
 				Reason: model.ReasonAuthor,
-				Details: &model.ItemDetails{
-					IsPR:        true,
+				Type:   model.ItemTypePullRequest,
+				Details: &model.PRDetails{
 					ReviewState: "approved",
 					Mergeable:   true,
 				},

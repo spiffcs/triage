@@ -3,6 +3,7 @@
 package model
 
 import (
+	"encoding/json"
 	"strings"
 	"time"
 )
@@ -71,10 +72,15 @@ const (
 	SubjectDiscussion  SubjectType = "Discussion"
 )
 
+// ItemType represents whether an item is an issue or pull request
+type ItemType string
+
+const (
+	ItemTypeIssue       ItemType = "issue"
+	ItemTypePullRequest ItemType = "pull_request"
+)
+
 // Item represents a GitHub notification with enriched context
-// TODO: there is a way to refactor this where we give the item a type
-// and we switch on that type and have different Detail types depending orphaned
-// the Item type (where it was fetched from)
 type Item struct {
 	ID         string     `json:"id"`
 	Reason     ItemReason `json:"reason"`
@@ -84,8 +90,27 @@ type Item struct {
 	Subject    Subject    `json:"subject"`
 	URL        string     `json:"url"`
 
-	// Enriched data (populated by details fetcher)
-	Details *ItemDetails `json:"details,omitempty"`
+	// Type discriminator for issue vs PR
+	Type ItemType `json:"type,omitempty"`
+
+	// Common fields (promoted from ItemDetails)
+	Number       int        `json:"number,omitempty"`
+	State        string     `json:"state,omitempty"` // open, closed, merged
+	HTMLURL      string     `json:"htmlUrl,omitempty"`
+	CreatedAt    time.Time  `json:"createdAt,omitempty"`
+	ClosedAt     *time.Time `json:"closedAt,omitempty"`
+	Author       string     `json:"author,omitempty"`
+	Assignees    []string   `json:"assignees,omitempty"`
+	Labels       []string   `json:"labels,omitempty"`
+	CommentCount int        `json:"commentCount,omitempty"`
+
+	// Orphaned detection (common to both)
+	AuthorAssociation         string     `json:"authorAssociation,omitempty"`
+	LastTeamActivityAt        *time.Time `json:"lastTeamActivityAt,omitempty"`
+	ConsecutiveAuthorComments int        `json:"consecutiveAuthorComments,omitempty"`
+
+	// Type-specific details (interface)
+	Details Details `json:"details,omitempty"`
 }
 
 // Repository represents a GitHub repository
@@ -102,4 +127,37 @@ type Subject struct {
 	Title string      `json:"title"`
 	URL   string      `json:"url"`
 	Type  SubjectType `json:"type"`
+}
+
+// UnmarshalJSON implements custom JSON unmarshaling to handle polymorphic Details
+func (i *Item) UnmarshalJSON(data []byte) error {
+	type Alias Item
+	aux := &struct {
+		Details json.RawMessage `json:"details,omitempty"`
+		*Alias
+	}{Alias: (*Alias)(i)}
+
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+
+	if len(aux.Details) == 0 || string(aux.Details) == "null" {
+		return nil
+	}
+
+	switch i.Type {
+	case ItemTypePullRequest:
+		var pr PRDetails
+		if err := json.Unmarshal(aux.Details, &pr); err != nil {
+			return err
+		}
+		i.Details = &pr
+	case ItemTypeIssue:
+		var issue IssueDetails
+		if err := json.Unmarshal(aux.Details, &issue); err != nil {
+			return err
+		}
+		i.Details = &issue
+	}
+	return nil
 }

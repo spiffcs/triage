@@ -52,7 +52,7 @@ func renderListView(m ListModel) string {
 	if len(items) == 0 {
 		switch m.activePane {
 		case paneOrphaned:
-			b.WriteString(renderOrphanedEmptyState())
+			b.WriteString(m.renderOrphanedEmptyState())
 		case paneAssigned:
 			b.WriteString(renderAssignedEmptyState())
 		case paneBlocked:
@@ -158,7 +158,17 @@ func renderTabBar(activePane pane, priorityCount, orphanedCount, assignedCount, 
 }
 
 // renderOrphanedEmptyState renders the empty state message for the orphaned pane
-func renderOrphanedEmptyState() string {
+func (m ListModel) renderOrphanedEmptyState() string {
+	// Check if orphaned repos are configured
+	if m.config == nil || m.config.Orphaned == nil || len(m.config.Orphaned.Repos) == 0 {
+		return listEmptyStyle.Render(
+			"Orphaned pane not configured.\n\n" +
+				"Add repos to monitor in ~/.config/triage/config.yaml:\n\n" +
+				"  orphaned:\n" +
+				"    repos:\n" +
+				"      - owner/repo\n" +
+				"    stale_days: 7")
+	}
 	return listEmptyStyle.Render("No orphaned contributions.\nOrphaned items are external PRs/issues that need team attention.")
 }
 
@@ -222,7 +232,7 @@ func renderHeader(hideAssignedCI, hidePriority, showAuthor bool) string {
 			"Age",
 		))
 	}
-	// Assigned pane: Type, Author, Assigned, Repo, Title, Status, Age
+	// Assigned pane: Type, Author, Assigned, Repo, Title, Status, Updated
 	if hidePriority && showAuthor {
 		return listHeaderStyle.Render(fmt.Sprintf(
 			"  %-*s  %-*s  %-*s  %-*s  %-*s  %-*s  %s",
@@ -232,10 +242,10 @@ func renderHeader(hideAssignedCI, hidePriority, showAuthor bool) string {
 			constants.ColRepo, "Repository",
 			constants.ColTitle, "Title",
 			constants.ColStatus, "Status",
-			"Age",
+			"Updated",
 		))
 	}
-	// Priority pane: Priority, Type, Assigned, CI, Repo, Title, Status, Age
+	// Priority pane: Priority, Type, Assigned, CI, Repo, Title, Status, Updated
 	return listHeaderStyle.Render(fmt.Sprintf(
 		"  %-*s  %-*s  %-*s  %-*s  %-*s  %-*s  %-*s  %s",
 		constants.ColPriority, "Priority",
@@ -245,7 +255,7 @@ func renderHeader(hideAssignedCI, hidePriority, showAuthor bool) string {
 		constants.ColRepo, "Repository",
 		constants.ColTitle, "Title",
 		constants.ColStatus, "Status",
-		"Age",
+		"Updated",
 	))
 }
 
@@ -259,11 +269,11 @@ func tableWidth(hideAssignedCI, hidePriority, showAuthor bool) int {
 	if hideAssignedCI {
 		return 2 + priorityWidth + constants.ColType + 2 + constants.ColAuthor + 2 + constants.ColRepo + 2 + constants.ColTitle + 2 + constants.ColStatus + 2 + colSignal + 2 + constants.ColAge
 	}
-	// Assigned pane: Type, Author, Assigned, Repo, Title, Status, Age
+	// Assigned pane: Type, Author, Assigned, Repo, Title, Status, Updated
 	if hidePriority && showAuthor {
 		return 2 + constants.ColType + 2 + constants.ColAuthor + 2 + constants.ColAssigned + 2 + constants.ColRepo + 2 + constants.ColTitle + 2 + constants.ColStatus + 2 + constants.ColAge
 	}
-	// Priority pane: Priority, Type, Assigned, CI, Repo, Title, Status, Age
+	// Priority pane: Priority, Type, Assigned, CI, Repo, Title, Status, Updated
 	return 2 + priorityWidth + constants.ColType + 2 + constants.ColAssigned + 2 + constants.ColCI + 2 + constants.ColRepo + 2 + constants.ColTitle + 2 + constants.ColStatus + 2 + constants.ColAge
 }
 
@@ -283,7 +293,7 @@ func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, pr
 	}
 
 	// Type with color
-	isPR := (n.Details != nil && n.Details.IsPR) || n.Subject.Type == "PullRequest"
+	isPR := n.Type == model.ItemTypePullRequest || n.Subject.Type == model.SubjectPullRequest
 	var typeStr string
 	if isPR {
 		typeStr = applyStyle(listTypePRStyle, "PR", selected)
@@ -312,11 +322,11 @@ func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, pr
 		HotTopicThreshold: hotTopicThreshold,
 		IsQuickWin:        item.Priority == triage.PriorityQuickWin,
 		CurrentUser:       currentUser,
+		CommentCount:      n.CommentCount,
+		IsPR:              isPR,
 	}
-	if n.Details != nil {
-		iconInput.CommentCount = n.Details.CommentCount
-		iconInput.IsPR = n.Details.IsPR
-		iconInput.LastCommenter = n.Details.LastCommenter
+	if issueDetails := n.GetIssueDetails(); issueDetails != nil {
+		iconInput.LastCommenter = issueDetails.LastCommenter
 	}
 
 	iconType := format.DetermineIcon(iconInput)
@@ -356,12 +366,12 @@ func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, pr
 	var row string
 	if hideAssignedCI {
 		// Orphaned view: no Assigned/CI, but add Signal and Author columns
-		signal, signalWidth := renderSignal(n.Details, selected)
+		signal, signalWidth := renderSignal(&n, selected)
 		signal = format.PadRight(signal, signalWidth, colSignal)
 
 		author := "─"
-		if n.Details != nil && n.Details.Author != "" {
-			author, _ = format.TruncateToWidth(n.Details.Author, constants.ColAuthor)
+		if n.Author != "" {
+			author, _ = format.TruncateToWidth(n.Author, constants.ColAuthor)
 		}
 		author = format.PadRight(author, len(author), constants.ColAuthor)
 
@@ -379,12 +389,12 @@ func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, pr
 	} else if hidePriority && showAuthor {
 		// Assigned view: Author and Assigned columns, no CI
 		author := "─"
-		if n.Details != nil && n.Details.Author != "" {
-			author, _ = format.TruncateToWidth(n.Details.Author, constants.ColAuthor)
+		if n.Author != "" {
+			author, _ = format.TruncateToWidth(n.Author, constants.ColAuthor)
 		}
 		author = format.PadRight(author, len(author), constants.ColAuthor)
 
-		assigned, assignedWidth := renderAssigned(n.Details, selected)
+		assigned, assignedWidth := renderAssigned(&n, selected)
 		assigned = format.PadRight(assigned, assignedWidth, constants.ColAssigned)
 
 		row = fmt.Sprintf("%s%s  %s  %s  %s  %s  %s  %s",
@@ -399,10 +409,10 @@ func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, pr
 		)
 	} else {
 		// Priority view: Assigned and CI columns
-		assigned, assignedWidth := renderAssigned(n.Details, selected)
+		assigned, assignedWidth := renderAssigned(&n, selected)
 		assigned = format.PadRight(assigned, assignedWidth, constants.ColAssigned)
 
-		ci, ciWidth := renderCI(n.Details, isPR, selected)
+		ci, ciWidth := renderCI(&n, isPR, selected)
 		ci = format.PadRight(ci, ciWidth, constants.ColCI)
 
 		row = fmt.Sprintf("%s%s%s  %s  %s  %s  %s  %s  %s",
@@ -426,20 +436,16 @@ func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, pr
 
 // renderSignal renders the signal column showing why an item needs attention
 // Returns colored text and visible width
-func renderSignal(d *model.ItemDetails, selected bool) (string, int) {
-	if d == nil {
-		return "─", 1
-	}
-
+func renderSignal(n *model.Item, selected bool) (string, int) {
 	var coloredParts []string
 	var plainWidth int
 
 	// Days since team activity - color based on age
 	var days int
-	if d.LastTeamActivityAt != nil {
-		days = int(time.Since(*d.LastTeamActivityAt).Hours() / 24)
-	} else if !d.CreatedAt.IsZero() {
-		days = int(time.Since(d.CreatedAt).Hours() / 24)
+	if n.LastTeamActivityAt != nil {
+		days = int(time.Since(*n.LastTeamActivityAt).Hours() / 24)
+	} else if !n.CreatedAt.IsZero() {
+		days = int(time.Since(n.CreatedAt).Hours() / 24)
 	}
 
 	if days > 0 {
@@ -457,12 +463,12 @@ func renderSignal(d *model.ItemDetails, selected bool) (string, int) {
 	}
 
 	// Consecutive unanswered comments - color based on count
-	if d.ConsecutiveAuthorComments >= 2 {
-		text := fmt.Sprintf("%d waiting", d.ConsecutiveAuthorComments)
+	if n.ConsecutiveAuthorComments >= 2 {
+		text := fmt.Sprintf("%d waiting", n.ConsecutiveAuthorComments)
 		var coloredText string
-		if d.ConsecutiveAuthorComments >= 4 {
+		if n.ConsecutiveAuthorComments >= 4 {
 			coloredText = applyStyle(listSignalCriticalStyle, text, selected)
-		} else if d.ConsecutiveAuthorComments >= 3 {
+		} else if n.ConsecutiveAuthorComments >= 3 {
 			coloredText = applyStyle(listSignalWarningStyle, text, selected)
 		} else {
 			coloredText = applyStyle(listSignalInfoStyle, text, selected)
@@ -503,14 +509,15 @@ func renderPriority(p triage.PriorityLevel, selected bool) (string, int) {
 
 // renderCI renders the CI status column
 // Returns the colored string and its visible width
-func renderCI(d *model.ItemDetails, isPR bool, selected bool) (string, int) {
+func renderCI(n *model.Item, isPR bool, selected bool) (string, int) {
 	if !isPR {
 		return "─", 1 // dash for non-PRs
 	}
-	if d == nil {
+	pr := n.GetPRDetails()
+	if pr == nil {
 		return "─", 1 // dash if no details
 	}
-	switch d.CIStatus {
+	switch pr.CIStatus {
 	case constants.CIStatusSuccess:
 		return applyStyle(listCISuccessStyle, "✓", selected), 1
 	case constants.CIStatusFailure:
@@ -524,16 +531,16 @@ func renderCI(d *model.ItemDetails, isPR bool, selected bool) (string, int) {
 
 // renderAssigned renders the Assigned column using shared logic
 // Returns the string and its visible width
-func renderAssigned(d *model.ItemDetails, selected bool) (string, int) {
-	if d == nil {
-		return "─", 1
-	}
+func renderAssigned(n *model.Item, selected bool) (string, int) {
+	pr := n.GetPRDetails()
 
 	input := format.AssignedInput{
-		Assignees:          d.Assignees,
-		IsPR:               d.IsPR,
-		LatestReviewer:     d.LatestReviewer,
-		RequestedReviewers: d.RequestedReviewers,
+		Assignees: n.Assignees,
+		IsPR:      n.IsPR(),
+	}
+	if pr != nil {
+		input.LatestReviewer = pr.LatestReviewer
+		input.RequestedReviewers = pr.RequestedReviewers
 	}
 
 	assigned := format.GetAssignedUser(input)
@@ -550,18 +557,13 @@ func renderAssigned(d *model.ItemDetails, selected bool) (string, int) {
 // renderStatus renders the status column with colors
 // Returns the colored string and its visible width
 func renderStatus(n model.Item, sizeXS, sizeS, sizeM, sizeL int, selected bool) (string, int) {
-	if n.Details == nil {
-		reason := string(n.Reason)
-		return reason, len(reason)
-	}
+	pr := n.GetPRDetails()
 
-	d := n.Details
-
-	if d.IsPR {
+	if n.IsPR() && pr != nil {
 		var coloredParts []string
 		var plainWidth int
 
-		switch d.ReviewState {
+		switch pr.ReviewState {
 		case constants.ReviewStateApproved:
 			coloredParts = append(coloredParts, applyStyle(listApprovedStyle, "+ APPROVED", selected))
 			plainWidth += 10
@@ -573,7 +575,7 @@ func renderStatus(n model.Item, sizeXS, sizeS, sizeM, sizeL int, selected bool) 
 			plainWidth += 8
 		}
 
-		totalChanges := d.Additions + d.Deletions
+		totalChanges := pr.Additions + pr.Deletions
 		if totalChanges > 0 {
 			thresholds := format.PRSizeThresholds{
 				XS: sizeXS,
@@ -581,15 +583,15 @@ func renderStatus(n model.Item, sizeXS, sizeS, sizeM, sizeL int, selected bool) 
 				M:  sizeM,
 				L:  sizeL,
 			}
-			sizeResult := format.CalculatePRSize(d.Additions, d.Deletions, thresholds)
+			sizeResult := format.CalculatePRSize(pr.Additions, pr.Deletions, thresholds)
 			sizeColored := colorPRSizeTUI(sizeResult.Size, selected)
-			sizeStr := fmt.Sprintf("%s+%d/-%d", sizeColored, d.Additions, d.Deletions)
+			sizeStr := fmt.Sprintf("%s+%d/-%d", sizeColored, pr.Additions, pr.Deletions)
 			coloredParts = append(coloredParts, sizeStr)
 			if plainWidth > 0 {
 				plainWidth += 1 // space
 			}
 			// Calculate actual visible width of size string
-			plainWidth += len(fmt.Sprintf("%s+%d/-%d", string(sizeResult.Size), d.Additions, d.Deletions))
+			plainWidth += len(fmt.Sprintf("%s+%d/-%d", string(sizeResult.Size), pr.Additions, pr.Deletions))
 		}
 
 		if len(coloredParts) > 0 {
@@ -597,8 +599,8 @@ func renderStatus(n model.Item, sizeXS, sizeS, sizeM, sizeL int, selected bool) 
 		}
 	}
 
-	if d.CommentCount > 0 {
-		text := fmt.Sprintf("%d comments", d.CommentCount)
+	if n.CommentCount > 0 {
+		text := fmt.Sprintf("%d comments", n.CommentCount)
 		return text, len(text)
 	}
 

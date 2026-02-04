@@ -26,8 +26,8 @@ type CacheKey struct {
 // This interface enables mocking the cache in unit tests.
 type Cacher interface {
 	// Item details cache
-	Get(key CacheKey, updatedAt time.Time) (*model.ItemDetails, bool)
-	Set(key CacheKey, updatedAt time.Time, details *model.ItemDetails) error
+	Get(key CacheKey, updatedAt time.Time) (*model.Item, bool)
+	Set(key CacheKey, updatedAt time.Time, item *model.Item) error
 	Clear() error
 
 	// Unified list cache
@@ -73,9 +73,9 @@ func (c *Cache) cacheKeyString(key CacheKey) string {
 	)
 }
 
-// Get retrieves cached details for an item.
+// Get retrieves cached item data for an item.
 // The caller provides the cache key and the item's updated time for invalidation.
-func (c *Cache) Get(key CacheKey, updatedAt time.Time) (*model.ItemDetails, bool) {
+func (c *Cache) Get(key CacheKey, updatedAt time.Time) (*model.Item, bool) {
 	if key.Number == 0 {
 		return nil, false
 	}
@@ -109,18 +109,18 @@ func (c *Cache) Get(key CacheKey, updatedAt time.Time) (*model.ItemDetails, bool
 		return nil, false
 	}
 
-	return entry.Details, true
+	return &entry.Item, true
 }
 
-// Set caches details for an item.
+// Set caches item data for an item.
 // The caller provides the cache key and the item's updated time.
-func (c *Cache) Set(key CacheKey, updatedAt time.Time, details *model.ItemDetails) error {
-	if key.Number == 0 || details == nil {
+func (c *Cache) Set(key CacheKey, updatedAt time.Time, item *model.Item) error {
+	if key.Number == 0 || item == nil {
 		return nil
 	}
 
 	entry := DetailsCacheEntry{
-		Details:   details,
+		Item:      *item,
 		CachedAt:  time.Now(),
 		UpdatedAt: updatedAt,
 		Version:   Version,
@@ -174,7 +174,7 @@ func ttlForListType(listType ListType) time.Duration {
 	case ListTypeNotifications:
 		return constants.NotificationsCacheTTL
 	case ListTypeOrphaned:
-		return 15 * time.Minute
+		return constants.OrphanedCacheTTL
 	default:
 		// review-requested, authored, assigned-issues
 		return constants.ItemListCacheTTL
@@ -216,8 +216,12 @@ func (c *Cache) GetList(username string, listType ListType, opts ListOptions) (*
 	// Type-specific validation
 	switch listType {
 	case ListTypeNotifications, ListTypeOrphaned:
-		// If user's since time is earlier than cached, require full refresh
-		if opts.SinceTime.Before(entry.SinceTime) {
+		// Truncate both times to hour boundary for comparison
+		// This avoids cache misses due to small time differences between runs
+		cachedHour := entry.SinceTime.Truncate(time.Hour)
+		requestedHour := opts.SinceTime.Truncate(time.Hour)
+		// If user's since time is earlier than cached (by hour), require full refresh
+		if requestedHour.Before(cachedHour) {
 			return nil, false
 		}
 	}

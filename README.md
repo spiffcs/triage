@@ -4,6 +4,26 @@ A terminal UI that helps you prioritize GitHub work. It pulls together unread no
 
 ![Demo](.github/demo.png)
 
+## Installation
+
+```bash
+curl -sSfL https://tools.aithirne.com/triage | sudo sh -s -- -b /usr/local/bin
+```
+
+Or install with Go:
+
+```bash
+go install github.com/spiffcs/triage@latest
+```
+
+Or build from source:
+
+```bash
+git clone https://github.com/spiffcs/triage.git
+cd triage
+go build -o triage ./cmd/triage
+```
+
 ## Quick Start
 
 ```bash
@@ -34,26 +54,6 @@ The default interface is a multi-pane terminal UI with keyboard navigation. The 
 | `q` / `Esc` | Quit |
 
 The TUI displays color-coded priorities, PR review status, and size indicators (XS/S/M/L/XL based on lines changed). Items marked as done are persisted and will not reappear unless they have new activity.
-
-## Installation
-
-```bash
-curl -sSfL https://tools.aithirne.com/triage | sudo sh -s -- -b /usr/local/bin
-```
-
-Or install with Go:
-
-```bash
-go install github.com/spiffcs/triage@latest
-```
-
-Or build from source:
-
-```bash
-git clone https://github.com/spiffcs/triage.git
-cd triage
-go build -o triage ./cmd/triage
-```
 
 ## Usage
 
@@ -111,9 +111,9 @@ An item is flagged as orphaned when:
 ### Cache Management
 
 The tool uses a multi-tier caching strategy to reduce API usage:
-- **Item details** (issue/PR metadata): cached for 24 hours
-- **Notification lists**: cached for 1 hour
-- **Orphaned lists**: cached for 15 minutes
+- **Items** (full issue/PR data): cached for 24 hours
+- **Notification lists**: cached for 30 minutes
+- **Orphaned lists**: cached for 24 hours
 - **PR/Issue lists** (review-requested PRs, authored PRs, assigned issues): cached for 5 minutes
 
 ```bash

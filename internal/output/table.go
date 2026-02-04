@@ -66,7 +66,8 @@ func (f *TableFormatter) Format(items []triage.PrioritizedItem, w io.Writer) err
 
 		// Determine type indicator
 		typeStr := "ISS"
-		if (n.Details != nil && n.Details.IsPR) || n.Subject.Type == "PullRequest" {
+		isPR := n.Type == model.ItemTypePullRequest || n.Subject.Type == model.SubjectPullRequest
+		if isPR {
 			typeStr = "PR"
 		}
 
@@ -81,11 +82,11 @@ func (f *TableFormatter) Format(items []triage.PrioritizedItem, w io.Writer) err
 			HotTopicThreshold: f.HotTopicThreshold,
 			IsQuickWin:        item.Priority == triage.PriorityQuickWin,
 			CurrentUser:       f.CurrentUser,
+			CommentCount:      n.CommentCount,
+			IsPR:              isPR,
 		}
-		if n.Details != nil {
-			iconInput.CommentCount = n.Details.CommentCount
-			iconInput.IsPR = n.Details.IsPR
-			iconInput.LastCommenter = n.Details.LastCommenter
+		if issueDetails := n.GetIssueDetails(); issueDetails != nil {
+			iconInput.LastCommenter = issueDetails.LastCommenter
 		}
 
 		iconType := format.DetermineIcon(iconInput)
@@ -107,9 +108,10 @@ func (f *TableFormatter) Format(items []triage.PrioritizedItem, w io.Writer) err
 		visibleTitleLen += iconDisplayWidth
 
 		// Add state indicator for closed items
-		if n.Details != nil && (n.Details.State == "closed" || n.Details.Merged) {
+		pr := n.GetPRDetails()
+		if n.State == "closed" || n.State == "merged" || (pr != nil && pr.Merged) {
 			suffix := " [closed]"
-			if n.Details.Merged {
+			if (pr != nil && pr.Merged) || n.State == "merged" {
 				suffix = " [merged]"
 			}
 			suffixWidth := format.DisplayWidth(suffix)
@@ -134,8 +136,8 @@ func (f *TableFormatter) Format(items []triage.PrioritizedItem, w io.Writer) err
 
 		// Get URL for title hyperlink
 		titleURL := ""
-		if n.Details != nil && n.Details.HTMLURL != "" {
-			titleURL = n.Details.HTMLURL
+		if n.HTMLURL != "" {
+			titleURL = n.HTMLURL
 		} else {
 			titleURL = n.Repository.HTMLURL
 		}
@@ -149,7 +151,7 @@ func (f *TableFormatter) Format(items []triage.PrioritizedItem, w io.Writer) err
 		priorityStr := format.PadRight(coloredPriority, format.DisplayWidth(coloredPriority), constants.ColPriority)
 
 		// Format assigned column using shared logic
-		assigned := formatAssigned(n.Details, constants.ColAssigned)
+		assigned := formatAssigned(&n, constants.ColAssigned)
 		assignedWidth := format.DisplayWidth(assigned)
 		assigned = format.PadRight(assigned, assignedWidth, constants.ColAssigned)
 
@@ -191,20 +193,15 @@ type statusResult struct {
 // formatStatus builds the status column showing review state, PR size, or activity
 // Returns the formatted string and its visible width (excluding ANSI codes)
 func (f *TableFormatter) formatStatus(n model.Item) statusResult {
-	if n.Details == nil {
-		reason := string(n.Reason)
-		return statusResult{reason, len(reason)}
-	}
-
-	d := n.Details
+	pr := n.GetPRDetails()
 
 	// For PRs, show review state and size
-	if d.IsPR {
+	if n.IsPR() && pr != nil {
 		var textParts []string
 		var plainParts []string
 
 		// Review state with color (using ASCII symbols for consistent terminal width)
-		switch d.ReviewState {
+		switch pr.ReviewState {
 		case constants.ReviewStateApproved:
 			textParts = append(textParts, color.GreenString("+ APPROVED"))
 			plainParts = append(plainParts, "+ APPROVED")
@@ -217,7 +214,7 @@ func (f *TableFormatter) formatStatus(n model.Item) statusResult {
 		}
 
 		// PR size (compact format) using shared logic
-		totalChanges := d.Additions + d.Deletions
+		totalChanges := pr.Additions + pr.Deletions
 		if totalChanges > 0 {
 			thresholds := format.PRSizeThresholds{
 				XS: f.PRSizeXS,
@@ -225,9 +222,9 @@ func (f *TableFormatter) formatStatus(n model.Item) statusResult {
 				M:  f.PRSizeM,
 				L:  f.PRSizeL,
 			}
-			sizeResult := format.CalculatePRSize(d.Additions, d.Deletions, thresholds)
+			sizeResult := format.CalculatePRSize(pr.Additions, pr.Deletions, thresholds)
 			sizeColored := colorPRSize(sizeResult.Size)
-			sizeText := fmt.Sprintf("%s+%d/-%d", sizeColored, d.Additions, d.Deletions)
+			sizeText := fmt.Sprintf("%s+%d/-%d", sizeColored, pr.Additions, pr.Deletions)
 			textParts = append(textParts, sizeText)
 			plainParts = append(plainParts, sizeResult.Formatted)
 		}
@@ -240,13 +237,13 @@ func (f *TableFormatter) formatStatus(n model.Item) statusResult {
 	}
 
 	// For issues or PRs without specific status, show comment activity
-	if d.CommentCount > 0 {
-		text := fmt.Sprintf("%d comments", d.CommentCount)
+	if n.CommentCount > 0 {
+		text := fmt.Sprintf("%d comments", n.CommentCount)
 		return statusResult{text, len(text)}
 	}
 
 	// For items with assignees but no comments, show "assign"
-	if len(d.Assignees) > 0 {
+	if len(n.Assignees) > 0 {
 		return statusResult{"assign", 6}
 	}
 
@@ -283,16 +280,16 @@ func colorPriority(p triage.PriorityLevel) string {
 
 // formatAssigned returns the assigned user for display
 // Priority: assignee > latest reviewer > requested reviewer
-func formatAssigned(d *model.ItemDetails, maxWidth int) string {
-	if d == nil {
-		return "─"
-	}
+func formatAssigned(n *model.Item, maxWidth int) string {
+	pr := n.GetPRDetails()
 
 	input := format.AssignedInput{
-		Assignees:          d.Assignees,
-		IsPR:               d.IsPR,
-		LatestReviewer:     d.LatestReviewer,
-		RequestedReviewers: d.RequestedReviewers,
+		Assignees: n.Assignees,
+		IsPR:      n.IsPR(),
+	}
+	if pr != nil {
+		input.LatestReviewer = pr.LatestReviewer
+		input.RequestedReviewers = pr.RequestedReviewers
 	}
 
 	assigned := format.GetAssignedUser(input)
