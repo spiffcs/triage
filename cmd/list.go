@@ -412,6 +412,11 @@ func applyFilters(items []triage.PrioritizedItem, cfg *config.Config, resolvedSt
 		items = triage.FilterByExcludedAuthors(items, cfg.ExcludeAuthors)
 	}
 
+	// Filter out excluded repositories
+	if len(cfg.ExcludeRepos) > 0 {
+		items = triage.FilterByExcludedRepos(items, cfg.ExcludeRepos)
+	}
+
 	// Filter out resolved items (that haven't had new activity)
 	if resolvedStore != nil {
 		items = triage.FilterResolved(items, resolvedStore)

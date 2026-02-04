@@ -11,6 +11,12 @@ import (
 	"github.com/spiffcs/triage/config"
 )
 
+// Config output format constants.
+const (
+	formatYAML = "yaml"
+	formatJSON = "json"
+)
+
 // NewCmdConfig creates the config command with subcommands.
 func NewCmdConfig() *cobra.Command {
 	var outputFormat string
@@ -211,27 +217,29 @@ func runConfigPath(_ *cobra.Command, _ []string) error {
 	return nil
 }
 
-func runConfigDefaults(format string) error {
-	cfg := config.DefaultConfig()
-
+// printConfig outputs the given config in the specified format.
+func printConfig(cfg *config.Config, format string) error {
 	switch format {
-	case "yaml":
+	case formatYAML:
 		yamlStr, err := cfg.ToYAML()
 		if err != nil {
 			return err
 		}
 		fmt.Print(yamlStr)
-	case "json":
+	case formatJSON:
 		data, err := json.MarshalIndent(cfg, "", "  ")
 		if err != nil {
 			return fmt.Errorf("failed to marshal config to JSON: %w", err)
 		}
 		fmt.Println(string(data))
 	default:
-		return fmt.Errorf("invalid format: %s (must be yaml or json)", format)
+		return fmt.Errorf("invalid format: %s (must be %s or %s)", format, formatYAML, formatJSON)
 	}
-
 	return nil
+}
+
+func runConfigDefaults(format string) error {
+	return printConfig(config.DefaultConfig(), format)
 }
 
 func runConfigShow(_ *cobra.Command, _ []string, format string) error {
@@ -239,25 +247,7 @@ func runConfigShow(_ *cobra.Command, _ []string, format string) error {
 	if err != nil {
 		return err
 	}
-
-	switch format {
-	case "yaml":
-		yamlStr, err := cfg.ToYAML()
-		if err != nil {
-			return err
-		}
-		fmt.Print(yamlStr)
-	case "json":
-		data, err := json.MarshalIndent(cfg, "", "  ")
-		if err != nil {
-			return fmt.Errorf("failed to marshal config to JSON: %w", err)
-		}
-		fmt.Println(string(data))
-	default:
-		return fmt.Errorf("invalid format: %s (must be yaml or json)", format)
-	}
-
-	return nil
+	return printConfig(cfg, format)
 }
 
 func runConfigSet(_ *cobra.Command, args []string) error {

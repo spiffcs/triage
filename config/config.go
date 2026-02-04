@@ -453,17 +453,11 @@ func mergeConfig(global, local *Config) *Config {
 		result.BlockedLabels = global.BlockedLabels
 	}
 
-	// Merge BaseScores
-	result.BaseScores = mergeBaseScores(global.BaseScores, local.BaseScores)
-
-	// Merge Scoring
-	result.Scoring = mergeScoringOverrides(global.Scoring, local.Scoring)
-
-	// Merge PR
-	result.PR = mergePROverrides(global.PR, local.PR)
-
-	// Merge Urgency
-	result.Urgency = mergeUrgencyOverrides(global.Urgency, local.Urgency)
+	// Merge pointer struct sections
+	result.BaseScores = mergePointerStruct(global.BaseScores, local.BaseScores)
+	result.Scoring = mergePointerStruct(global.Scoring, local.Scoring)
+	result.PR = mergePointerStruct(global.PR, local.PR)
+	result.Urgency = mergePointerStruct(global.Urgency, local.Urgency)
 
 	// Merge Orphaned
 	result.Orphaned = mergeOrphanedConfig(global.Orphaned, local.Orphaned)
@@ -517,22 +511,6 @@ func mergePointerStruct[T any](global, local *T) *T {
 	}
 
 	return result
-}
-
-func mergeBaseScores(global, local *BaseScoreOverrides) *BaseScoreOverrides {
-	return mergePointerStruct(global, local)
-}
-
-func mergeScoringOverrides(global, local *ScoringOverrides) *ScoringOverrides {
-	return mergePointerStruct(global, local)
-}
-
-func mergePROverrides(global, local *PROverrides) *PROverrides {
-	return mergePointerStruct(global, local)
-}
-
-func mergeUrgencyOverrides(global, local *UrgencyOverrides) *UrgencyOverrides {
-	return mergePointerStruct(global, local)
 }
 
 func mergeOrphanedConfig(global, local *OrphanedConfig) *OrphanedConfig {
@@ -668,8 +646,8 @@ func (c *Config) SaveUIPreferences() error {
 	return nil
 }
 
-// Save saves the configuration to disk
-func (c *Config) Save() error {
+// save saves the configuration to disk.
+func (c *Config) save() error {
 	configDir := defaultConfigDir()
 
 	// Create config directory if it doesn't exist
@@ -696,20 +674,10 @@ func (c *Config) GetGitHubToken() string {
 	return os.Getenv("GITHUB_TOKEN")
 }
 
-// SetDefaultFormat sets the default output format and saves
+// SetDefaultFormat sets the default output format and saves.
 func (c *Config) SetDefaultFormat(format string) error {
 	c.DefaultFormat = format
-	return c.Save()
-}
-
-// IsRepoExcluded checks if a repo is in the exclude list
-func (c *Config) IsRepoExcluded(repoFullName string) bool {
-	for _, excluded := range c.ExcludeRepos {
-		if excluded == repoFullName {
-			return true
-		}
-	}
-	return false
+	return c.save()
 }
 
 // DefaultQuickWinLabels returns the default labels that indicate quick wins.

@@ -4,7 +4,6 @@ package model
 
 import (
 	"encoding/json"
-	"strings"
 	"time"
 )
 
@@ -51,15 +50,6 @@ var AllItemReasons = []ItemReason{
 	ReasonCIActivity,
 	ReasonManual,
 	ReasonOrphaned,
-}
-
-// ItemReasonsString returns a comma-separated string of all valid reasons.
-func ItemReasonsString() string {
-	reasons := make([]string, len(AllItemReasons))
-	for i, r := range AllItemReasons {
-		reasons[i] = string(r)
-	}
-	return strings.Join(reasons, ", ")
 }
 
 // SubjectType represents the type of notification subject

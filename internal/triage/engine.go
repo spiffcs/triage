@@ -192,6 +192,28 @@ func FilterByExcludedAuthors(items []PrioritizedItem, excludedAuthors []string) 
 	return filtered
 }
 
+// FilterByExcludedRepos removes items from repositories in the exclude list.
+func FilterByExcludedRepos(items []PrioritizedItem, excludedRepos []string) []PrioritizedItem {
+	if len(excludedRepos) == 0 {
+		return items
+	}
+
+	// Build a set for O(1) lookup
+	excludeSet := make(map[string]bool, len(excludedRepos))
+	for _, repo := range excludedRepos {
+		excludeSet[repo] = true
+	}
+
+	filtered := make([]PrioritizedItem, 0, len(items))
+	for _, item := range items {
+		if excludeSet[item.Repository.FullName] {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+	return filtered
+}
+
 // FilterByGreenCI keeps only PRs with passing CI status.
 // Issues are excluded since they don't have CI.
 func FilterByGreenCI(items []PrioritizedItem) []PrioritizedItem {

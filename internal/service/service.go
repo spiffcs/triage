@@ -429,7 +429,7 @@ func buildCacheKey(item *model.Item) (cache.Key, bool) {
 		return cache.Key{}, false
 	}
 
-	number, err := ExtractIssueNumber(item.Subject.URL)
+	number, err := ghclient.ExtractIssueNumber(item.Subject.URL)
 	if err != nil {
 		return cache.Key{}, false
 	}

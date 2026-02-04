@@ -121,7 +121,7 @@ func (c *Client) EnrichItemsGraphQL(ctx context.Context, items []model.Item, tok
 			continue
 		}
 
-		number, err := extractIssueNumber(n.Subject.URL)
+		number, err := ExtractIssueNumber(n.Subject.URL)
 		if err != nil {
 			log.Debug("failed to extract issue number", "url", n.Subject.URL, "error", err)
 			continue
@@ -765,10 +765,10 @@ func applyIssueResult(n *model.Item, result *IssueGraphQLResult) {
 	}
 }
 
-// extractIssueNumber extracts the issue/PR number from a GitHub API URL.
+// ExtractIssueNumber extracts the issue/PR number from a GitHub API URL.
 // URL format: https://api.github.com/repos/owner/repo/issues/123
 // or: https://api.github.com/repos/owner/repo/pulls/123
-func extractIssueNumber(apiURL string) (int, error) {
+func ExtractIssueNumber(apiURL string) (int, error) {
 	parts := strings.Split(apiURL, "/")
 	if len(parts) < 2 {
 		return 0, fmt.Errorf("invalid API URL format: %s", apiURL)

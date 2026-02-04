@@ -38,7 +38,7 @@ func newCmdCacheStats() *cobra.Command {
 	}
 }
 
-func runCacheClear(cmd *cobra.Command, args []string) error {
+func runCacheClear(_ *cobra.Command, _ []string) error {
 	c, err := cache.NewCache()
 	if err != nil {
 		return fmt.Errorf("failed to access cache: %w", err)
@@ -52,7 +52,7 @@ func runCacheClear(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func runCacheStats(cmd *cobra.Command, args []string) error {
+func runCacheStats(_ *cobra.Command, _ []string) error {
 	c, err := cache.NewCache()
 	if err != nil {
 		return fmt.Errorf("failed to access cache: %w", err)
