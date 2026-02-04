@@ -10,6 +10,14 @@ const (
 	// to provide smooth progress display without excessive overhead.
 	TUIUpdateInterval = 50 * time.Millisecond
 
+	// ProgressSimulationInterval is how often simulated progress ticks
+	// are sent between real batch completions.
+	ProgressSimulationInterval = 100 * time.Millisecond
+
+	// ProgressSimulationIncrement is the percentage (as a fraction) to
+	// increment simulated progress per tick.
+	ProgressSimulationIncrement = 0.02
+
 	// LogThrottlePercent is the interval (in percent) at which progress
 	// logs are emitted when not using the TUI.
 	LogThrottlePercent = 5

@@ -19,8 +19,8 @@ import (
 const (
 	graphqlEndpoint = "https://api.github.com/graphql"
 	// Maximum items per GraphQL query (GitHub's complexity limits)
-	// With reviewDecision instead of reviews(last:100), we can fit more per batch
-	graphqlBatchSize = 100
+	// Smaller batches (25) provide more progress checkpoints for smoother UI updates
+	graphqlBatchSize = 25
 	// Maximum concurrent batch requests to avoid rate limiting
 	maxConcurrentBatches = 12
 )
