@@ -12,8 +12,8 @@ const (
 	IconQuickWin
 )
 
-// IconInput contains the fields needed to determine which icon to display.
-type IconInput struct {
+// IconOptions contains the fields needed to determine which icon to display.
+type IconOptions struct {
 	CommentCount      int
 	HotTopicThreshold int
 	IsPR              bool
@@ -22,10 +22,10 @@ type IconInput struct {
 	IsQuickWin        bool
 }
 
-// DetermineIcon decides which icon (if any) should be displayed for an item.
+// Icon decides which icon (if any) should be displayed for an item.
 // Hot topic (fire) takes precedence over quick win (lightning).
 // For issues, hot topic is suppressed if the current user was the last commenter.
-func DetermineIcon(input IconInput) IconType {
+func Icon(input IconOptions) IconType {
 	// Check for hot topic first (fire takes precedence over quick win)
 	if input.HotTopicThreshold > 0 && input.CommentCount > input.HotTopicThreshold {
 		// Suppress for issues where current user was last commenter

@@ -1,0 +1,30 @@
+# Shared field selections for GraphQL queries
+
+fragment AuthorFields on Actor {
+  login
+}
+
+fragment AssigneeFields on User {
+  login
+}
+
+fragment LabelFields on Label {
+  name
+}
+
+fragment CommentFields on IssueComment {
+  author {
+    login
+  }
+  authorAssociation
+  createdAt
+}
+
+fragment ReviewFields on PullRequestReview {
+  author {
+    login
+  }
+  authorAssociation
+  submittedAt
+  state
+}

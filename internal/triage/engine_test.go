@@ -101,8 +101,8 @@ func TestFilterByPriority(t *testing.T) {
 				return
 			}
 			for i, item := range got {
-				if item.Item.ID != tt.wantIDs[i] {
-					t.Errorf("FilterByPriority()[%d].ID = %s, want %s", i, item.Item.ID, tt.wantIDs[i])
+				if item.ID != tt.wantIDs[i] {
+					t.Errorf("FilterByPriority()[%d].ID = %s, want %s", i, item.ID, tt.wantIDs[i])
 				}
 			}
 		})
@@ -152,8 +152,8 @@ func TestFilterByReason(t *testing.T) {
 				return
 			}
 			for i, item := range got {
-				if item.Item.ID != tt.wantIDs[i] {
-					t.Errorf("FilterByReason()[%d].ID = %s, want %s", i, item.Item.ID, tt.wantIDs[i])
+				if item.ID != tt.wantIDs[i] {
+					t.Errorf("FilterByReason()[%d].ID = %s, want %s", i, item.ID, tt.wantIDs[i])
 				}
 			}
 		})
@@ -175,8 +175,8 @@ func TestFilterOutMerged(t *testing.T) {
 		return
 	}
 	for i, item := range got {
-		if item.Item.ID != wantIDs[i] {
-			t.Errorf("FilterOutMerged()[%d].ID = %s, want %s", i, item.Item.ID, wantIDs[i])
+		if item.ID != wantIDs[i] {
+			t.Errorf("FilterOutMerged()[%d].ID = %s, want %s", i, item.ID, wantIDs[i])
 		}
 	}
 }
@@ -197,8 +197,8 @@ func TestFilterOutClosed(t *testing.T) {
 		return
 	}
 	for i, item := range got {
-		if item.Item.ID != wantIDs[i] {
-			t.Errorf("FilterOutClosed()[%d].ID = %s, want %s", i, item.Item.ID, wantIDs[i])
+		if item.ID != wantIDs[i] {
+			t.Errorf("FilterOutClosed()[%d].ID = %s, want %s", i, item.ID, wantIDs[i])
 		}
 	}
 }
@@ -254,8 +254,8 @@ func TestFilterByRepo(t *testing.T) {
 				return
 			}
 			for i, item := range got {
-				if item.Item.ID != tt.wantIDs[i] {
-					t.Errorf("FilterByRepo()[%d].ID = %s, want %s", i, item.Item.ID, tt.wantIDs[i])
+				if item.ID != tt.wantIDs[i] {
+					t.Errorf("FilterByRepo()[%d].ID = %s, want %s", i, item.ID, tt.wantIDs[i])
 				}
 			}
 		})
@@ -300,8 +300,8 @@ func TestFilterByType(t *testing.T) {
 				return
 			}
 			for i, item := range got {
-				if item.Item.ID != tt.wantIDs[i] {
-					t.Errorf("FilterByType()[%d].ID = %s, want %s", i, item.Item.ID, tt.wantIDs[i])
+				if item.ID != tt.wantIDs[i] {
+					t.Errorf("FilterByType()[%d].ID = %s, want %s", i, item.ID, tt.wantIDs[i])
 				}
 			}
 		})
@@ -356,8 +356,8 @@ func TestFilterByExcludedAuthors(t *testing.T) {
 				return
 			}
 			for i, item := range got {
-				if item.Item.ID != tt.wantIDs[i] {
-					t.Errorf("FilterByExcludedAuthors()[%d].ID = %s, want %s", i, item.Item.ID, tt.wantIDs[i])
+				if item.ID != tt.wantIDs[i] {
+					t.Errorf("FilterByExcludedAuthors()[%d].ID = %s, want %s", i, item.ID, tt.wantIDs[i])
 				}
 			}
 		})
@@ -392,8 +392,8 @@ func TestFilterByGreenCI(t *testing.T) {
 				return
 			}
 			for i, item := range got {
-				if item.Item.ID != tt.wantIDs[i] {
-					t.Errorf("FilterByGreenCI()[%d].ID = %s, want %s", i, item.Item.ID, tt.wantIDs[i])
+				if item.ID != tt.wantIDs[i] {
+					t.Errorf("FilterByGreenCI()[%d].ID = %s, want %s", i, item.ID, tt.wantIDs[i])
 				}
 			}
 		})
@@ -417,8 +417,8 @@ func TestFilterOutUnenriched(t *testing.T) {
 		return
 	}
 	for i, item := range got {
-		if item.Item.ID != wantIDs[i] {
-			t.Errorf("FilterOutUnenriched()[%d].ID = %s, want %s", i, item.Item.ID, wantIDs[i])
+		if item.ID != wantIDs[i] {
+			t.Errorf("FilterOutUnenriched()[%d].ID = %s, want %s", i, item.ID, wantIDs[i])
 		}
 	}
 }

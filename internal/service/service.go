@@ -148,6 +148,41 @@ func (s *ItemService) GetAssignedIssues(ctx context.Context) ([]model.Item, bool
 	return issues, false, nil
 }
 
+// GetAssignedPRs fetches assigned PRs with caching support.
+// Returns (items, fromCache, error).
+func (s *ItemService) GetAssignedPRs(ctx context.Context) ([]model.Item, bool, error) {
+	// Check cache first
+	if s.cache != nil {
+		if entry, ok := s.cache.GetList(s.currentUser, cache.ListTypeAssignedPRs, cache.ListOptions{}); ok {
+			return entry.Items, true, nil
+		}
+	}
+
+	// Check if rate limited
+	if ghclient.IsRateLimited() {
+		return nil, false, ghclient.ErrRateLimited
+	}
+
+	// Fetch from API
+	prs, err := s.fetcher.ListAssignedPRs(ctx, s.currentUser)
+	if err != nil {
+		return nil, false, err
+	}
+
+	// Cache the result
+	if s.cache != nil {
+		if err := s.cache.SetList(s.currentUser, cache.ListTypeAssignedPRs, &cache.ListCacheEntry{
+			Items:    prs,
+			CachedAt: time.Now(),
+			Version:  cache.Version,
+		}); err != nil {
+			log.Debug("failed to cache assigned PRs", "error", err)
+		}
+	}
+
+	return prs, false, nil
+}
+
 // GetUnreadItems fetches items with incremental caching.
 // It returns cached items merged with any new ones since the last fetch.
 func (s *ItemService) GetUnreadItems(ctx context.Context) (*ItemFetchResult, error) {
@@ -389,17 +424,17 @@ func (s *ItemService) Enrich(ctx context.Context, items []model.Item, onProgress
 
 // buildCacheKey creates a cache key from an item.
 // Returns false if the key cannot be built (e.g., no URL).
-func buildCacheKey(item *model.Item) (cache.CacheKey, bool) {
+func buildCacheKey(item *model.Item) (cache.Key, bool) {
 	if item.Subject.URL == "" {
-		return cache.CacheKey{}, false
+		return cache.Key{}, false
 	}
 
 	number, err := ExtractIssueNumber(item.Subject.URL)
 	if err != nil {
-		return cache.CacheKey{}, false
+		return cache.Key{}, false
 	}
 
-	return cache.CacheKey{
+	return cache.Key{
 		RepoFullName: item.Repository.FullName,
 		SubjectType:  item.Subject.Type,
 		Number:       number,

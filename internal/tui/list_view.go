@@ -34,17 +34,19 @@ func renderListView(m ListModel) string {
 	// Determine view flags based on active pane
 	// Orphaned pane: hide Assigned/CI, show Author/Signal, hide Priority
 	// Assigned pane: show Author AND Assigned, hide CI/Signal, hide Priority
+	// Blocked pane: show Author AND Assigned, hide CI/Signal, hide Priority (similar to Assigned)
 	// Priority pane: show Assigned/CI, hide Author, show Priority
 	hideAssignedCI := m.activePane == paneOrphaned
-	hidePriority := m.activePane == paneOrphaned || m.activePane == paneAssigned
-	showAuthor := m.activePane == paneOrphaned || m.activePane == paneAssigned
+	hidePriority := m.activePane == paneOrphaned || m.activePane == paneAssigned || m.activePane == paneBlocked
+	showAuthor := m.activePane == paneOrphaned || m.activePane == paneAssigned || m.activePane == paneBlocked
 
 	// Render tab bar with top padding
 	b.WriteString("\n")
-	b.WriteString(renderTabBar(m.activePane, len(m.priorityItems), len(m.orphanedItems), m.GetAssignedCount(),
+	b.WriteString(renderTabBar(m.activePane, len(m.priorityItems), len(m.orphanedItems), m.GetAssignedCount(), m.GetBlockedCount(),
 		m.GetPrioritySortColumn(), m.GetPrioritySortDesc(),
 		m.GetOrphanedSortColumn(), m.GetOrphanedSortDesc(),
-		m.GetAssignedSortColumn(), m.GetAssignedSortDesc()))
+		m.GetAssignedSortColumn(), m.GetAssignedSortDesc(),
+		m.GetBlockedSortColumn(), m.GetBlockedSortDesc()))
 	b.WriteString("\n\n")
 
 	if len(items) == 0 {
@@ -53,6 +55,8 @@ func renderListView(m ListModel) string {
 			b.WriteString(m.renderOrphanedEmptyState())
 		case paneAssigned:
 			b.WriteString(renderAssignedEmptyState())
+		case paneBlocked:
+			b.WriteString(renderBlockedEmptyState())
 		default:
 			b.WriteString(renderEmptyState())
 		}
@@ -97,10 +101,11 @@ func renderListView(m ListModel) string {
 }
 
 // renderTabBar renders the tab bar at the top of the view
-func renderTabBar(activePane pane, priorityCount, orphanedCount, assignedCount int,
+func renderTabBar(activePane pane, priorityCount, orphanedCount, assignedCount, blockedCount int,
 	prioritySortCol SortColumn, prioritySortDesc bool,
 	orphanedSortCol SortColumn, orphanedSortDesc bool,
-	assignedSortCol SortColumn, assignedSortDesc bool) string {
+	assignedSortCol SortColumn, assignedSortDesc bool,
+	blockedSortCol SortColumn, blockedSortDesc bool) string {
 
 	// Format sort indicator
 	priorityDir := "▼"
@@ -115,28 +120,41 @@ func renderTabBar(activePane pane, priorityCount, orphanedCount, assignedCount i
 	if !assignedSortDesc {
 		assignedDir = "▲"
 	}
+	blockedDir := "▼"
+	if !blockedSortDesc {
+		blockedDir = "▲"
+	}
 
 	assigned := fmt.Sprintf("[ 1: Assigned (%d) %s%s ]", assignedCount, assignedDir, assignedSortCol)
-	priority := fmt.Sprintf("[ 2: Priority (%d) %s%s ]", priorityCount, priorityDir, prioritySortCol)
-	orphaned := fmt.Sprintf("[ 3: Orphaned (%d) %s%s ]", orphanedCount, orphanedDir, orphanedSortCol)
+	blocked := fmt.Sprintf("[ 2: Blocked (%d) %s%s ]", blockedCount, blockedDir, blockedSortCol)
+	priority := fmt.Sprintf("[ 3: Priority (%d) %s%s ]", priorityCount, priorityDir, prioritySortCol)
+	orphaned := fmt.Sprintf("[ 4: Orphaned (%d) %s%s ]", orphanedCount, orphanedDir, orphanedSortCol)
 
-	var assignedStyled, priorityStyled, orphanedStyled string
+	var assignedStyled, priorityStyled, orphanedStyled, blockedStyled string
 	switch activePane {
 	case paneAssigned:
 		assignedStyled = tabActiveStyle.Render(assigned)
 		priorityStyled = tabInactiveStyle.Render(priority)
 		orphanedStyled = tabInactiveStyle.Render(orphaned)
+		blockedStyled = tabInactiveStyle.Render(blocked)
 	case panePriority:
 		assignedStyled = tabInactiveStyle.Render(assigned)
 		priorityStyled = tabActiveStyle.Render(priority)
 		orphanedStyled = tabInactiveStyle.Render(orphaned)
+		blockedStyled = tabInactiveStyle.Render(blocked)
 	case paneOrphaned:
 		assignedStyled = tabInactiveStyle.Render(assigned)
 		priorityStyled = tabInactiveStyle.Render(priority)
 		orphanedStyled = tabActiveStyle.Render(orphaned)
+		blockedStyled = tabInactiveStyle.Render(blocked)
+	case paneBlocked:
+		assignedStyled = tabInactiveStyle.Render(assigned)
+		priorityStyled = tabInactiveStyle.Render(priority)
+		orphanedStyled = tabInactiveStyle.Render(orphaned)
+		blockedStyled = tabActiveStyle.Render(blocked)
 	}
 
-	return fmt.Sprintf("%s    %s    %s", assignedStyled, priorityStyled, orphanedStyled)
+	return fmt.Sprintf("%s    %s    %s    %s", assignedStyled, blockedStyled, priorityStyled, orphanedStyled)
 }
 
 // renderOrphanedEmptyState renders the empty state message for the orphaned pane
@@ -157,6 +175,11 @@ func (m ListModel) renderOrphanedEmptyState() string {
 // renderAssignedEmptyState renders the empty state message for the assigned pane
 func renderAssignedEmptyState() string {
 	return listEmptyStyle.Render("No items assigned to you.\nItems where you are an assignee will appear here.")
+}
+
+// renderBlockedEmptyState renders the empty state message for the blocked pane
+func renderBlockedEmptyState() string {
+	return listEmptyStyle.Render("No blocked items.\nItems with the 'blocked' label will appear here.")
 }
 
 // calculateScrollWindow determines which items to show based on cursor position
@@ -295,7 +318,7 @@ func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, pr
 	var titleIcon string
 	var iconDisplayWidth int
 
-	iconInput := format.IconInput{
+	iconInput := format.IconOptions{
 		HotTopicThreshold: hotTopicThreshold,
 		IsQuickWin:        item.Priority == triage.PriorityQuickWin,
 		CurrentUser:       currentUser,
@@ -306,7 +329,7 @@ func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, pr
 		iconInput.LastCommenter = issueDetails.LastCommenter
 	}
 
-	iconType := format.DetermineIcon(iconInput)
+	iconType := format.Icon(iconInput)
 	switch iconType {
 	case format.IconHotTopic:
 		titleIcon = format.HotTopicIcon + " "
@@ -511,7 +534,7 @@ func renderCI(n *model.Item, isPR bool, selected bool) (string, int) {
 func renderAssigned(n *model.Item, selected bool) (string, int) {
 	pr := n.GetPRDetails()
 
-	input := format.AssignedInput{
+	input := format.AssignedOptions{
 		Assignees: n.Assignees,
 		IsPR:      n.IsPR(),
 	}
@@ -520,7 +543,7 @@ func renderAssigned(n *model.Item, selected bool) (string, int) {
 		input.RequestedReviewers = pr.RequestedReviewers
 	}
 
-	assigned := format.GetAssignedUser(input)
+	assigned := format.Assigned(input)
 	if assigned == "" {
 		return "─", 1
 	}
@@ -618,7 +641,7 @@ func renderAge(d time.Duration, selected bool) (string, int) {
 
 // renderHelp renders the help text
 func renderHelp() string {
-	return listHelpStyle.Render("Tab/1/2/3: panes   j/k: nav   s/S: sort   r: reset   d: done   enter: open   q: quit")
+	return listHelpStyle.Render("Tab/1-4: panes   j/k: nav   s/S: sort   r: reset   d: done   enter: open   q: quit")
 }
 
 // renderEmptyState renders the empty state message

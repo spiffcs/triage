@@ -139,7 +139,7 @@ func TestIsLowHangingFruit(t *testing.T) {
 	}
 }
 
-func TestDeterminePriority(t *testing.T) {
+func TestPriority(t *testing.T) {
 	h := NewHeuristics("testuser", config.DefaultScoreWeights(), config.DefaultQuickWinLabels())
 
 	tests := []struct {
@@ -287,15 +287,15 @@ func TestDeterminePriority(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := h.DeterminePriority(tt.notification, tt.score)
+			got := h.Priority(tt.notification, tt.score)
 			if got != tt.want {
-				t.Errorf("DeterminePriority() = %v, want %v", got, tt.want)
+				t.Errorf("Priority() = %v, want %v", got, tt.want)
 			}
 		})
 	}
 }
 
-func TestDeterminePriorityWithDisabledUrgencyTriggers(t *testing.T) {
+func TestPriorityWithDisabledUrgencyTriggers(t *testing.T) {
 	// Create weights with urgency triggers disabled
 	weights := config.DefaultScoreWeights()
 	weights.ReviewRequestedIsUrgent = false
@@ -378,15 +378,15 @@ func TestDeterminePriorityWithDisabledUrgencyTriggers(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := h.DeterminePriority(tt.notification, tt.score)
+			got := h.Priority(tt.notification, tt.score)
 			if got != tt.want {
-				t.Errorf("DeterminePriority() = %v, want %v", got, tt.want)
+				t.Errorf("Priority() = %v, want %v", got, tt.want)
 			}
 		})
 	}
 }
 
-func TestDeterminePriorityWithPartialUrgencyOverrides(t *testing.T) {
+func TestPriorityWithPartialUrgencyOverrides(t *testing.T) {
 	// Test with some triggers modified from defaults
 	weights := config.DefaultScoreWeights()
 	weights.MentionIsUrgent = true              // Enable mention (default: false)
@@ -398,9 +398,9 @@ func TestDeterminePriorityWithPartialUrgencyOverrides(t *testing.T) {
 		notification := &model.Item{
 			Reason: model.ReasonMention,
 		}
-		got := h.DeterminePriority(notification, 0)
+		got := h.Priority(notification, 0)
 		if got != PriorityUrgent {
-			t.Errorf("DeterminePriority() = %v, want %v (mention should be urgent when enabled)", got, PriorityUrgent)
+			t.Errorf("Priority() = %v, want %v (mention should be urgent when enabled)", got, PriorityUrgent)
 		}
 	})
 
@@ -408,9 +408,9 @@ func TestDeterminePriorityWithPartialUrgencyOverrides(t *testing.T) {
 		notification := &model.Item{
 			Reason: model.ReasonReviewRequested,
 		}
-		got := h.DeterminePriority(notification, 0)
+		got := h.Priority(notification, 0)
 		if got != PriorityUrgent {
-			t.Errorf("DeterminePriority() = %v, want %v (review_requested should be urgent)", got, PriorityUrgent)
+			t.Errorf("Priority() = %v, want %v (review_requested should be urgent)", got, PriorityUrgent)
 		}
 	})
 
@@ -426,9 +426,9 @@ func TestDeterminePriorityWithPartialUrgencyOverrides(t *testing.T) {
 				Deletions:    100,
 			},
 		}
-		got := h.DeterminePriority(notification, 0)
+		got := h.Priority(notification, 0)
 		if got != PriorityImportant {
-			t.Errorf("DeterminePriority() = %v, want %v (approved PR should fall through to Important when disabled)", got, PriorityImportant)
+			t.Errorf("Priority() = %v, want %v (approved PR should fall through to Important when disabled)", got, PriorityImportant)
 		}
 	})
 
@@ -443,14 +443,14 @@ func TestDeterminePriorityWithPartialUrgencyOverrides(t *testing.T) {
 				Deletions:    100,
 			},
 		}
-		got := h.DeterminePriority(notification, 0)
+		got := h.Priority(notification, 0)
 		if got != PriorityImportant {
-			t.Errorf("DeterminePriority() = %v, want %v (changes_requested PR should fall through to Important)", got, PriorityImportant)
+			t.Errorf("Priority() = %v, want %v (changes_requested PR should fall through to Important)", got, PriorityImportant)
 		}
 	})
 }
 
-func TestDetermineAction(t *testing.T) {
+func TestAction(t *testing.T) {
 	h := NewHeuristics("testuser", config.DefaultScoreWeights(), config.DefaultQuickWinLabels())
 
 	tests := []struct {
@@ -539,9 +539,9 @@ func TestDetermineAction(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := h.DetermineAction(tt.notification)
+			got := h.Action(tt.notification)
 			if got != tt.want {
-				t.Errorf("DetermineAction() = %q, want %q", got, tt.want)
+				t.Errorf("Action() = %q, want %q", got, tt.want)
 			}
 		})
 	}

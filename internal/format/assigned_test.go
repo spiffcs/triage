@@ -4,27 +4,27 @@ import (
 	"testing"
 )
 
-func TestGetAssignedUser(t *testing.T) {
+func TestAssigned(t *testing.T) {
 	tests := []struct {
 		name     string
-		input    AssignedInput
+		input    AssignedOptions
 		expected string
 	}{
 		{
 			name:     "empty input",
-			input:    AssignedInput{},
+			input:    AssignedOptions{},
 			expected: "",
 		},
 		{
 			name: "has assignee",
-			input: AssignedInput{
+			input: AssignedOptions{
 				Assignees: []string{"alice", "bob"},
 			},
 			expected: "alice",
 		},
 		{
 			name: "PR with latest reviewer but no assignee returns empty",
-			input: AssignedInput{
+			input: AssignedOptions{
 				IsPR:           true,
 				LatestReviewer: "reviewer1",
 			},
@@ -32,7 +32,7 @@ func TestGetAssignedUser(t *testing.T) {
 		},
 		{
 			name: "PR with requested reviewer but no assignee returns empty",
-			input: AssignedInput{
+			input: AssignedOptions{
 				IsPR:               true,
 				RequestedReviewers: []string{"req1", "req2"},
 			},
@@ -40,7 +40,7 @@ func TestGetAssignedUser(t *testing.T) {
 		},
 		{
 			name: "issue with latest reviewer returns empty",
-			input: AssignedInput{
+			input: AssignedOptions{
 				IsPR:           false,
 				LatestReviewer: "reviewer1",
 			},
@@ -48,7 +48,7 @@ func TestGetAssignedUser(t *testing.T) {
 		},
 		{
 			name: "assignee is returned even when reviewers exist",
-			input: AssignedInput{
+			input: AssignedOptions{
 				Assignees:      []string{"assignee1"},
 				IsPR:           true,
 				LatestReviewer: "reviewer1",
@@ -59,9 +59,9 @@ func TestGetAssignedUser(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := GetAssignedUser(tt.input)
+			got := Assigned(tt.input)
 			if got != tt.expected {
-				t.Errorf("GetAssignedUser() = %q, want %q", got, tt.expected)
+				t.Errorf("Assigned() = %q, want %q", got, tt.expected)
 			}
 		})
 	}

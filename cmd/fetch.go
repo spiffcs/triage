@@ -21,21 +21,23 @@ type fetchResult struct {
 	ReviewPRs      []model.Item
 	AuthoredPRs    []model.Item
 	AssignedIssues []model.Item
+	AssignedPRs    []model.Item
 	Orphaned       []model.Item
 	RateLimited    bool
 
 	// Cache statistics
-	NotifCached    bool
-	NotifNewCount  int
-	ReviewCached   bool
-	AuthoredCached bool
-	AssignedCached bool
-	OrphanedCached bool
+	NotifCached       bool
+	NotifNewCount     int
+	ReviewCached      bool
+	AuthoredCached    bool
+	AssignedCached    bool
+	AssignedPRsCached bool
+	OrphanedCached    bool
 }
 
 // totalFetched returns the total number of items fetched.
 func (r *fetchResult) totalFetched() int {
-	return len(r.Notifications) + len(r.ReviewPRs) + len(r.AuthoredPRs) + len(r.AssignedIssues) + len(r.Orphaned)
+	return len(r.Notifications) + len(r.ReviewPRs) + len(r.AuthoredPRs) + len(r.AssignedIssues) + len(r.AssignedPRs) + len(r.Orphaned)
 }
 
 // fetchOptions configures the fetch operation.
@@ -52,9 +54,9 @@ type fetchOptions struct {
 
 // fetchAll fetches all data sources in parallel using errgroup for context propagation.
 func fetchAll(ctx context.Context, svc *service.ItemService, opts fetchOptions) (*fetchResult, error) {
-	totalFetches := 5
+	totalFetches := 6
 	if !opts.IncludeOrphaned || len(opts.OrphanedRepos) == 0 {
-		totalFetches = 4
+		totalFetches = 5
 	}
 
 	// Track progress of parallel fetches
@@ -63,7 +65,7 @@ func fetchAll(ctx context.Context, svc *service.ItemService, opts fetchOptions) 
 	updateFetchProgress := func() {
 		current := atomic.AddInt32(&completedFetches, 1)
 		progress := float64(current) / float64(totalFetches)
-		msg := fmt.Sprintf("for the past %s (%d/%d sources)", opts.SinceLabel, current, totalFetches)
+		msg := fmt.Sprintf("%s (%d/%d sources)", opts.SinceLabel, current, totalFetches)
 		sendTaskEvent(opts.Events, tui.TaskFetch, tui.StatusRunning,
 			tui.WithProgress(progress),
 			tui.WithMessage(msg))
@@ -167,6 +169,28 @@ func fetchAll(ctx context.Context, svc *service.ItemService, opts fetchOptions) 
 		return nil
 	})
 
+	// Fetch assigned PRs
+	g.Go(func() error {
+		prs, cached, err := svc.GetAssignedPRs(gctx)
+		if err != nil {
+			if errors.Is(err, ghclient.ErrRateLimited) {
+				mu.Lock()
+				result.RateLimited = true
+				mu.Unlock()
+				updateFetchProgress()
+				return nil
+			}
+			updateFetchProgress()
+			return fmt.Errorf("assigned PRs: %w", err)
+		}
+		mu.Lock()
+		result.AssignedPRs = prs
+		result.AssignedPRsCached = cached
+		mu.Unlock()
+		updateFetchProgress()
+		return nil
+	})
+
 	// Fetch orphaned contributions (if enabled)
 	if len(opts.OrphanedRepos) > 0 {
 		g.Go(func() error {
@@ -228,12 +252,14 @@ func fetchAll(ctx context.Context, svc *service.ItemService, opts fetchOptions) 
 		"reviewPRs", len(result.ReviewPRs),
 		"authoredPRs", len(result.AuthoredPRs),
 		"assignedIssues", len(result.AssignedIssues),
+		"assignedPRs", len(result.AssignedPRs),
 		"orphaned", len(result.Orphaned),
 		"notifCached", result.NotifCached,
 		"notifNewCount", result.NotifNewCount,
 		"reviewCached", result.ReviewCached,
 		"authoredCached", result.AuthoredCached,
 		"assignedCached", result.AssignedCached,
+		"assignedPRsCached", result.AssignedPRsCached,
 		"orphanedCached", result.OrphanedCached)
 
 	return result, err

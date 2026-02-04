@@ -45,8 +45,8 @@ Items are deduplicated when merging these sources, so an item won't appear twice
                                                 │
                                                 ▼
 ┌───────────────────────────────────────────────────────────────────────────────────────────────────┐
-│                              Dual-Pane TUI / Filter & Output                                      │
-│                         (Priority Pane)              (Orphaned Pane)                              │
+│                              Multi-Pane TUI / Filter & Output                                     │
+│              (Assigned)         (Blocked)         (Priority)         (Orphaned)                   │
 └───────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -122,21 +122,35 @@ The `ItemService` coordinates between cache and API:
 - Provides a unified interface for fetching items
 - URL parsing utilities for extracting owner/repo/number
 
-## Dual-Pane TUI
+## Multi-Pane TUI
 
-The interactive terminal UI presents two panes accessible via `Tab`:
+The interactive terminal UI presents four panes accessible via `Tab` or number keys (`1`-`4`):
+
+### Assigned Pane
+Displays items assigned to you, sorted by:
+- **Updated** (default): Most recently updated first
+- **Size**: PR size (lines changed)
+- **Author**: Alphabetical by author
+- **Repo**: Alphabetical by repository name
+
+### Blocked Pane
+Displays items with configurable "blocked" labels (see `blocked_labels` config), sorted by:
+- **Updated** (default): Most recently updated first
+- **Size**: PR size (lines changed)
+- **Author**: Alphabetical by author
+- **Repo**: Alphabetical by repository name
 
 ### Priority Pane
 Displays your work items (notifications, review requests, authored PRs, assigned issues) sorted by:
 - **Priority** (default): Urgent → Important → Quick Win → Notable → FYI
 - **Updated**: Most recently updated first
 - **Repo**: Alphabetical by repository name
+- **Size**: PR size (lines changed)
 
 ### Orphaned Pane
 Displays external contributions lacking team engagement, sorted by:
 - **Stale** (default): Days since last team response
 - **Updated**: Most recently updated first
-- **Comments**: Number of comments
 - **Size**: PR size (lines changed)
 - **Author**: Alphabetical by author
 - **Repo**: Alphabetical by repository name
@@ -207,7 +221,7 @@ triage/
 │   ├── tui/
 │   │   ├── tui.go           # TUI initialization and runner
 │   │   ├── model.go         # Progress display model
-│   │   ├── list_model.go    # Interactive list model (dual-pane)
+│   │   ├── list_model.go    # Interactive list model (multi-pane)
 │   │   ├── list_view.go     # List rendering
 │   │   ├── events.go        # Event types
 │   │   ├── task.go          # Task progress tracking

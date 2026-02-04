@@ -27,8 +27,8 @@ func (e *Engine) Prioritize(items []model.Item) []PrioritizedItem {
 
 	for _, n := range items {
 		score := e.heuristics.Score(&n)
-		priority := e.heuristics.DeterminePriority(&n, score)
-		action := e.heuristics.DetermineAction(&n)
+		priority := e.heuristics.Priority(&n, score)
+		action := e.heuristics.Action(&n)
 
 		pItems = append(pItems, PrioritizedItem{
 			Item:         n,
@@ -82,7 +82,7 @@ func FilterByReason(items []PrioritizedItem, reasons []model.ItemReason) []Prior
 
 	filtered := make([]PrioritizedItem, 0, len(items))
 	for _, item := range items {
-		if reasonSet[item.Item.Reason] {
+		if reasonSet[item.Reason] {
 			filtered = append(filtered, item)
 		}
 	}
@@ -94,7 +94,7 @@ func FilterOutMerged(items []PrioritizedItem) []PrioritizedItem {
 	filtered := make([]PrioritizedItem, 0, len(items))
 	for _, item := range items {
 		// Skip if it's a merged PR
-		if pr := item.Item.GetPRDetails(); pr != nil && pr.Merged {
+		if pr := item.GetPRDetails(); pr != nil && pr.Merged {
 			continue
 		}
 		filtered = append(filtered, item)
@@ -106,7 +106,7 @@ func FilterOutMerged(items []PrioritizedItem) []PrioritizedItem {
 func FilterOutClosed(items []PrioritizedItem) []PrioritizedItem {
 	filtered := make([]PrioritizedItem, 0, len(items))
 	for _, item := range items {
-		state := item.Item.State
+		state := item.State
 		if state == "closed" || state == "merged" {
 			continue
 		}
@@ -119,7 +119,7 @@ func FilterOutClosed(items []PrioritizedItem) []PrioritizedItem {
 func FilterByType(items []PrioritizedItem, subjectType model.SubjectType) []PrioritizedItem {
 	filtered := make([]PrioritizedItem, 0, len(items))
 	for _, item := range items {
-		if item.Item.Subject.Type == subjectType {
+		if item.Subject.Type == subjectType {
 			filtered = append(filtered, item)
 		}
 	}
@@ -134,27 +134,27 @@ func FilterByRepo(items []PrioritizedItem, repo string) []PrioritizedItem {
 
 	filtered := make([]PrioritizedItem, 0, len(items))
 	for _, item := range items {
-		if item.Item.Repository.FullName == repo {
+		if item.Repository.FullName == repo {
 			filtered = append(filtered, item)
 		}
 	}
 	return filtered
 }
 
-// ResolvedStore is an interface for checking if items should be shown
-type ResolvedStore interface {
+// ResolvedChecker is an interface for checking if items should be shown
+type ResolvedChecker interface {
 	ShouldShow(notificationID string, currentUpdatedAt time.Time) bool
 }
 
 // FilterResolved filters out items that have been resolved and haven't had new activity
-func FilterResolved(items []PrioritizedItem, store ResolvedStore) []PrioritizedItem {
+func FilterResolved(items []PrioritizedItem, store ResolvedChecker) []PrioritizedItem {
 	if store == nil {
 		return items
 	}
 
 	filtered := make([]PrioritizedItem, 0, len(items))
 	for _, item := range items {
-		if store.ShouldShow(item.Item.ID, item.Item.UpdatedAt) {
+		if store.ShouldShow(item.ID, item.UpdatedAt) {
 			filtered = append(filtered, item)
 		}
 	}
@@ -177,13 +177,13 @@ func FilterByExcludedAuthors(items []PrioritizedItem, excludedAuthors []string) 
 	filtered := make([]PrioritizedItem, 0, len(items))
 	for _, item := range items {
 		// Skip items without author (can't determine author)
-		if item.Item.Author == "" {
+		if item.Author == "" {
 			filtered = append(filtered, item)
 			continue
 		}
 
 		// Skip if author is in the exclude list
-		if excludeSet[item.Item.Author] {
+		if excludeSet[item.Author] {
 			continue
 		}
 
@@ -198,11 +198,11 @@ func FilterByGreenCI(items []PrioritizedItem) []PrioritizedItem {
 	filtered := make([]PrioritizedItem, 0, len(items))
 	for _, item := range items {
 		// Exclude non-PRs (issues don't have CI)
-		if item.Item.Type != model.ItemTypePullRequest {
+		if item.Type != model.ItemTypePullRequest {
 			continue
 		}
 		// Exclude PRs without PR details (can't determine CI status)
-		pr := item.Item.GetPRDetails()
+		pr := item.GetPRDetails()
 		if pr == nil {
 			continue
 		}
@@ -220,7 +220,7 @@ func FilterByGreenCI(items []PrioritizedItem) []PrioritizedItem {
 func FilterOutUnenriched(items []PrioritizedItem) []PrioritizedItem {
 	filtered := make([]PrioritizedItem, 0, len(items))
 	for _, item := range items {
-		subjectType := item.Item.Subject.Type
+		subjectType := item.Subject.Type
 
 		// Keep non-PR/Issue types - they don't have enrichment
 		if subjectType != model.SubjectPullRequest && subjectType != model.SubjectIssue {
@@ -229,7 +229,7 @@ func FilterOutUnenriched(items []PrioritizedItem) []PrioritizedItem {
 		}
 
 		// Keep PR/Issue items that were successfully enriched
-		if item.Item.Details != nil {
+		if item.Details != nil {
 			filtered = append(filtered, item)
 		}
 	}

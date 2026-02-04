@@ -4,6 +4,7 @@ import (
 	"os/exec"
 	"runtime"
 	"sort"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -23,6 +24,8 @@ const (
 	panePriority
 	// paneOrphaned is the orphaned list pane
 	paneOrphaned
+	// paneBlocked is the blocked list pane (items with "blocked" label)
+	paneBlocked
 )
 
 // SortColumn represents the available sort columns
@@ -53,19 +56,23 @@ const (
 )
 
 // prioritySortColumns defines the cycling order for priority pane
-var prioritySortColumns = []SortColumn{SortPriority, SortUpdated, SortRepo}
+var prioritySortColumns = []SortColumn{SortPriority, SortUpdated, SortRepo, SortSize}
 
 // orphanedSortColumns defines the cycling order for orphaned pane
-var orphanedSortColumns = []SortColumn{SortStale, SortUpdated, SortComments, SortSize, SortAuthor, SortRepo}
+var orphanedSortColumns = []SortColumn{SortStale, SortUpdated, SortSize, SortAuthor, SortRepo}
 
 // assignedSortColumns defines the cycling order for assigned pane
-var assignedSortColumns = []SortColumn{SortUpdated, SortAuthor, SortRepo}
+var assignedSortColumns = []SortColumn{SortUpdated, SortSize, SortAuthor, SortRepo}
+
+// blockedSortColumns defines the cycling order for blocked pane
+var blockedSortColumns = []SortColumn{SortUpdated, SortSize, SortAuthor, SortRepo}
 
 // Default sort columns
 const (
 	defaultPrioritySortColumn = SortPriority
 	defaultOrphanedSortColumn = SortUpdated
 	defaultAssignedSortColumn = SortUpdated
+	defaultBlockedSortColumn  = SortUpdated
 )
 
 // ListModel is the Bubble Tea model for the interactive notification list
@@ -74,10 +81,12 @@ type ListModel struct {
 	priorityItems     []triage.PrioritizedItem // Items excluding orphaned and assigned
 	orphanedItems     []triage.PrioritizedItem // Only orphaned items
 	assignedItems     []triage.PrioritizedItem // Items assigned to current user
+	blockedItems      []triage.PrioritizedItem // Items with "blocked" label
 	activePane        pane                     // Which pane is focused
 	priorityCursor    int                      // Cursor for priority pane
 	orphanedCursor    int                      // Cursor for orphaned pane
 	assignedCursor    int                      // Cursor for assigned pane
+	blockedCursor     int                      // Cursor for blocked pane
 	resolved          *resolved.Store
 	windowWidth       int
 	windowHeight      int
@@ -98,9 +107,14 @@ type ListModel struct {
 	orphanedSortDesc   bool
 	assignedSortColumn SortColumn
 	assignedSortDesc   bool
+	blockedSortColumn  SortColumn
+	blockedSortDesc    bool
 
 	// Config for persisting preferences
 	config *config.Config
+
+	// Configurable labels for blocked pane
+	blockedLabels []string
 }
 
 // ListOption is a functional option for configuring ListModel
@@ -110,6 +124,14 @@ type ListOption func(*ListModel)
 func WithConfig(cfg *config.Config) ListOption {
 	return func(m *ListModel) {
 		m.config = cfg
+	}
+}
+
+// WithBlockedLabels sets the labels used to identify blocked items.
+// If empty, the blocked pane is effectively disabled.
+func WithBlockedLabels(labels []string) ListOption {
+	return func(m *ListModel) {
+		m.blockedLabels = labels
 	}
 }
 
@@ -130,12 +152,15 @@ func NewListModel(items []triage.PrioritizedItem, store *resolved.Store, weights
 		priorityCursor:     0,
 		orphanedCursor:     0,
 		assignedCursor:     0,
+		blockedCursor:      0,
 		prioritySortColumn: defaultPrioritySortColumn,
 		prioritySortDesc:   true, // default: descending (highest priority first)
 		orphanedSortColumn: defaultOrphanedSortColumn,
 		orphanedSortDesc:   true, // default: descending (most stale first)
 		assignedSortColumn: defaultAssignedSortColumn,
 		assignedSortDesc:   true, // default: descending (most recent first)
+		blockedSortColumn:  defaultBlockedSortColumn,
+		blockedSortDesc:    true, // default: descending (most recent first)
 	}
 	for _, opt := range opts {
 		opt(&m)
@@ -147,19 +172,25 @@ func NewListModel(items []triage.PrioritizedItem, store *resolved.Store, weights
 	return m
 }
 
-// splitItems separates items into priority, orphaned, and assigned lists
+// splitItems separates items into priority, orphaned, assigned, and blocked lists
 func (m *ListModel) splitItems() {
 	m.priorityItems = nil
 	m.orphanedItems = nil
 	m.assignedItems = nil
+	m.blockedItems = nil
 	for _, item := range m.items {
-		// Check assignment first - assigned items never go to orphaned
+		// Check for blocked label AND assigned to current user - blocked items don't go to other panes
+		if m.hasBlockedLabel(item) && m.isAssignedToCurrentUser(item) {
+			m.blockedItems = append(m.blockedItems, item)
+			continue
+		}
+		// Check assignment - assigned items never go to orphaned
 		if m.isAssignedToCurrentUser(item) {
 			m.assignedItems = append(m.assignedItems, item)
 		} else if m.hasAnyAssignee(item) {
 			// Assigned to someone else - goes to priority (no longer orphaned)
 			m.priorityItems = append(m.priorityItems, item)
-		} else if item.Item.Reason == model.ReasonOrphaned {
+		} else if item.Reason == model.ReasonOrphaned {
 			// Only truly unassigned items with orphaned reason go here
 			m.orphanedItems = append(m.orphanedItems, item)
 		} else {
@@ -170,6 +201,7 @@ func (m *ListModel) splitItems() {
 	m.sortPriorityItems()
 	m.sortOrphanedItems()
 	m.sortAssignedItems()
+	m.sortBlockedItems()
 }
 
 // isAssignedToCurrentUser checks if the item is assigned to the current user
@@ -177,7 +209,7 @@ func (m *ListModel) isAssignedToCurrentUser(item triage.PrioritizedItem) bool {
 	if m.currentUser == "" {
 		return false
 	}
-	for _, assignee := range item.Item.Assignees {
+	for _, assignee := range item.Assignees {
 		if assignee == m.currentUser {
 			return true
 		}
@@ -187,7 +219,23 @@ func (m *ListModel) isAssignedToCurrentUser(item triage.PrioritizedItem) bool {
 
 // hasAnyAssignee checks if the item is assigned to anyone
 func (m *ListModel) hasAnyAssignee(item triage.PrioritizedItem) bool {
-	return len(item.Item.Assignees) > 0
+	return len(item.Assignees) > 0
+}
+
+// hasBlockedLabel checks if the item has any of the configured blocked labels (case-insensitive).
+// If blockedLabels is empty, always returns false (blocked pane is disabled).
+func (m *ListModel) hasBlockedLabel(pi triage.PrioritizedItem) bool {
+	if len(m.blockedLabels) == 0 {
+		return false
+	}
+	for _, itemLabel := range pi.Labels {
+		for _, blockedLabel := range m.blockedLabels {
+			if strings.EqualFold(itemLabel, blockedLabel) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // loadSortPreferences loads sort preferences from config
@@ -214,6 +262,12 @@ func (m *ListModel) loadSortPreferences() {
 	if ui.AssignedSortDesc != nil {
 		m.assignedSortDesc = *ui.AssignedSortDesc
 	}
+	if ui.BlockedSortColumn != "" {
+		m.blockedSortColumn = SortColumn(ui.BlockedSortColumn)
+	}
+	if ui.BlockedSortDesc != nil {
+		m.blockedSortDesc = *ui.BlockedSortDesc
+	}
 }
 
 // saveSortPreferences saves sort preferences to config
@@ -230,6 +284,8 @@ func (m *ListModel) saveSortPreferences() {
 	m.config.UI.OrphanedSortDesc = &m.orphanedSortDesc
 	m.config.UI.AssignedSortColumn = string(m.assignedSortColumn)
 	m.config.UI.AssignedSortDesc = &m.assignedSortDesc
+	m.config.UI.BlockedSortColumn = string(m.blockedSortColumn)
+	m.config.UI.BlockedSortDesc = &m.blockedSortDesc
 	// Save async to avoid blocking UI
 	go func() {
 		_ = m.config.SaveUIPreferences()
@@ -259,10 +315,49 @@ func (m *ListModel) sortPriorityItems() {
 				less = a.Score < b.Score
 			}
 		case SortUpdated:
-			less = a.Item.UpdatedAt.Before(b.Item.UpdatedAt)
+			less = a.UpdatedAt.Before(b.UpdatedAt)
 		case SortRepo:
 			// Inverted so that descending (▼) gives A-Z order
-			less = a.Item.Repository.FullName > b.Item.Repository.FullName
+			// Case insensitive comparison
+			less = strings.ToLower(a.Repository.FullName) > strings.ToLower(b.Repository.FullName)
+		case SortSize:
+			// Custom sorting: PRs with review data come first, then everything else by comments
+			// Direction is handled within this case (not using standard less+invert pattern)
+			prA := a.GetPRDetails()
+			prB := b.GetPRDetails()
+			aSize, bSize := 0, 0
+			if prA != nil {
+				aSize = prA.Additions + prA.Deletions
+			}
+			if prB != nil {
+				bSize = prB.Additions + prB.Deletions
+			}
+			aHasReviewData := prA != nil && aSize > 0
+			bHasReviewData := prB != nil && bSize > 0
+
+			// PRs with review data always come before everything else
+			if aHasReviewData && !bHasReviewData {
+				return true
+			}
+			if !aHasReviewData && bHasReviewData {
+				return false
+			}
+
+			// Both have review data: sort by lines changed
+			if aHasReviewData && bHasReviewData {
+				// desc (▼): smallest to largest; asc (▲): largest to smallest
+				if desc {
+					return aSize < bSize
+				}
+				return aSize > bSize
+			}
+
+			// Neither has review data: sort by comment count
+			// desc (▼): most to least; asc (▲): least to most
+			if desc {
+				return a.CommentCount > b.CommentCount
+			}
+			return a.CommentCount < b.CommentCount
 		default:
 			// Default to priority
 			if a.Priority != b.Priority {
@@ -308,37 +403,62 @@ func (m *ListModel) sortOrphanedItems() {
 
 		switch column {
 		case SortUpdated:
-			less = a.Item.UpdatedAt.Before(b.Item.UpdatedAt)
+			less = a.UpdatedAt.Before(b.UpdatedAt)
 		case SortAuthor:
 			// Inverted so that descending (▼) gives A-Z order
-			less = a.Item.Author > b.Item.Author
+			// Case insensitive comparison
+			less = strings.ToLower(a.Author) > strings.ToLower(b.Author)
 		case SortRepo:
 			// Inverted so that descending (▼) gives A-Z order
-			less = a.Item.Repository.FullName > b.Item.Repository.FullName
+			// Case insensitive comparison
+			less = strings.ToLower(a.Repository.FullName) > strings.ToLower(b.Repository.FullName)
 		case SortComments:
-			less = a.Item.CommentCount < b.Item.CommentCount
+			less = a.CommentCount < b.CommentCount
 		case SortStale:
 			// Calculate days since last team activity
 			staleA := daysSinceTeamActivity(a)
 			staleB := daysSinceTeamActivity(b)
-			less = staleA < staleB
+			less = staleA > staleB
 		case SortSize:
-			// For PRs: sort by review size (additions + deletions)
-			// For issues: sort by comment count
-			sizeA, sizeB := 0, 0
-			if prA := a.Item.GetPRDetails(); prA != nil {
-				sizeA = prA.Additions + prA.Deletions
-			} else {
-				sizeA = a.Item.CommentCount
+			// Custom sorting: PRs with review data come first, then everything else by comments
+			// Direction is handled within this case (not using standard less+invert pattern)
+			prA := a.GetPRDetails()
+			prB := b.GetPRDetails()
+			aSize, bSize := 0, 0
+			if prA != nil {
+				aSize = prA.Additions + prA.Deletions
 			}
-			if prB := b.Item.GetPRDetails(); prB != nil {
-				sizeB = prB.Additions + prB.Deletions
-			} else {
-				sizeB = b.Item.CommentCount
+			if prB != nil {
+				bSize = prB.Additions + prB.Deletions
 			}
-			less = sizeA < sizeB
+			aHasReviewData := prA != nil && aSize > 0
+			bHasReviewData := prB != nil && bSize > 0
+
+			// PRs with review data always come before everything else
+			if aHasReviewData && !bHasReviewData {
+				return true
+			}
+			if !aHasReviewData && bHasReviewData {
+				return false
+			}
+
+			// Both have review data: sort by lines changed
+			if aHasReviewData && bHasReviewData {
+				// desc (▼): smallest to largest; asc (▲): largest to smallest
+				if desc {
+					return aSize < bSize
+				}
+				return aSize > bSize
+			}
+
+			// Neither has review data: sort by comment count
+			// desc (▼): most to least; asc (▲): least to most
+			if desc {
+				return a.CommentCount > b.CommentCount
+			}
+			return a.CommentCount < b.CommentCount
 		default:
-			less = a.Item.UpdatedAt.Before(b.Item.UpdatedAt)
+			less = a.UpdatedAt.Before(b.UpdatedAt)
 		}
 
 		// Invert for descending order
@@ -364,15 +484,129 @@ func (m *ListModel) sortAssignedItems() {
 
 		switch column {
 		case SortUpdated:
-			less = a.Item.UpdatedAt.Before(b.Item.UpdatedAt)
+			less = a.UpdatedAt.Before(b.UpdatedAt)
+		case SortSize:
+			// Custom sorting: PRs with review data come first, then everything else by comments
+			// Direction is handled within this case (not using standard less+invert pattern)
+			prA := a.GetPRDetails()
+			prB := b.GetPRDetails()
+			aSize, bSize := 0, 0
+			if prA != nil {
+				aSize = prA.Additions + prA.Deletions
+			}
+			if prB != nil {
+				bSize = prB.Additions + prB.Deletions
+			}
+			aHasReviewData := prA != nil && aSize > 0
+			bHasReviewData := prB != nil && bSize > 0
+
+			// PRs with review data always come before everything else
+			if aHasReviewData && !bHasReviewData {
+				return true
+			}
+			if !aHasReviewData && bHasReviewData {
+				return false
+			}
+
+			// Both have review data: sort by lines changed
+			if aHasReviewData && bHasReviewData {
+				// desc (▼): smallest to largest; asc (▲): largest to smallest
+				if desc {
+					return aSize < bSize
+				}
+				return aSize > bSize
+			}
+
+			// Neither has review data: sort by comment count
+			// desc (▼): most to least; asc (▲): least to most
+			if desc {
+				return a.CommentCount > b.CommentCount
+			}
+			return a.CommentCount < b.CommentCount
 		case SortAuthor:
 			// Inverted so that descending (▼) gives A-Z order
-			less = a.Item.Author > b.Item.Author
+			// Case insensitive comparison
+			less = strings.ToLower(a.Author) > strings.ToLower(b.Author)
 		case SortRepo:
 			// Inverted so that descending (▼) gives A-Z order
-			less = a.Item.Repository.FullName > b.Item.Repository.FullName
+			// Case insensitive comparison
+			less = strings.ToLower(a.Repository.FullName) > strings.ToLower(b.Repository.FullName)
 		default:
-			less = a.Item.UpdatedAt.Before(b.Item.UpdatedAt)
+			less = a.UpdatedAt.Before(b.UpdatedAt)
+		}
+
+		// Invert for descending order
+		if desc {
+			return !less
+		}
+		return less
+	})
+}
+
+// sortBlockedItems sorts the blocked items by the configured column and direction.
+func (m *ListModel) sortBlockedItems() {
+	if len(m.blockedItems) == 0 {
+		return
+	}
+
+	column := m.blockedSortColumn
+	desc := m.blockedSortDesc
+
+	sort.Slice(m.blockedItems, func(i, j int) bool {
+		a, b := m.blockedItems[i], m.blockedItems[j]
+		var less bool
+
+		switch column {
+		case SortUpdated:
+			less = a.UpdatedAt.Before(b.UpdatedAt)
+		case SortSize:
+			// Custom sorting: PRs with review data come first, then everything else by comments
+			// Direction is handled within this case (not using standard less+invert pattern)
+			prA := a.GetPRDetails()
+			prB := b.GetPRDetails()
+			aSize, bSize := 0, 0
+			if prA != nil {
+				aSize = prA.Additions + prA.Deletions
+			}
+			if prB != nil {
+				bSize = prB.Additions + prB.Deletions
+			}
+			aHasReviewData := prA != nil && aSize > 0
+			bHasReviewData := prB != nil && bSize > 0
+
+			// PRs with review data always come before everything else
+			if aHasReviewData && !bHasReviewData {
+				return true
+			}
+			if !aHasReviewData && bHasReviewData {
+				return false
+			}
+
+			// Both have review data: sort by lines changed
+			if aHasReviewData && bHasReviewData {
+				// desc (▼): smallest to largest; asc (▲): largest to smallest
+				if desc {
+					return aSize < bSize
+				}
+				return aSize > bSize
+			}
+
+			// Neither has review data: sort by comment count
+			// desc (▼): most to least; asc (▲): least to most
+			if desc {
+				return a.CommentCount > b.CommentCount
+			}
+			return a.CommentCount < b.CommentCount
+		case SortAuthor:
+			// Inverted so that descending (▼) gives A-Z order
+			// Case insensitive comparison
+			less = strings.ToLower(a.Author) > strings.ToLower(b.Author)
+		case SortRepo:
+			// Inverted so that descending (▼) gives A-Z order
+			// Case insensitive comparison
+			less = strings.ToLower(a.Repository.FullName) > strings.ToLower(b.Repository.FullName)
+		default:
+			less = a.UpdatedAt.Before(b.UpdatedAt)
 		}
 
 		// Invert for descending order
@@ -390,6 +624,8 @@ func (m *ListModel) activeItems() []triage.PrioritizedItem {
 		return m.orphanedItems
 	case paneAssigned:
 		return m.assignedItems
+	case paneBlocked:
+		return m.blockedItems
 	default:
 		return m.priorityItems
 	}
@@ -402,6 +638,8 @@ func (m *ListModel) activeCursor() int {
 		return m.orphanedCursor
 	case paneAssigned:
 		return m.assignedCursor
+	case paneBlocked:
+		return m.blockedCursor
 	default:
 		return m.priorityCursor
 	}
@@ -414,6 +652,8 @@ func (m *ListModel) setActiveCursor(pos int) {
 		m.orphanedCursor = pos
 	case paneAssigned:
 		m.assignedCursor = pos
+	case paneBlocked:
+		m.blockedCursor = pos
 	default:
 		m.priorityCursor = pos
 	}
@@ -451,9 +691,11 @@ func (m ListModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 
 	case "tab":
-		// Cycle through panes: Assigned -> Priority -> Orphaned -> Assigned
+		// Cycle through panes: Assigned -> Blocked -> Priority -> Orphaned -> Assigned
 		switch m.activePane {
 		case paneAssigned:
+			m.activePane = paneBlocked
+		case paneBlocked:
 			m.activePane = panePriority
 		case panePriority:
 			m.activePane = paneOrphaned
@@ -467,10 +709,14 @@ func (m ListModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "2":
-		m.activePane = panePriority
+		m.activePane = paneBlocked
 		return m, nil
 
 	case "3":
+		m.activePane = panePriority
+		return m, nil
+
+	case "4":
 		m.activePane = paneOrphaned
 		return m, nil
 
@@ -550,6 +796,11 @@ func (m ListModel) markDone() (tea.Model, tea.Cmd) {
 		if m.assignedCursor >= len(m.assignedItems) && m.assignedCursor > 0 {
 			m.assignedCursor = len(m.assignedItems) - 1
 		}
+	case paneBlocked:
+		m.blockedItems = append(m.blockedItems[:cursor], m.blockedItems[cursor+1:]...)
+		if m.blockedCursor >= len(m.blockedItems) && m.blockedCursor > 0 {
+			m.blockedCursor = len(m.blockedItems) - 1
+		}
 	default:
 		m.priorityItems = append(m.priorityItems[:cursor], m.priorityItems[cursor+1:]...)
 		if m.priorityCursor >= len(m.priorityItems) && m.priorityCursor > 0 {
@@ -575,10 +826,10 @@ func (m ListModel) openInBrowser() (tea.Model, tea.Cmd) {
 	item := items[cursor]
 	url := ""
 
-	if item.Item.HTMLURL != "" {
-		url = item.Item.HTMLURL
-	} else if item.Item.Repository.HTMLURL != "" {
-		url = item.Item.Repository.HTMLURL
+	if item.HTMLURL != "" {
+		url = item.HTMLURL
+	} else if item.Repository.HTMLURL != "" {
+		url = item.Repository.HTMLURL
 	}
 
 	if url == "" {
@@ -610,6 +861,9 @@ func (m ListModel) cycleSortColumn() (tea.Model, tea.Cmd) {
 	case paneAssigned:
 		columns = assignedSortColumns
 		currentCol = &m.assignedSortColumn
+	case paneBlocked:
+		columns = blockedSortColumns
+		currentCol = &m.blockedSortColumn
 	default:
 		columns = prioritySortColumns
 		currentCol = &m.prioritySortColumn
@@ -632,6 +886,8 @@ func (m ListModel) cycleSortColumn() (tea.Model, tea.Cmd) {
 		m.sortOrphanedItems()
 	case paneAssigned:
 		m.sortAssignedItems()
+	case paneBlocked:
+		m.sortBlockedItems()
 	default:
 		m.sortPriorityItems()
 	}
@@ -651,6 +907,10 @@ func (m ListModel) cycleSortColumn() (tea.Model, tea.Cmd) {
 		}
 	case paneAssigned:
 		if !m.assignedSortDesc {
+			direction = "▲"
+		}
+	case paneBlocked:
+		if !m.blockedSortDesc {
 			direction = "▲"
 		}
 	default:
@@ -681,6 +941,9 @@ func (m ListModel) toggleSortDirection() (tea.Model, tea.Cmd) {
 	case paneAssigned:
 		m.assignedSortDesc = !m.assignedSortDesc
 		m.sortAssignedItems()
+	case paneBlocked:
+		m.blockedSortDesc = !m.blockedSortDesc
+		m.sortBlockedItems()
 	default:
 		m.prioritySortDesc = !m.prioritySortDesc
 		m.sortPriorityItems()
@@ -702,6 +965,9 @@ func (m ListModel) toggleSortDirection() (tea.Model, tea.Cmd) {
 	case paneAssigned:
 		col = m.assignedSortColumn
 		desc = m.assignedSortDesc
+	case paneBlocked:
+		col = m.blockedSortColumn
+		desc = m.blockedSortDesc
 	default:
 		col = m.prioritySortColumn
 		desc = m.prioritySortDesc
@@ -735,6 +1001,10 @@ func (m ListModel) resetSort() (tea.Model, tea.Cmd) {
 		m.assignedSortColumn = defaultAssignedSortColumn
 		m.assignedSortDesc = true
 		m.sortAssignedItems()
+	case paneBlocked:
+		m.blockedSortColumn = defaultBlockedSortColumn
+		m.blockedSortDesc = true
+		m.sortBlockedItems()
 	default:
 		m.prioritySortColumn = defaultPrioritySortColumn
 		m.prioritySortDesc = true
@@ -754,6 +1024,8 @@ func (m ListModel) resetSort() (tea.Model, tea.Cmd) {
 		col = m.orphanedSortColumn
 	case paneAssigned:
 		col = m.assignedSortColumn
+	case paneBlocked:
+		col = m.blockedSortColumn
 	default:
 		col = m.prioritySortColumn
 	}
@@ -771,7 +1043,7 @@ func (m *ListModel) preserveCursorPosition(item *triage.PrioritizedItem) {
 
 	items := m.activeItems()
 	for i, it := range items {
-		if it.Item.ID == item.Item.ID {
+		if it.ID == item.ID {
 			m.setActiveCursor(i)
 			return
 		}
@@ -815,6 +1087,21 @@ func (m ListModel) GetAssignedSortDesc() bool {
 // GetAssignedCount returns the number of assigned items
 func (m ListModel) GetAssignedCount() int {
 	return len(m.assignedItems)
+}
+
+// GetBlockedSortColumn returns the current blocked sort column for rendering
+func (m ListModel) GetBlockedSortColumn() SortColumn {
+	return m.blockedSortColumn
+}
+
+// GetBlockedSortDesc returns whether blocked sort is descending
+func (m ListModel) GetBlockedSortDesc() bool {
+	return m.blockedSortDesc
+}
+
+// GetBlockedCount returns the number of blocked items
+func (m ListModel) GetBlockedCount() int {
+	return len(m.blockedItems)
 }
 
 // View implements tea.Model

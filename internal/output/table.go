@@ -78,7 +78,7 @@ func (f *TableFormatter) Format(items []triage.PrioritizedItem, w io.Writer) err
 		var titleIcon string
 		var iconDisplayWidth int
 
-		iconInput := format.IconInput{
+		iconInput := format.IconOptions{
 			HotTopicThreshold: f.HotTopicThreshold,
 			IsQuickWin:        item.Priority == triage.PriorityQuickWin,
 			CurrentUser:       f.CurrentUser,
@@ -89,7 +89,7 @@ func (f *TableFormatter) Format(items []triage.PrioritizedItem, w io.Writer) err
 			iconInput.LastCommenter = issueDetails.LastCommenter
 		}
 
-		iconType := format.DetermineIcon(iconInput)
+		iconType := format.Icon(iconInput)
 		switch iconType {
 		case format.IconHotTopic:
 			titleIcon = format.HotTopicIcon + " "
@@ -283,7 +283,7 @@ func colorPriority(p triage.PriorityLevel) string {
 func formatAssigned(n *model.Item, maxWidth int) string {
 	pr := n.GetPRDetails()
 
-	input := format.AssignedInput{
+	input := format.AssignedOptions{
 		Assignees: n.Assignees,
 		IsPR:      n.IsPR(),
 	}
@@ -292,7 +292,7 @@ func formatAssigned(n *model.Item, maxWidth int) string {
 		input.RequestedReviewers = pr.RequestedReviewers
 	}
 
-	assigned := format.GetAssignedUser(input)
+	assigned := format.Assigned(input)
 	if assigned == "" {
 		return "─"
 	}

@@ -42,6 +42,7 @@ dist/
 # IDE and editor
 .idea/
 .vscode/
+.claude/
 *.swp
 *.swo
 *~

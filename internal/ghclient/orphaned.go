@@ -123,76 +123,13 @@ func (c *Client) ListOrphanedContributions(ctx context.Context, opts OrphanedSea
 
 // fetchOrphanedForRepo fetches orphaned contributions for a single repository
 func (c *Client) fetchOrphanedForRepo(ctx context.Context, owner, repo string, opts OrphanedSearchOptions) ([]model.Item, error) {
-	query := buildOrphanedQuery(owner, repo)
+	query := BuildOrphanedQuery(owner, repo)
 	respData, err := c.executeGraphQL(ctx, query, c.token)
 	if err != nil {
 		return nil, err
 	}
 
 	return parseOrphanedResponse(respData, owner, repo, opts)
-}
-
-// buildOrphanedQuery builds a GraphQL query to fetch open issues and PRs with comment analysis
-func buildOrphanedQuery(owner, repo string) string {
-	return fmt.Sprintf(`query {
-  repository(owner: "%s", name: "%s") {
-    issues(first: 50, states: OPEN, orderBy: {field: UPDATED_AT, direction: DESC}) {
-      nodes {
-        number
-        title
-        createdAt
-        updatedAt
-        url
-        author { login }
-        authorAssociation
-        assignees(first: 5) {
-          nodes { login }
-        }
-        comments(last: 10) {
-          totalCount
-          nodes {
-            author { login }
-            authorAssociation
-            createdAt
-          }
-        }
-      }
-    }
-    pullRequests(first: 50, states: OPEN, orderBy: {field: UPDATED_AT, direction: DESC}) {
-      nodes {
-        number
-        title
-        createdAt
-        updatedAt
-        url
-        author { login }
-        authorAssociation
-        additions
-        deletions
-        reviewDecision
-        assignees(first: 5) {
-          nodes { login }
-        }
-        comments(last: 10) {
-          totalCount
-          nodes {
-            author { login }
-            authorAssociation
-            createdAt
-          }
-        }
-        reviews(last: 5) {
-          nodes {
-            author { login }
-            authorAssociation
-            submittedAt
-            state
-          }
-        }
-      }
-    }
-  }
-}`, owner, repo)
 }
 
 // orphanedGraphQLResponse represents the response structure for orphaned queries
@@ -218,6 +155,11 @@ type orphanedIssueNode struct {
 	Assignees         struct {
 		Nodes []actorRef `json:"nodes"`
 	} `json:"assignees"`
+	Labels struct {
+		Nodes []struct {
+			Name string `json:"name"`
+		} `json:"nodes"`
+	} `json:"labels"`
 	Comments struct {
 		TotalCount int           `json:"totalCount"`
 		Nodes      []commentNode `json:"nodes"`
@@ -238,6 +180,11 @@ type orphanedPRNode struct {
 	Assignees         struct {
 		Nodes []actorRef `json:"nodes"`
 	} `json:"assignees"`
+	Labels struct {
+		Nodes []struct {
+			Name string `json:"name"`
+		} `json:"nodes"`
+	} `json:"labels"`
 	Comments struct {
 		TotalCount int           `json:"totalCount"`
 		Nodes      []commentNode `json:"nodes"`
@@ -299,6 +246,12 @@ func parseOrphanedResponse(data json.RawMessage, owner, repo string, opts Orphan
 			assignees = append(assignees, a.Login)
 		}
 
+		// Extract labels
+		var labels []string
+		for _, l := range issue.Labels.Nodes {
+			labels = append(labels, l.Name)
+		}
+
 		items = append(items, model.Item{
 			ID:        fmt.Sprintf("orphaned-%s-%d", fullName, issue.Number),
 			Reason:    model.ReasonOrphaned,
@@ -323,6 +276,7 @@ func parseOrphanedResponse(data json.RawMessage, owner, repo string, opts Orphan
 			CreatedAt:                 issue.CreatedAt,
 			Author:                    issue.Author.Login,
 			Assignees:                 assignees,
+			Labels:                    labels,
 			CommentCount:              issue.Comments.TotalCount,
 			AuthorAssociation:         issue.AuthorAssociation,
 			LastTeamActivityAt:        lastTeam,
@@ -367,6 +321,12 @@ func parseOrphanedResponse(data json.RawMessage, owner, repo string, opts Orphan
 			assignees = append(assignees, a.Login)
 		}
 
+		// Extract labels
+		var labels []string
+		for _, l := range pr.Labels.Nodes {
+			labels = append(labels, l.Name)
+		}
+
 		items = append(items, model.Item{
 			ID:        fmt.Sprintf("orphaned-%s-%d", fullName, pr.Number),
 			Reason:    model.ReasonOrphaned,
@@ -391,6 +351,7 @@ func parseOrphanedResponse(data json.RawMessage, owner, repo string, opts Orphan
 			CreatedAt:                 pr.CreatedAt,
 			Author:                    pr.Author.Login,
 			Assignees:                 assignees,
+			Labels:                    labels,
 			CommentCount:              pr.Comments.TotalCount,
 			AuthorAssociation:         pr.AuthorAssociation,
 			LastTeamActivityAt:        lastTeam,

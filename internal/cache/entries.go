@@ -8,7 +8,7 @@ import (
 
 // Version should be incremented when the cache format changes
 // or when enrichment data structure changes to invalidate old entries
-const Version = 2
+const Version = 3
 
 // ListType identifies the source of a list of items
 type ListType string
@@ -18,6 +18,7 @@ const (
 	ListTypeReviewRequested ListType = "review-requested"
 	ListTypeAuthored        ListType = "authored"
 	ListTypeAssignedIssues  ListType = "assigned-issues"
+	ListTypeAssignedPRs     ListType = "assigned-prs"
 	ListTypeOrphaned        ListType = "orphaned"
 )
 
@@ -28,6 +29,7 @@ func AllListTypes() []ListType {
 		ListTypeReviewRequested,
 		ListTypeAuthored,
 		ListTypeAssignedIssues,
+		ListTypeAssignedPRs,
 		ListTypeOrphaned,
 	}
 }
@@ -64,11 +66,11 @@ type CacheStats struct {
 	DetailValid int
 
 	// List caches by type
-	ListStats map[ListType]ListStat
+	ListStats map[ListType]ListStats
 }
 
-// ListStat contains statistics for a single list type
-type ListStat struct {
+// ListStats contains statistics for a single list type
+type ListStats struct {
 	Total int
 	Valid int
 }

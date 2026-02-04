@@ -22,6 +22,7 @@ type GitHubFetcher interface {
 	ListReviewRequestedPRs(ctx context.Context, username string) ([]model.Item, error)
 	ListAuthoredPRs(ctx context.Context, username string) ([]model.Item, error)
 	ListAssignedIssues(ctx context.Context, username string) ([]model.Item, error)
+	ListAssignedPRs(ctx context.Context, username string) ([]model.Item, error)
 
 	// Orphaned contributions
 	ListOrphanedContributions(ctx context.Context, opts OrphanedSearchOptions) ([]model.Item, error)

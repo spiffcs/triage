@@ -4,20 +4,20 @@ import (
 	"testing"
 )
 
-func TestDetermineIcon(t *testing.T) {
+func TestIcon(t *testing.T) {
 	tests := []struct {
 		name     string
-		input    IconInput
+		input    IconOptions
 		expected IconType
 	}{
 		{
 			name:     "no icon when no conditions met",
-			input:    IconInput{},
+			input:    IconOptions{},
 			expected: IconNone,
 		},
 		{
 			name: "hot topic for PR with high comments",
-			input: IconInput{
+			input: IconOptions{
 				CommentCount:      10,
 				HotTopicThreshold: 5,
 				IsPR:              true,
@@ -26,7 +26,7 @@ func TestDetermineIcon(t *testing.T) {
 		},
 		{
 			name: "hot topic for issue with high comments, other commenter",
-			input: IconInput{
+			input: IconOptions{
 				CommentCount:      10,
 				HotTopicThreshold: 5,
 				IsPR:              false,
@@ -37,7 +37,7 @@ func TestDetermineIcon(t *testing.T) {
 		},
 		{
 			name: "suppress hot topic for issue when current user is last commenter",
-			input: IconInput{
+			input: IconOptions{
 				CommentCount:      10,
 				HotTopicThreshold: 5,
 				IsPR:              false,
@@ -48,7 +48,7 @@ func TestDetermineIcon(t *testing.T) {
 		},
 		{
 			name: "PR does not suppress hot topic even when current user is last commenter",
-			input: IconInput{
+			input: IconOptions{
 				CommentCount:      10,
 				HotTopicThreshold: 5,
 				IsPR:              true,
@@ -59,14 +59,14 @@ func TestDetermineIcon(t *testing.T) {
 		},
 		{
 			name: "quick win icon",
-			input: IconInput{
+			input: IconOptions{
 				IsQuickWin: true,
 			},
 			expected: IconQuickWin,
 		},
 		{
 			name: "hot topic takes precedence over quick win",
-			input: IconInput{
+			input: IconOptions{
 				CommentCount:      10,
 				HotTopicThreshold: 5,
 				IsPR:              true,
@@ -76,7 +76,7 @@ func TestDetermineIcon(t *testing.T) {
 		},
 		{
 			name: "below threshold shows no icon",
-			input: IconInput{
+			input: IconOptions{
 				CommentCount:      3,
 				HotTopicThreshold: 5,
 			},
@@ -84,7 +84,7 @@ func TestDetermineIcon(t *testing.T) {
 		},
 		{
 			name: "exactly at threshold shows no icon",
-			input: IconInput{
+			input: IconOptions{
 				CommentCount:      5,
 				HotTopicThreshold: 5,
 			},
@@ -92,7 +92,7 @@ func TestDetermineIcon(t *testing.T) {
 		},
 		{
 			name: "threshold of 0 disables hot topic",
-			input: IconInput{
+			input: IconOptions{
 				CommentCount:      10,
 				HotTopicThreshold: 0,
 				IsPR:              true,
@@ -103,9 +103,9 @@ func TestDetermineIcon(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := DetermineIcon(tt.input)
+			got := Icon(tt.input)
 			if got != tt.expected {
-				t.Errorf("DetermineIcon() = %v, want %v", got, tt.expected)
+				t.Errorf("Icon() = %v, want %v", got, tt.expected)
 			}
 		})
 	}

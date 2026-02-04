@@ -1,0 +1,33 @@
+# Single Issue item template for batch queries
+# Template variables: Alias, Owner, Repo, Number
+
+{{.Alias}}: repository(owner: "{{.Owner}}", name: "{{.Repo}}") {
+  issue(number: {{.Number}}) {
+    number
+    state
+    createdAt
+    updatedAt
+    closedAt
+    author {
+      login
+    }
+    assignees(first: 10) {
+      nodes {
+        login
+      }
+    }
+    labels(first: 20) {
+      nodes {
+        name
+      }
+    }
+    comments(last: 1) {
+      totalCount
+      nodes {
+        author {
+          login
+        }
+      }
+    }
+  }
+}
