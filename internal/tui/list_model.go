@@ -56,16 +56,16 @@ const (
 )
 
 // prioritySortColumns defines the cycling order for priority pane
-var prioritySortColumns = []SortColumn{SortPriority, SortUpdated, SortRepo}
+var prioritySortColumns = []SortColumn{SortPriority, SortUpdated, SortRepo, SortSize}
 
 // orphanedSortColumns defines the cycling order for orphaned pane
-var orphanedSortColumns = []SortColumn{SortStale, SortUpdated, SortComments, SortSize, SortAuthor, SortRepo}
+var orphanedSortColumns = []SortColumn{SortStale, SortUpdated, SortSize, SortAuthor, SortRepo}
 
 // assignedSortColumns defines the cycling order for assigned pane
-var assignedSortColumns = []SortColumn{SortUpdated, SortAuthor, SortRepo}
+var assignedSortColumns = []SortColumn{SortUpdated, SortSize, SortAuthor, SortRepo}
 
 // blockedSortColumns defines the cycling order for blocked pane
-var blockedSortColumns = []SortColumn{SortUpdated, SortAuthor, SortRepo}
+var blockedSortColumns = []SortColumn{SortUpdated, SortSize, SortAuthor, SortRepo}
 
 // Default sort columns
 const (
@@ -307,7 +307,53 @@ func (m *ListModel) sortPriorityItems() {
 			less = a.Item.UpdatedAt.Before(b.Item.UpdatedAt)
 		case SortRepo:
 			// Inverted so that descending (▼) gives A-Z order
-			less = a.Item.Repository.FullName > b.Item.Repository.FullName
+			// Case insensitive comparison
+			less = strings.ToLower(a.Item.Repository.FullName) > strings.ToLower(b.Item.Repository.FullName)
+		case SortSize:
+			// Custom sorting: PRs with review data come first, then everything else by comments
+			// Direction is handled within this case (not using standard less+invert pattern)
+			aIsPR := a.Item.Details != nil && a.Item.Details.IsPR
+			bIsPR := b.Item.Details != nil && b.Item.Details.IsPR
+			aSize, bSize := 0, 0
+			if a.Item.Details != nil {
+				aSize = a.Item.Details.Additions + a.Item.Details.Deletions
+			}
+			if b.Item.Details != nil {
+				bSize = b.Item.Details.Additions + b.Item.Details.Deletions
+			}
+			aHasReviewData := aIsPR && aSize > 0
+			bHasReviewData := bIsPR && bSize > 0
+
+			// PRs with review data always come before everything else
+			if aHasReviewData && !bHasReviewData {
+				return true
+			}
+			if !aHasReviewData && bHasReviewData {
+				return false
+			}
+
+			// Both have review data: sort by lines changed
+			if aHasReviewData && bHasReviewData {
+				// desc (▼): smallest to largest; asc (▲): largest to smallest
+				if desc {
+					return aSize < bSize
+				}
+				return aSize > bSize
+			}
+
+			// Neither has review data: sort by comment count
+			commentsA, commentsB := 0, 0
+			if a.Item.Details != nil {
+				commentsA = a.Item.Details.CommentCount
+			}
+			if b.Item.Details != nil {
+				commentsB = b.Item.Details.CommentCount
+			}
+			// desc (▼): most to least; asc (▲): least to most
+			if desc {
+				return commentsA > commentsB
+			}
+			return commentsA < commentsB
 		default:
 			// Default to priority
 			if a.Priority != b.Priority {
@@ -359,17 +405,19 @@ func (m *ListModel) sortOrphanedItems() {
 			less = a.Item.UpdatedAt.Before(b.Item.UpdatedAt)
 		case SortAuthor:
 			// Inverted so that descending (▼) gives A-Z order
+			// Case insensitive comparison
 			authorA, authorB := "", ""
 			if a.Item.Details != nil {
-				authorA = a.Item.Details.Author
+				authorA = strings.ToLower(a.Item.Details.Author)
 			}
 			if b.Item.Details != nil {
-				authorB = b.Item.Details.Author
+				authorB = strings.ToLower(b.Item.Details.Author)
 			}
 			less = authorA > authorB
 		case SortRepo:
 			// Inverted so that descending (▼) gives A-Z order
-			less = a.Item.Repository.FullName > b.Item.Repository.FullName
+			// Case insensitive comparison
+			less = strings.ToLower(a.Item.Repository.FullName) > strings.ToLower(b.Item.Repository.FullName)
 		case SortComments:
 			commentsA, commentsB := 0, 0
 			if a.Item.Details != nil {
@@ -383,26 +431,52 @@ func (m *ListModel) sortOrphanedItems() {
 			// Calculate days since last team activity
 			staleA := daysSinceTeamActivity(a)
 			staleB := daysSinceTeamActivity(b)
-			less = staleA < staleB
+			less = staleA > staleB
 		case SortSize:
-			// For PRs: sort by review size (additions + deletions)
-			// For issues: sort by comment count
-			sizeA, sizeB := 0, 0
+			// Custom sorting: PRs with review data come first, then everything else by comments
+			// Direction is handled within this case (not using standard less+invert pattern)
+			aIsPR := a.Item.Details != nil && a.Item.Details.IsPR
+			bIsPR := b.Item.Details != nil && b.Item.Details.IsPR
+			aSize, bSize := 0, 0
 			if a.Item.Details != nil {
-				if a.Item.Details.IsPR {
-					sizeA = a.Item.Details.Additions + a.Item.Details.Deletions
-				} else {
-					sizeA = a.Item.Details.CommentCount
-				}
+				aSize = a.Item.Details.Additions + a.Item.Details.Deletions
 			}
 			if b.Item.Details != nil {
-				if b.Item.Details.IsPR {
-					sizeB = b.Item.Details.Additions + b.Item.Details.Deletions
-				} else {
-					sizeB = b.Item.Details.CommentCount
-				}
+				bSize = b.Item.Details.Additions + b.Item.Details.Deletions
 			}
-			less = sizeA < sizeB
+			aHasReviewData := aIsPR && aSize > 0
+			bHasReviewData := bIsPR && bSize > 0
+
+			// PRs with review data always come before everything else
+			if aHasReviewData && !bHasReviewData {
+				return true
+			}
+			if !aHasReviewData && bHasReviewData {
+				return false
+			}
+
+			// Both have review data: sort by lines changed
+			if aHasReviewData && bHasReviewData {
+				// desc (▼): smallest to largest; asc (▲): largest to smallest
+				if desc {
+					return aSize < bSize
+				}
+				return aSize > bSize
+			}
+
+			// Neither has review data: sort by comment count
+			commentsA, commentsB := 0, 0
+			if a.Item.Details != nil {
+				commentsA = a.Item.Details.CommentCount
+			}
+			if b.Item.Details != nil {
+				commentsB = b.Item.Details.CommentCount
+			}
+			// desc (▼): most to least; asc (▲): least to most
+			if desc {
+				return commentsA > commentsB
+			}
+			return commentsA < commentsB
 		default:
 			less = a.Item.UpdatedAt.Before(b.Item.UpdatedAt)
 		}
@@ -431,19 +505,66 @@ func (m *ListModel) sortAssignedItems() {
 		switch column {
 		case SortUpdated:
 			less = a.Item.UpdatedAt.Before(b.Item.UpdatedAt)
-		case SortAuthor:
-			// Inverted so that descending (▼) gives A-Z order
-			authorA, authorB := "", ""
+		case SortSize:
+			// Custom sorting: PRs with review data come first, then everything else by comments
+			// Direction is handled within this case (not using standard less+invert pattern)
+			aIsPR := a.Item.Details != nil && a.Item.Details.IsPR
+			bIsPR := b.Item.Details != nil && b.Item.Details.IsPR
+			aSize, bSize := 0, 0
 			if a.Item.Details != nil {
-				authorA = a.Item.Details.Author
+				aSize = a.Item.Details.Additions + a.Item.Details.Deletions
 			}
 			if b.Item.Details != nil {
-				authorB = b.Item.Details.Author
+				bSize = b.Item.Details.Additions + b.Item.Details.Deletions
+			}
+			aHasReviewData := aIsPR && aSize > 0
+			bHasReviewData := bIsPR && bSize > 0
+
+			// PRs with review data always come before everything else
+			if aHasReviewData && !bHasReviewData {
+				return true
+			}
+			if !aHasReviewData && bHasReviewData {
+				return false
+			}
+
+			// Both have review data: sort by lines changed
+			if aHasReviewData && bHasReviewData {
+				// desc (▼): smallest to largest; asc (▲): largest to smallest
+				if desc {
+					return aSize < bSize
+				}
+				return aSize > bSize
+			}
+
+			// Neither has review data: sort by comment count
+			commentsA, commentsB := 0, 0
+			if a.Item.Details != nil {
+				commentsA = a.Item.Details.CommentCount
+			}
+			if b.Item.Details != nil {
+				commentsB = b.Item.Details.CommentCount
+			}
+			// desc (▼): most to least; asc (▲): least to most
+			if desc {
+				return commentsA > commentsB
+			}
+			return commentsA < commentsB
+		case SortAuthor:
+			// Inverted so that descending (▼) gives A-Z order
+			// Case insensitive comparison
+			authorA, authorB := "", ""
+			if a.Item.Details != nil {
+				authorA = strings.ToLower(a.Item.Details.Author)
+			}
+			if b.Item.Details != nil {
+				authorB = strings.ToLower(b.Item.Details.Author)
 			}
 			less = authorA > authorB
 		case SortRepo:
 			// Inverted so that descending (▼) gives A-Z order
-			less = a.Item.Repository.FullName > b.Item.Repository.FullName
+			// Case insensitive comparison
+			less = strings.ToLower(a.Item.Repository.FullName) > strings.ToLower(b.Item.Repository.FullName)
 		default:
 			less = a.Item.UpdatedAt.Before(b.Item.UpdatedAt)
 		}
@@ -472,19 +593,66 @@ func (m *ListModel) sortBlockedItems() {
 		switch column {
 		case SortUpdated:
 			less = a.Item.UpdatedAt.Before(b.Item.UpdatedAt)
-		case SortAuthor:
-			// Inverted so that descending (▼) gives A-Z order
-			authorA, authorB := "", ""
+		case SortSize:
+			// Custom sorting: PRs with review data come first, then everything else by comments
+			// Direction is handled within this case (not using standard less+invert pattern)
+			aIsPR := a.Item.Details != nil && a.Item.Details.IsPR
+			bIsPR := b.Item.Details != nil && b.Item.Details.IsPR
+			aSize, bSize := 0, 0
 			if a.Item.Details != nil {
-				authorA = a.Item.Details.Author
+				aSize = a.Item.Details.Additions + a.Item.Details.Deletions
 			}
 			if b.Item.Details != nil {
-				authorB = b.Item.Details.Author
+				bSize = b.Item.Details.Additions + b.Item.Details.Deletions
+			}
+			aHasReviewData := aIsPR && aSize > 0
+			bHasReviewData := bIsPR && bSize > 0
+
+			// PRs with review data always come before everything else
+			if aHasReviewData && !bHasReviewData {
+				return true
+			}
+			if !aHasReviewData && bHasReviewData {
+				return false
+			}
+
+			// Both have review data: sort by lines changed
+			if aHasReviewData && bHasReviewData {
+				// desc (▼): smallest to largest; asc (▲): largest to smallest
+				if desc {
+					return aSize < bSize
+				}
+				return aSize > bSize
+			}
+
+			// Neither has review data: sort by comment count
+			commentsA, commentsB := 0, 0
+			if a.Item.Details != nil {
+				commentsA = a.Item.Details.CommentCount
+			}
+			if b.Item.Details != nil {
+				commentsB = b.Item.Details.CommentCount
+			}
+			// desc (▼): most to least; asc (▲): least to most
+			if desc {
+				return commentsA > commentsB
+			}
+			return commentsA < commentsB
+		case SortAuthor:
+			// Inverted so that descending (▼) gives A-Z order
+			// Case insensitive comparison
+			authorA, authorB := "", ""
+			if a.Item.Details != nil {
+				authorA = strings.ToLower(a.Item.Details.Author)
+			}
+			if b.Item.Details != nil {
+				authorB = strings.ToLower(b.Item.Details.Author)
 			}
 			less = authorA > authorB
 		case SortRepo:
 			// Inverted so that descending (▼) gives A-Z order
-			less = a.Item.Repository.FullName > b.Item.Repository.FullName
+			// Case insensitive comparison
+			less = strings.ToLower(a.Item.Repository.FullName) > strings.ToLower(b.Item.Repository.FullName)
 		default:
 			less = a.Item.UpdatedAt.Before(b.Item.UpdatedAt)
 		}
