@@ -424,17 +424,17 @@ func (s *ItemService) Enrich(ctx context.Context, items []model.Item, onProgress
 
 // buildCacheKey creates a cache key from an item.
 // Returns false if the key cannot be built (e.g., no URL).
-func buildCacheKey(item *model.Item) (cache.CacheKey, bool) {
+func buildCacheKey(item *model.Item) (cache.Key, bool) {
 	if item.Subject.URL == "" {
-		return cache.CacheKey{}, false
+		return cache.Key{}, false
 	}
 
 	number, err := ExtractIssueNumber(item.Subject.URL)
 	if err != nil {
-		return cache.CacheKey{}, false
+		return cache.Key{}, false
 	}
 
-	return cache.CacheKey{
+	return cache.Key{
 		RepoFullName: item.Repository.FullName,
 		SubjectType:  item.Subject.Type,
 		Number:       number,

@@ -318,7 +318,7 @@ func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, pr
 	var titleIcon string
 	var iconDisplayWidth int
 
-	iconInput := format.IconInput{
+	iconInput := format.IconOptions{
 		HotTopicThreshold: hotTopicThreshold,
 		IsQuickWin:        item.Priority == triage.PriorityQuickWin,
 		CurrentUser:       currentUser,
@@ -329,7 +329,7 @@ func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, pr
 		iconInput.LastCommenter = issueDetails.LastCommenter
 	}
 
-	iconType := format.DetermineIcon(iconInput)
+	iconType := format.Icon(iconInput)
 	switch iconType {
 	case format.IconHotTopic:
 		titleIcon = format.HotTopicIcon + " "
@@ -534,7 +534,7 @@ func renderCI(n *model.Item, isPR bool, selected bool) (string, int) {
 func renderAssigned(n *model.Item, selected bool) (string, int) {
 	pr := n.GetPRDetails()
 
-	input := format.AssignedInput{
+	input := format.AssignedOptions{
 		Assignees: n.Assignees,
 		IsPR:      n.IsPR(),
 	}
@@ -543,7 +543,7 @@ func renderAssigned(n *model.Item, selected bool) (string, int) {
 		input.RequestedReviewers = pr.RequestedReviewers
 	}
 
-	assigned := format.GetAssignedUser(input)
+	assigned := format.Assigned(input)
 	if assigned == "" {
 		return "─", 1
 	}

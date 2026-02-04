@@ -1,17 +1,17 @@
 package format
 
-// AssignedInput contains the fields needed to determine the assigned user.
-type AssignedInput struct {
+// AssignedOptions contains the fields needed to determine the assigned user.
+type AssignedOptions struct {
 	Assignees          []string
 	IsPR               bool
 	LatestReviewer     string
 	RequestedReviewers []string
 }
 
-// GetAssignedUser returns the user to display in the assigned column.
+// Assigned returns the user to display in the assigned column.
 // Returns the first assignee or empty string if no one is assigned.
 // Callers should add their own placeholder for empty values.
-func GetAssignedUser(input AssignedInput) string {
+func Assigned(input AssignedOptions) string {
 	if len(input.Assignees) > 0 {
 		return input.Assignees[0]
 	}

@@ -14,20 +14,20 @@ import (
 	"github.com/spiffcs/triage/internal/model"
 )
 
-// CacheKey uniquely identifies an item in the cache.
+// Key uniquely identifies an item in the cache.
 // The caller is responsible for extracting the number from the API URL.
-type CacheKey struct {
+type Key struct {
 	RepoFullName string
 	SubjectType  model.SubjectType
 	Number       int
 }
 
-// Cacher defines the interface for caching operations.
+// Store defines the interface for caching operations.
 // This interface enables mocking the cache in unit tests.
-type Cacher interface {
+type Store interface {
 	// Item details cache
-	Get(key CacheKey, updatedAt time.Time) (*model.Item, bool)
-	Set(key CacheKey, updatedAt time.Time, item *model.Item) error
+	Get(key Key, updatedAt time.Time) (*model.Item, bool)
+	Set(key Key, updatedAt time.Time, item *model.Item) error
 	Clear() error
 
 	// Unified list cache
@@ -39,8 +39,8 @@ type Cacher interface {
 	DetailedStats() (*CacheStats, error)
 }
 
-// Ensure Cache implements Cacher interface.
-var _ Cacher = (*Cache)(nil)
+// Ensure Cache implements Store interface.
+var _ Store = (*Cache)(nil)
 
 // Cache stores notification details to avoid repeated API calls
 type Cache struct {
@@ -63,7 +63,7 @@ func NewCache() (*Cache, error) {
 }
 
 // cacheKeyString generates a file name for a cache key
-func (c *Cache) cacheKeyString(key CacheKey) string {
+func (c *Cache) cacheKeyString(key Key) string {
 	// Replace slashes with underscores to avoid path issues while preserving uniqueness
 	safeName := strings.ReplaceAll(key.RepoFullName, "/", "_")
 	return fmt.Sprintf("%s_%s_%d.json",
@@ -75,7 +75,7 @@ func (c *Cache) cacheKeyString(key CacheKey) string {
 
 // Get retrieves cached item data for an item.
 // The caller provides the cache key and the item's updated time for invalidation.
-func (c *Cache) Get(key CacheKey, updatedAt time.Time) (*model.Item, bool) {
+func (c *Cache) Get(key Key, updatedAt time.Time) (*model.Item, bool) {
 	if key.Number == 0 {
 		return nil, false
 	}
@@ -114,7 +114,7 @@ func (c *Cache) Get(key CacheKey, updatedAt time.Time) (*model.Item, bool) {
 
 // Set caches item data for an item.
 // The caller provides the cache key and the item's updated time.
-func (c *Cache) Set(key CacheKey, updatedAt time.Time, item *model.Item) error {
+func (c *Cache) Set(key Key, updatedAt time.Time, item *model.Item) error {
 	if key.Number == 0 || item == nil {
 		return nil
 	}
@@ -269,12 +269,12 @@ func (c *Cache) DetailedStats() (*CacheStats, error) {
 	}
 
 	stats := &CacheStats{
-		ListStats: make(map[ListType]ListStat),
+		ListStats: make(map[ListType]ListStats),
 	}
 
 	// Initialize all list types
 	for _, lt := range AllListTypes() {
-		stats.ListStats[lt] = ListStat{}
+		stats.ListStats[lt] = ListStats{}
 	}
 
 	now := time.Now()

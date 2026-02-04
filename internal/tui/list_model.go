@@ -190,7 +190,7 @@ func (m *ListModel) splitItems() {
 		} else if m.hasAnyAssignee(item) {
 			// Assigned to someone else - goes to priority (no longer orphaned)
 			m.priorityItems = append(m.priorityItems, item)
-		} else if item.Item.Reason == model.ReasonOrphaned {
+		} else if item.Reason == model.ReasonOrphaned {
 			// Only truly unassigned items with orphaned reason go here
 			m.orphanedItems = append(m.orphanedItems, item)
 		} else {
@@ -209,7 +209,7 @@ func (m *ListModel) isAssignedToCurrentUser(item triage.PrioritizedItem) bool {
 	if m.currentUser == "" {
 		return false
 	}
-	for _, assignee := range item.Item.Assignees {
+	for _, assignee := range item.Assignees {
 		if assignee == m.currentUser {
 			return true
 		}
@@ -219,16 +219,16 @@ func (m *ListModel) isAssignedToCurrentUser(item triage.PrioritizedItem) bool {
 
 // hasAnyAssignee checks if the item is assigned to anyone
 func (m *ListModel) hasAnyAssignee(item triage.PrioritizedItem) bool {
-	return len(item.Item.Assignees) > 0
+	return len(item.Assignees) > 0
 }
 
 // hasBlockedLabel checks if the item has any of the configured blocked labels (case-insensitive).
 // If blockedLabels is empty, always returns false (blocked pane is disabled).
-func (m *ListModel) hasBlockedLabel(item triage.PrioritizedItem) bool {
+func (m *ListModel) hasBlockedLabel(pi triage.PrioritizedItem) bool {
 	if len(m.blockedLabels) == 0 {
 		return false
 	}
-	for _, itemLabel := range item.Item.Labels {
+	for _, itemLabel := range pi.Labels {
 		for _, blockedLabel := range m.blockedLabels {
 			if strings.EqualFold(itemLabel, blockedLabel) {
 				return true
@@ -315,16 +315,16 @@ func (m *ListModel) sortPriorityItems() {
 				less = a.Score < b.Score
 			}
 		case SortUpdated:
-			less = a.Item.UpdatedAt.Before(b.Item.UpdatedAt)
+			less = a.UpdatedAt.Before(b.UpdatedAt)
 		case SortRepo:
 			// Inverted so that descending (▼) gives A-Z order
 			// Case insensitive comparison
-			less = strings.ToLower(a.Item.Repository.FullName) > strings.ToLower(b.Item.Repository.FullName)
+			less = strings.ToLower(a.Repository.FullName) > strings.ToLower(b.Repository.FullName)
 		case SortSize:
 			// Custom sorting: PRs with review data come first, then everything else by comments
 			// Direction is handled within this case (not using standard less+invert pattern)
-			prA := a.Item.GetPRDetails()
-			prB := b.Item.GetPRDetails()
+			prA := a.GetPRDetails()
+			prB := b.GetPRDetails()
 			aSize, bSize := 0, 0
 			if prA != nil {
 				aSize = prA.Additions + prA.Deletions
@@ -355,9 +355,9 @@ func (m *ListModel) sortPriorityItems() {
 			// Neither has review data: sort by comment count
 			// desc (▼): most to least; asc (▲): least to most
 			if desc {
-				return a.Item.CommentCount > b.Item.CommentCount
+				return a.CommentCount > b.CommentCount
 			}
-			return a.Item.CommentCount < b.Item.CommentCount
+			return a.CommentCount < b.CommentCount
 		default:
 			// Default to priority
 			if a.Priority != b.Priority {
@@ -403,17 +403,17 @@ func (m *ListModel) sortOrphanedItems() {
 
 		switch column {
 		case SortUpdated:
-			less = a.Item.UpdatedAt.Before(b.Item.UpdatedAt)
+			less = a.UpdatedAt.Before(b.UpdatedAt)
 		case SortAuthor:
 			// Inverted so that descending (▼) gives A-Z order
 			// Case insensitive comparison
-			less = strings.ToLower(a.Item.Author) > strings.ToLower(b.Item.Author)
+			less = strings.ToLower(a.Author) > strings.ToLower(b.Author)
 		case SortRepo:
 			// Inverted so that descending (▼) gives A-Z order
 			// Case insensitive comparison
-			less = strings.ToLower(a.Item.Repository.FullName) > strings.ToLower(b.Item.Repository.FullName)
+			less = strings.ToLower(a.Repository.FullName) > strings.ToLower(b.Repository.FullName)
 		case SortComments:
-			less = a.Item.CommentCount < b.Item.CommentCount
+			less = a.CommentCount < b.CommentCount
 		case SortStale:
 			// Calculate days since last team activity
 			staleA := daysSinceTeamActivity(a)
@@ -422,8 +422,8 @@ func (m *ListModel) sortOrphanedItems() {
 		case SortSize:
 			// Custom sorting: PRs with review data come first, then everything else by comments
 			// Direction is handled within this case (not using standard less+invert pattern)
-			prA := a.Item.GetPRDetails()
-			prB := b.Item.GetPRDetails()
+			prA := a.GetPRDetails()
+			prB := b.GetPRDetails()
 			aSize, bSize := 0, 0
 			if prA != nil {
 				aSize = prA.Additions + prA.Deletions
@@ -454,11 +454,11 @@ func (m *ListModel) sortOrphanedItems() {
 			// Neither has review data: sort by comment count
 			// desc (▼): most to least; asc (▲): least to most
 			if desc {
-				return a.Item.CommentCount > b.Item.CommentCount
+				return a.CommentCount > b.CommentCount
 			}
-			return a.Item.CommentCount < b.Item.CommentCount
+			return a.CommentCount < b.CommentCount
 		default:
-			less = a.Item.UpdatedAt.Before(b.Item.UpdatedAt)
+			less = a.UpdatedAt.Before(b.UpdatedAt)
 		}
 
 		// Invert for descending order
@@ -484,12 +484,12 @@ func (m *ListModel) sortAssignedItems() {
 
 		switch column {
 		case SortUpdated:
-			less = a.Item.UpdatedAt.Before(b.Item.UpdatedAt)
+			less = a.UpdatedAt.Before(b.UpdatedAt)
 		case SortSize:
 			// Custom sorting: PRs with review data come first, then everything else by comments
 			// Direction is handled within this case (not using standard less+invert pattern)
-			prA := a.Item.GetPRDetails()
-			prB := b.Item.GetPRDetails()
+			prA := a.GetPRDetails()
+			prB := b.GetPRDetails()
 			aSize, bSize := 0, 0
 			if prA != nil {
 				aSize = prA.Additions + prA.Deletions
@@ -520,19 +520,19 @@ func (m *ListModel) sortAssignedItems() {
 			// Neither has review data: sort by comment count
 			// desc (▼): most to least; asc (▲): least to most
 			if desc {
-				return a.Item.CommentCount > b.Item.CommentCount
+				return a.CommentCount > b.CommentCount
 			}
-			return a.Item.CommentCount < b.Item.CommentCount
+			return a.CommentCount < b.CommentCount
 		case SortAuthor:
 			// Inverted so that descending (▼) gives A-Z order
 			// Case insensitive comparison
-			less = strings.ToLower(a.Item.Author) > strings.ToLower(b.Item.Author)
+			less = strings.ToLower(a.Author) > strings.ToLower(b.Author)
 		case SortRepo:
 			// Inverted so that descending (▼) gives A-Z order
 			// Case insensitive comparison
-			less = strings.ToLower(a.Item.Repository.FullName) > strings.ToLower(b.Item.Repository.FullName)
+			less = strings.ToLower(a.Repository.FullName) > strings.ToLower(b.Repository.FullName)
 		default:
-			less = a.Item.UpdatedAt.Before(b.Item.UpdatedAt)
+			less = a.UpdatedAt.Before(b.UpdatedAt)
 		}
 
 		// Invert for descending order
@@ -558,12 +558,12 @@ func (m *ListModel) sortBlockedItems() {
 
 		switch column {
 		case SortUpdated:
-			less = a.Item.UpdatedAt.Before(b.Item.UpdatedAt)
+			less = a.UpdatedAt.Before(b.UpdatedAt)
 		case SortSize:
 			// Custom sorting: PRs with review data come first, then everything else by comments
 			// Direction is handled within this case (not using standard less+invert pattern)
-			prA := a.Item.GetPRDetails()
-			prB := b.Item.GetPRDetails()
+			prA := a.GetPRDetails()
+			prB := b.GetPRDetails()
 			aSize, bSize := 0, 0
 			if prA != nil {
 				aSize = prA.Additions + prA.Deletions
@@ -594,19 +594,19 @@ func (m *ListModel) sortBlockedItems() {
 			// Neither has review data: sort by comment count
 			// desc (▼): most to least; asc (▲): least to most
 			if desc {
-				return a.Item.CommentCount > b.Item.CommentCount
+				return a.CommentCount > b.CommentCount
 			}
-			return a.Item.CommentCount < b.Item.CommentCount
+			return a.CommentCount < b.CommentCount
 		case SortAuthor:
 			// Inverted so that descending (▼) gives A-Z order
 			// Case insensitive comparison
-			less = strings.ToLower(a.Item.Author) > strings.ToLower(b.Item.Author)
+			less = strings.ToLower(a.Author) > strings.ToLower(b.Author)
 		case SortRepo:
 			// Inverted so that descending (▼) gives A-Z order
 			// Case insensitive comparison
-			less = strings.ToLower(a.Item.Repository.FullName) > strings.ToLower(b.Item.Repository.FullName)
+			less = strings.ToLower(a.Repository.FullName) > strings.ToLower(b.Repository.FullName)
 		default:
-			less = a.Item.UpdatedAt.Before(b.Item.UpdatedAt)
+			less = a.UpdatedAt.Before(b.UpdatedAt)
 		}
 
 		// Invert for descending order
@@ -826,10 +826,10 @@ func (m ListModel) openInBrowser() (tea.Model, tea.Cmd) {
 	item := items[cursor]
 	url := ""
 
-	if item.Item.HTMLURL != "" {
-		url = item.Item.HTMLURL
-	} else if item.Item.Repository.HTMLURL != "" {
-		url = item.Item.Repository.HTMLURL
+	if item.HTMLURL != "" {
+		url = item.HTMLURL
+	} else if item.Repository.HTMLURL != "" {
+		url = item.Repository.HTMLURL
 	}
 
 	if url == "" {
@@ -1043,7 +1043,7 @@ func (m *ListModel) preserveCursorPosition(item *triage.PrioritizedItem) {
 
 	items := m.activeItems()
 	for i, it := range items {
-		if it.Item.ID == item.Item.ID {
+		if it.ID == item.ID {
 			m.setActiveCursor(i)
 			return
 		}

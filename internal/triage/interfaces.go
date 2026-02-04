@@ -18,12 +18,12 @@ type Scorer interface {
 	// Score calculates the priority score for a notification.
 	Score(n *model.Item) int
 
-	// DeterminePriority determines the display priority based on
+	// Priority determines the display priority based on
 	// the notification and its score.
-	DeterminePriority(n *model.Item, score int) PriorityLevel
+	Priority(n *model.Item, score int) PriorityLevel
 
-	// DetermineAction suggests what action the user should take.
-	DetermineAction(n *model.Item) string
+	// Action suggests what action the user should take.
+	Action(n *model.Item) string
 }
 
 // Ensure Engine implements Prioritizer interface.

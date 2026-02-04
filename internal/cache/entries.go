@@ -8,7 +8,7 @@ import (
 
 // Version should be incremented when the cache format changes
 // or when enrichment data structure changes to invalidate old entries
-const Version = 2
+const Version = 3
 
 // ListType identifies the source of a list of items
 type ListType string
@@ -66,11 +66,11 @@ type CacheStats struct {
 	DetailValid int
 
 	// List caches by type
-	ListStats map[ListType]ListStat
+	ListStats map[ListType]ListStats
 }
 
-// ListStat contains statistics for a single list type
-type ListStat struct {
+// ListStats contains statistics for a single list type
+type ListStats struct {
 	Total int
 	Valid int
 }

@@ -84,11 +84,11 @@ func TestHotTopicSuppression(t *testing.T) {
 				Priority: triage.PriorityFYI,
 			}
 			if tt.isPR {
-				item.Item.Type = model.ItemTypePullRequest
-				item.Item.Details = &model.PRDetails{}
+				item.Type = model.ItemTypePullRequest
+				item.Details = &model.PRDetails{}
 			} else {
-				item.Item.Type = model.ItemTypeIssue
-				item.Item.Details = &model.IssueDetails{
+				item.Type = model.ItemTypeIssue
+				item.Details = &model.IssueDetails{
 					LastCommenter: tt.lastCommenter,
 				}
 			}

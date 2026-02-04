@@ -165,8 +165,8 @@ func (h *Heuristics) isLowHangingFruit(n *model.Item) bool {
 	return false
 }
 
-// DeterminePriority determines the priority for a notification (displayed in table)
-func (h *Heuristics) DeterminePriority(n *model.Item, score int) PriorityLevel {
+// Priority determines the priority for a notification (displayed in table)
+func (h *Heuristics) Priority(n *model.Item, score int) PriorityLevel {
 	reason := n.Reason
 
 	// Urgent: review requests (if enabled)
@@ -221,8 +221,8 @@ func (h *Heuristics) DeterminePriority(n *model.Item, score int) PriorityLevel {
 	return PriorityFYI
 }
 
-// DetermineAction suggests what action the user should take
-func (h *Heuristics) DetermineAction(n *model.Item) string {
+// Action suggests what action the user should take
+func (h *Heuristics) Action(n *model.Item) string {
 	reason := n.Reason
 
 	switch reason {
