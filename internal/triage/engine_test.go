@@ -364,6 +364,57 @@ func TestFilterByExcludedAuthors(t *testing.T) {
 	}
 }
 
+func TestFilterByExcludedRepos(t *testing.T) {
+	items := []PrioritizedItem{
+		makePrioritizedItemWithRepo("1", model.ReasonReviewRequested, model.SubjectPullRequest, PriorityUrgent, nil, "owner/noisy-repo"),
+		makePrioritizedItemWithRepo("2", model.ReasonReviewRequested, model.SubjectPullRequest, PriorityUrgent, nil, "owner/good-repo"),
+		makePrioritizedItemWithRepo("3", model.ReasonSubscribed, model.SubjectIssue, PriorityFYI, nil, "owner/another-noisy"),
+		makePrioritizedItemWithRepo("4", model.ReasonMention, model.SubjectIssue, PriorityImportant, nil, "owner/good-repo"),
+	}
+
+	tests := []struct {
+		name          string
+		excludedRepos []string
+		wantIDs       []string
+	}{
+		{
+			name:          "empty exclude list returns all",
+			excludedRepos: []string{},
+			wantIDs:       []string{"1", "2", "3", "4"},
+		},
+		{
+			name:          "excludes single repo",
+			excludedRepos: []string{"owner/noisy-repo"},
+			wantIDs:       []string{"2", "3", "4"},
+		},
+		{
+			name:          "excludes multiple repos",
+			excludedRepos: []string{"owner/noisy-repo", "owner/another-noisy"},
+			wantIDs:       []string{"2", "4"},
+		},
+		{
+			name:          "non-matching repos unchanged",
+			excludedRepos: []string{"other/repo"},
+			wantIDs:       []string{"1", "2", "3", "4"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := FilterByExcludedRepos(items, tt.excludedRepos)
+			if len(got) != len(tt.wantIDs) {
+				t.Errorf("FilterByExcludedRepos() returned %d items, want %d", len(got), len(tt.wantIDs))
+				return
+			}
+			for i, item := range got {
+				if item.ID != tt.wantIDs[i] {
+					t.Errorf("FilterByExcludedRepos()[%d].ID = %s, want %s", i, item.ID, tt.wantIDs[i])
+				}
+			}
+		})
+	}
+}
+
 func TestFilterByGreenCI(t *testing.T) {
 	items := []PrioritizedItem{
 		makePrioritizedItem("1", model.ReasonReviewRequested, model.SubjectPullRequest, PriorityUrgent, &testItemOpts{CIStatus: "success"}),

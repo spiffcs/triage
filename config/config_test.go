@@ -181,48 +181,6 @@ func TestGetQuickWinLabels(t *testing.T) {
 	})
 }
 
-func TestIsRepoExcluded(t *testing.T) {
-	cfg := &Config{
-		ExcludeRepos: []string{"owner/repo1", "owner/repo2"},
-	}
-
-	tests := []struct {
-		name     string
-		repoName string
-		want     bool
-	}{
-		{
-			name:     "returns true for excluded repo",
-			repoName: "owner/repo1",
-			want:     true,
-		},
-		{
-			name:     "returns true for another excluded repo",
-			repoName: "owner/repo2",
-			want:     true,
-		},
-		{
-			name:     "returns false for non-excluded repo",
-			repoName: "owner/repo3",
-			want:     false,
-		},
-		{
-			name:     "returns false for partial match",
-			repoName: "owner/repo",
-			want:     false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := cfg.IsRepoExcluded(tt.repoName)
-			if got != tt.want {
-				t.Errorf("IsRepoExcluded(%q) = %v, want %v", tt.repoName, got, tt.want)
-			}
-		})
-	}
-}
-
 func TestDefaultQuickWinLabels(t *testing.T) {
 	labels := DefaultQuickWinLabels()
 
@@ -644,11 +602,11 @@ func TestGetScoreWeightsUrgency(t *testing.T) {
 	})
 }
 
-func TestMergeUrgencyOverrides(t *testing.T) {
+func TestMergePointerStruct(t *testing.T) {
 	t.Run("returns nil when both nil", func(t *testing.T) {
-		result := mergeUrgencyOverrides(nil, nil)
+		result := mergePointerStruct[UrgencyOverrides](nil, nil)
 		if result != nil {
-			t.Error("mergeUrgencyOverrides(nil, nil) should return nil")
+			t.Error("mergePointerStruct(nil, nil) should return nil")
 		}
 	})
 
@@ -663,7 +621,7 @@ func TestMergeUrgencyOverrides(t *testing.T) {
 			ReviewRequested: &falseVal,
 		}
 
-		result := mergeUrgencyOverrides(global, local)
+		result := mergePointerStruct(global, local)
 
 		if *result.ReviewRequested != false {
 			t.Error("local should override global for ReviewRequested")
@@ -679,7 +637,7 @@ func TestMergeUrgencyOverrides(t *testing.T) {
 			ReviewRequested: &trueVal,
 		}
 
-		result := mergeUrgencyOverrides(global, nil)
+		result := mergePointerStruct(global, nil)
 
 		if *result.ReviewRequested != true {
 			t.Error("global value should be preserved")

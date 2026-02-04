@@ -21,16 +21,16 @@ func mergeAll(result *fetchResult) mergeResult {
 	res := mergeResult{}
 
 	if len(result.ReviewPRs) > 0 {
-		result.Notifications, res.ReviewPRsAdded = mergeReviewRequests(result.Notifications, result.ReviewPRs)
+		result.Notifications, res.ReviewPRsAdded = mergeItems(result.Notifications, result.ReviewPRs, model.SubjectPullRequest)
 	}
 	if len(result.AuthoredPRs) > 0 {
-		result.Notifications, res.AuthoredPRsAdded = mergeAuthoredPRs(result.Notifications, result.AuthoredPRs)
+		result.Notifications, res.AuthoredPRsAdded = mergeItems(result.Notifications, result.AuthoredPRs, model.SubjectPullRequest)
 	}
 	if len(result.AssignedIssues) > 0 {
-		result.Notifications, res.AssignedIssuesAdded = mergeAssignedIssues(result.Notifications, result.AssignedIssues)
+		result.Notifications, res.AssignedIssuesAdded = mergeItems(result.Notifications, result.AssignedIssues, model.SubjectIssue)
 	}
 	if len(result.AssignedPRs) > 0 {
-		result.Notifications, res.AssignedPRsAdded = mergeAssignedPRs(result.Notifications, result.AssignedPRs)
+		result.Notifications, res.AssignedPRsAdded = mergeItems(result.Notifications, result.AssignedPRs, model.SubjectPullRequest)
 	}
 	if len(result.Orphaned) > 0 {
 		result.Notifications, res.OrphanedAdded = mergeOrphaned(result.Notifications, result.Orphaned)
@@ -121,26 +121,3 @@ func mergeItems(
 	return notifications, added
 }
 
-// mergeReviewRequests adds review-requested PRs that aren't already in notifications.
-// Returns the merged list and the count of newly added items.
-func mergeReviewRequests(notifications []model.Item, reviewPRs []model.Item) ([]model.Item, int) {
-	return mergeItems(notifications, reviewPRs, model.SubjectPullRequest)
-}
-
-// mergeAuthoredPRs adds user's open PRs that aren't already in notifications.
-// Returns the merged list and the count of newly added items.
-func mergeAuthoredPRs(notifications []model.Item, authoredPRs []model.Item) ([]model.Item, int) {
-	return mergeItems(notifications, authoredPRs, model.SubjectPullRequest)
-}
-
-// mergeAssignedIssues adds user's assigned issues that aren't already in notifications.
-// Returns the merged list and the count of newly added items.
-func mergeAssignedIssues(notifications []model.Item, assignedIssues []model.Item) ([]model.Item, int) {
-	return mergeItems(notifications, assignedIssues, model.SubjectIssue)
-}
-
-// mergeAssignedPRs adds user's assigned PRs that aren't already in notifications.
-// Returns the merged list and the count of newly added items.
-func mergeAssignedPRs(notifications []model.Item, assignedPRs []model.Item) ([]model.Item, int) {
-	return mergeItems(notifications, assignedPRs, model.SubjectPullRequest)
-}

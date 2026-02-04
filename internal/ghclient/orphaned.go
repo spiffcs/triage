@@ -228,7 +228,7 @@ func parseOrphanedResponse(data json.RawMessage, owner, repo string, opts Orphan
 		}
 
 		// Skip if author is a team member
-		if IsTeamMember(issue.AuthorAssociation) {
+		if model.IsTeamMember(issue.AuthorAssociation) {
 			continue
 		}
 
@@ -293,7 +293,7 @@ func parseOrphanedResponse(data json.RawMessage, owner, repo string, opts Orphan
 		}
 
 		// Skip if author is a team member
-		if IsTeamMember(pr.AuthorAssociation) {
+		if model.IsTeamMember(pr.AuthorAssociation) {
 			continue
 		}
 
@@ -368,17 +368,6 @@ func parseOrphanedResponse(data json.RawMessage, owner, repo string, opts Orphan
 	return items, nil
 }
 
-// IsTeamMember checks if a user is a collaborator based on authorAssociation
-func IsTeamMember(association string) bool {
-	switch association {
-	case "MEMBER", "OWNER", "COLLABORATOR":
-		return true
-	default:
-		// CONTRIBUTOR, FIRST_TIMER, FIRST_TIME_CONTRIBUTOR, NONE = external
-		return false
-	}
-}
-
 // analyzeComments analyzes the comment pattern to find last team activity
 // and count consecutive comments from the original author
 func analyzeComments(comments []commentNode, originalAuthor string) (*time.Time, int) {
@@ -393,7 +382,7 @@ func analyzeComments(comments []commentNode, originalAuthor string) (*time.Time,
 			continue
 		}
 
-		isTeam := IsTeamMember(c.AuthorAssociation)
+		isTeam := model.IsTeamMember(c.AuthorAssociation)
 
 		// Track last team activity
 		if isTeam {
@@ -425,7 +414,7 @@ func analyzeReviews(reviews []reviewNode) *time.Time {
 			continue
 		}
 
-		if IsTeamMember(r.AuthorAssociation) {
+		if model.IsTeamMember(r.AuthorAssociation) {
 			if lastTeamReview == nil || r.SubmittedAt.After(*lastTeamReview) {
 				t := r.SubmittedAt
 				lastTeamReview = &t
