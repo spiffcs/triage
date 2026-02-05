@@ -441,6 +441,45 @@ const statsSparklineWidth = 50
 // separatorWidth is the fixed width for section separator lines.
 const separatorWidth = 60
 
+// statsContentHeight returns the number of lines the stats view will render.
+// This avoids a full render just to count newlines (used for scroll clamping).
+func statsContentHeight(m ListModel) int {
+	d := computeDistributions(m)
+
+	// sectionHeight: separator + label + bar lines (min 1 for empty placeholder)
+	sectionHeight := func(entries []barEntry) int {
+		n := len(entries)
+		if n == 0 {
+			n = 1
+		}
+		return 2 + n
+	}
+
+	lines := 2 // summary + pane counts
+	lines += sectionHeight(d.priority)
+	lines += sectionHeight(d.age)
+	lines += sectionHeight(d.review)
+	lines += sectionHeight(d.ci)
+	lines += sectionHeight(d.prSize)
+
+	if len(d.topRepos) > 0 {
+		lines += sectionHeight(d.topRepos)
+		if d.repoOthersRepos > 0 {
+			lines++
+		}
+	}
+	if len(d.orphanedStale) > 0 {
+		lines += sectionHeight(d.orphanedStale)
+	}
+	if m.snapshotStore != nil {
+		snapshots := m.snapshotStore.Recent(statsSparklineWidth)
+		if len(snapshots) >= 2 {
+			lines += 5 // separator + header + 3 sparklines
+		}
+	}
+	return lines
+}
+
 // renderStatsView renders the full stats dashboard.
 func renderStatsView(m ListModel) string {
 	d := computeDistributions(m)

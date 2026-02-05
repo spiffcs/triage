@@ -763,8 +763,7 @@ func (m *ListModel) setActiveCursor(pos int) {
 
 // clampStatsScroll ensures the stats scroll offset is within valid bounds.
 func (m ListModel) clampStatsScroll() ListModel {
-	content := renderStatsView(m)
-	contentLines := strings.Count(content, "\n") + 1
+	contentLines := statsContentHeight(m)
 	availableHeight := m.windowHeight - tabBarLines - FooterLines
 	availableHeight = max(availableHeight, 1)
 	maxScroll := max(contentLines-availableHeight, 0)

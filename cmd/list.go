@@ -160,7 +160,7 @@ func runList(cmd *cobra.Command, opts *Options) error {
 	rt.startTUI()
 
 	// Load config (separate from service)
-	cfg, resolvedStore, statsStore, err := loadConfig()
+	cfg, resolvedStore, statsStore, err := loadConfigAndStores()
 	if err != nil {
 		rt.close()
 		return err
@@ -238,8 +238,8 @@ func setupRuntime(opts *Options) (*listRuntime, func(), error) {
 	return rt, profiler.Stop, nil
 }
 
-// loadConfig loads configuration, resolved store, and stats store.
-func loadConfig() (*config.Config, *resolved.Store, *stats.Store, error) {
+// loadConfigAndStores loads configuration, resolved store, and stats store.
+func loadConfigAndStores() (*config.Config, *resolved.Store, *stats.Store, error) {
 	cfg, err := config.Load()
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to load config: %w", err)
