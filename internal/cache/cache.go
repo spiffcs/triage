@@ -168,8 +168,8 @@ func (c *Cache) Stats() (total int, validCount int, err error) {
 	return totalCount, validCount, nil
 }
 
-// ttlForListType returns the TTL for a given list type
-func ttlForListType(listType ListType) time.Duration {
+// TTLForListType returns the TTL for a given list type.
+func TTLForListType(listType ListType) time.Duration {
 	switch listType {
 	case ListTypeNotifications:
 		return constants.NotificationsCacheTTL
@@ -208,7 +208,7 @@ func (c *Cache) GetList(username string, listType ListType, opts ListOptions) (*
 	}
 
 	// Check TTL
-	ttl := ttlForListType(listType)
+	ttl := TTLForListType(listType)
 	if time.Since(entry.CachedAt) > ttl {
 		return nil, false
 	}
@@ -313,7 +313,8 @@ func (c *Cache) DetailedStats() (*CacheStats, error) {
 
 			ls := stats.ListStats[matchedType]
 			ls.Total++
-			ttl := ttlForListType(matchedType)
+			ls.Items += len(listEntry.Items)
+			ttl := TTLForListType(matchedType)
 			if now.Sub(listEntry.CachedAt) <= ttl {
 				ls.Valid++
 			}

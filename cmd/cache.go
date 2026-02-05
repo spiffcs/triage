@@ -63,8 +63,8 @@ func runCacheStats(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("failed to get cache stats: %w", err)
 	}
 
-	fmt.Printf("Cache statistics:\n")
-	fmt.Printf("  Item details (TTL: 24h):\n")
+	fmt.Println("Cache statistics:")
+	fmt.Println("  Item details (TTL: 24h):")
 	fmt.Printf("    Total: %d\n", stats.DetailTotal)
 	fmt.Printf("    Valid: %d\n", stats.DetailValid)
 	fmt.Printf("    Expired: %d\n", stats.DetailTotal-stats.DetailValid)
@@ -73,21 +73,19 @@ func runCacheStats(_ *cobra.Command, _ []string) error {
 	listTypeInfo := []struct {
 		listType cache.ListType
 		name     string
-		ttl      string
 	}{
-		{cache.ListTypeNotifications, "Notifications", "1h"},
-		{cache.ListTypeReviewRequested, "Review PRs", "5m"},
-		{cache.ListTypeAuthored, "Authored PRs", "5m"},
-		{cache.ListTypeAssignedIssues, "Assigned Issues", "5m"},
-		{cache.ListTypeAssignedPRs, "Assigned PRs", "5m"},
-		{cache.ListTypeOrphaned, "Orphaned", "15m"},
+		{cache.ListTypeNotifications, "Notifications"},
+		{cache.ListTypeReviewRequested, "Review PRs"},
+		{cache.ListTypeAuthored, "Authored PRs"},
+		{cache.ListTypeAssignedIssues, "Assigned Issues"},
+		{cache.ListTypeAssignedPRs, "Assigned PRs"},
+		{cache.ListTypeOrphaned, "Orphaned"},
 	}
 
 	for _, info := range listTypeInfo {
 		ls := stats.ListStats[info.listType]
-		fmt.Printf("  %s (TTL: %s):\n", info.name, info.ttl)
-		fmt.Printf("    Total: %d\n", ls.Total)
-		fmt.Printf("    Valid: %d\n", ls.Valid)
+		fmt.Printf("  %s (TTL: %s):\n", info.name, cache.TTLForListType(info.listType))
+		fmt.Printf("    Items: %d\n", ls.Items)
 		fmt.Printf("    Expired: %d\n", ls.Total-ls.Valid)
 	}
 

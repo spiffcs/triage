@@ -24,6 +24,53 @@ import (
 	"github.com/spiffcs/triage/internal/tui"
 )
 
+// sendFetchCompleteEvent formats and sends the fetch completion TUI event.
+func sendFetchCompleteEvent(result *triage.FetchResult, err error, sinceLabel string, stats service.FetchStats, events chan tui.Event) {
+	if err != nil {
+		sendTaskEvent(events, tui.TaskFetch, tui.StatusError, tui.WithError(err))
+		return
+	}
+
+	totalFetched := result.TotalFetched()
+	fetchMsg := fmt.Sprintf("for the past %s (%d items)", sinceLabel, totalFetched)
+	if stats.NotifFromCache && stats.NotifNewCount > 0 {
+		fetchMsg = fmt.Sprintf("for the past %s (%d items, %d new)", sinceLabel, totalFetched, stats.NotifNewCount)
+	} else if stats.NotifFromCache {
+		fetchMsg = fmt.Sprintf("for the past %s (%d items, cached)", sinceLabel, totalFetched)
+	}
+	sendTaskEvent(events, tui.TaskFetch, tui.StatusComplete, tui.WithMessage(fetchMsg))
+}
+
+// sendRateLimitEvent sends a rate limit TUI event if the result indicates rate limiting.
+func sendRateLimitEvent(result *triage.FetchResult, events chan tui.Event) {
+	if !result.RateLimited || events == nil {
+		return
+	}
+	_, _, resetAt, _ := ghclient.GetRateLimitStatus()
+	events <- tui.RateLimitEvent{
+		Limited: true,
+		ResetAt: resetAt,
+	}
+}
+
+// logFetchStats logs the fetch statistics.
+func logFetchStats(result *triage.FetchResult, stats service.FetchStats) {
+	log.Info("fetched data",
+		"notifications", len(result.Notifications),
+		"reviewPRs", len(result.ReviewPRs),
+		"authoredPRs", len(result.AuthoredPRs),
+		"assignedIssues", len(result.AssignedIssues),
+		"assignedPRs", len(result.AssignedPRs),
+		"orphaned", len(result.Orphaned),
+		"notifFromCache", stats.NotifFromCache,
+		"notifNewCount", stats.NotifNewCount,
+		"reviewFromCache", stats.ReviewFromCache,
+		"authoredFromCache", stats.AuthoredFromCache,
+		"assignedFromCache", stats.AssignedFromCache,
+		"assignedPRsFromCache", stats.AssignedPRsFromCache,
+		"orphanedFromCache", stats.OrphanedFromCache)
+}
+
 // listRuntime bundles TUI-related state that's threaded through the list command.
 type listRuntime struct {
 	useTUI  bool
@@ -110,22 +157,36 @@ func runList(cmd *cobra.Command, opts *Options) error {
 	}
 
 	// Fetch
-	fetchOpts := buildFetchOptions(cfg, opts.Since, rt.events)
-	result, err := fetchAll(ctx, svc, fetchOpts)
+	onProgress := func(completed, total int) {
+		progress := float64(completed) / float64(total)
+		msg := fmt.Sprintf("%s (%d/%d sources)", opts.Since, completed, total)
+		if completed == 0 {
+			msg = fmt.Sprintf("for the past %s (0/%d sources)", opts.Since, total)
+		}
+		sendTaskEvent(rt.events, tui.TaskFetch, tui.StatusRunning,
+			tui.WithProgress(progress), tui.WithMessage(msg))
+	}
+	fetcher := triage.NewFetcher(svc, onProgress)
+	fetchOpts := buildFetchOptions(cfg)
+	result, err := fetcher.FetchAll(ctx, fetchOpts)
 	if err != nil {
 		log.Warn("some fetches failed", "error", err)
 	}
+	stats := svc.FetchStats()
+	sendRateLimitEvent(result, rt.events)
+	sendFetchCompleteEvent(result, err, opts.Since, stats, rt.events)
+	logFetchStats(result, stats)
 
 	// Enrich
 	runEnrichment(ctx, svc, result, rt)
 
 	// Process
-	if len(result.Notifications) == 0 {
+	items := processResults(result, cfg, svc.CurrentUser(), resolvedStore, rt.events)
+	if len(items) == 0 {
 		rt.close()
 		fmt.Println("No unread notifications, pending reviews, or open PRs found.")
 		return nil
 	}
-	items := processResults(result, cfg, svc.CurrentUser(), resolvedStore, rt.events)
 
 	// Output
 	rt.close()
@@ -202,8 +263,8 @@ func initializeService(ctx context.Context, cfg *config.Config, sinceStr string,
 	return service.New(ghClient, c, currentUser, since), nil
 }
 
-// buildFetchOptions constructs fetchOptions from config and parameters.
-func buildFetchOptions(cfg *config.Config, sinceLabel string, events chan tui.Event) fetchOptions {
+// buildFetchOptions constructs triage.FetchOptions from config.
+func buildFetchOptions(cfg *config.Config) triage.FetchOptions {
 	var orphanedRepos []string
 	var staleDays, consecutiveComments int
 	if cfg.Orphaned != nil {
@@ -212,10 +273,7 @@ func buildFetchOptions(cfg *config.Config, sinceLabel string, events chan tui.Ev
 		consecutiveComments = cfg.Orphaned.ConsecutiveAuthorComments
 	}
 
-	return fetchOptions{
-		SinceLabel:          sinceLabel,
-		Events:              events,
-		IncludeOrphaned:     len(orphanedRepos) > 0,
+	return triage.FetchOptions{
 		OrphanedRepos:       orphanedRepos,
 		StaleDays:           staleDays,
 		ConsecutiveComments: consecutiveComments,
@@ -223,7 +281,7 @@ func buildFetchOptions(cfg *config.Config, sinceLabel string, events chan tui.Ev
 }
 
 // runEnrichment enriches all fetched items and sends TUI events.
-func runEnrichment(ctx context.Context, svc *service.ItemService, result *fetchResult, rt *listRuntime) {
+func runEnrichment(ctx context.Context, svc *service.ItemService, result *triage.FetchResult, rt *listRuntime) {
 	rt.sendEvent(tui.TaskEnrich, tui.StatusRunning)
 
 	totalToEnrich := len(result.Notifications) + len(result.ReviewPRs) + len(result.AuthoredPRs)
@@ -242,23 +300,27 @@ func runEnrichment(ctx context.Context, svc *service.ItemService, result *fetchR
 }
 
 // processResults merges, prioritizes, and filters the fetched data.
-func processResults(result *fetchResult, cfg *config.Config, currentUser string, resolvedStore *resolved.Store, events chan tui.Event) []triage.PrioritizedItem {
-	// Merge all additional data sources into notifications
-	mergeRes := mergeAll(result)
-	if mergeRes.ReviewPRsAdded > 0 {
-		log.Info("PRs awaiting your review", "count", mergeRes.ReviewPRsAdded)
+func processResults(result *triage.FetchResult, cfg *config.Config, currentUser string, resolvedStore *resolved.Store, events chan tui.Event) []triage.PrioritizedItem {
+	// Merge all additional data sources into a single deduplicated list
+	merged, mergeStats := result.Merge()
+	if mergeStats.ReviewPRsAdded > 0 {
+		log.Info("PRs awaiting your review", "count", mergeStats.ReviewPRsAdded)
 	}
-	if mergeRes.AuthoredPRsAdded > 0 {
-		log.Info("your open PRs", "count", mergeRes.AuthoredPRsAdded)
+	if mergeStats.AuthoredPRsAdded > 0 {
+		log.Info("your open PRs", "count", mergeStats.AuthoredPRsAdded)
 	}
-	if mergeRes.AssignedIssuesAdded > 0 {
-		log.Info("issues assigned to you", "count", mergeRes.AssignedIssuesAdded)
+	if mergeStats.AssignedIssuesAdded > 0 {
+		log.Info("issues assigned to you", "count", mergeStats.AssignedIssuesAdded)
 	}
-	if mergeRes.AssignedPRsAdded > 0 {
-		log.Info("PRs assigned to you", "count", mergeRes.AssignedPRsAdded)
+	if mergeStats.AssignedPRsAdded > 0 {
+		log.Info("PRs assigned to you", "count", mergeStats.AssignedPRsAdded)
 	}
-	if mergeRes.OrphanedAdded > 0 {
-		log.Info("orphaned contributions", "count", mergeRes.OrphanedAdded)
+	if mergeStats.OrphanedAdded > 0 {
+		log.Info("orphaned contributions", "count", mergeStats.OrphanedAdded)
+	}
+
+	if len(merged) == 0 {
+		return nil
 	}
 
 	weights := cfg.GetScoreWeights()
@@ -266,19 +328,19 @@ func processResults(result *fetchResult, cfg *config.Config, currentUser string,
 
 	sendTaskEvent(events, tui.TaskProcess, tui.StatusRunning)
 
-	// Debug: log state of notifications before prioritization
+	// Debug: log state of items before prioritization
 	var withDetails, withoutDetails int
-	for _, n := range result.Notifications {
+	for _, n := range merged {
 		if n.Details != nil {
 			withDetails++
 		} else {
 			withoutDetails++
 		}
 	}
-	log.Debug("notifications before prioritization", "total", len(result.Notifications), "withDetails", withDetails, "withoutDetails", withoutDetails)
+	log.Debug("items before prioritization", "total", len(merged), "withDetails", withDetails, "withoutDetails", withoutDetails)
 
 	engine := triage.NewEngine(currentUser, weights, quickWinLabels)
-	items := engine.Prioritize(result.Notifications)
+	items := engine.Prioritize(merged)
 	items = applyFilters(items, cfg, resolvedStore)
 
 	sendTaskEvent(events, tui.TaskProcess, tui.StatusComplete, tui.WithCount(len(items)))
@@ -400,41 +462,35 @@ func enrichItems(
 
 	// Enrich notifications
 	if len(notifications) > 0 {
-		enrichWg.Add(1)
-		go func() {
-			defer enrichWg.Done()
+		enrichWg.Go(func() {
 			cacheHits, err := svc.Enrich(ctx, notifications, onProgress)
 			if err != nil {
 				log.Warn("some notifications could not be enriched", "error", err)
 			}
 			atomic.AddInt64(totalCacheHits, int64(cacheHits))
-		}()
+		})
 	}
 
 	// Enrich review-requested PRs
 	if len(reviewPRs) > 0 {
-		enrichWg.Add(1)
-		go func() {
-			defer enrichWg.Done()
+		enrichWg.Go(func() {
 			cacheHits, err := svc.Enrich(ctx, reviewPRs, onProgress)
 			if err != nil {
 				log.Warn("some review PRs could not be enriched", "error", err)
 			}
 			atomic.AddInt64(totalCacheHits, int64(cacheHits))
-		}()
+		})
 	}
 
 	// Enrich authored PRs
 	if len(authoredPRs) > 0 {
-		enrichWg.Add(1)
-		go func() {
-			defer enrichWg.Done()
+		enrichWg.Go(func() {
 			cacheHits, err := svc.Enrich(ctx, authoredPRs, onProgress)
 			if err != nil {
 				log.Warn("some authored PRs could not be enriched", "error", err)
 			}
 			atomic.AddInt64(totalCacheHits, int64(cacheHits))
-		}()
+		})
 	}
 
 	enrichWg.Wait()

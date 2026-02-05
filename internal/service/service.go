@@ -3,6 +3,7 @@ package service
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/spiffcs/triage/internal/cache"
@@ -11,6 +12,18 @@ import (
 	"github.com/spiffcs/triage/internal/model"
 )
 
+// FetchStats records which data sources were served from cache.
+// Populated as Get* methods are called; safe for concurrent access.
+type FetchStats struct {
+	NotifFromCache    bool
+	NotifNewCount     int
+	ReviewFromCache   bool
+	AuthoredFromCache bool
+	AssignedFromCache bool
+	AssignedPRsFromCache bool
+	OrphanedFromCache bool
+}
+
 // ItemService orchestrates data flow between GitHub API and cache.
 // It combines the functionality of ItemStore and Enricher.
 type ItemService struct {
@@ -18,6 +31,9 @@ type ItemService struct {
 	cache       *cache.Cache
 	currentUser string
 	since       time.Time
+
+	statsMu    sync.Mutex
+	fetchStats FetchStats
 }
 
 // New creates a new ItemService with the given fetcher and cache.
@@ -36,6 +52,19 @@ func (s *ItemService) CurrentUser() string {
 	return s.currentUser
 }
 
+// FetchStats returns cache statistics recorded by Get* method calls.
+func (s *ItemService) FetchStats() FetchStats {
+	s.statsMu.Lock()
+	defer s.statsMu.Unlock()
+	return s.fetchStats
+}
+
+func (s *ItemService) recordStat(fn func(*FetchStats)) {
+	s.statsMu.Lock()
+	fn(&s.fetchStats)
+	s.statsMu.Unlock()
+}
+
 // ItemFetchResult contains the result of a cached item fetch.
 type ItemFetchResult struct {
 	Items     []model.Item
@@ -49,6 +78,7 @@ func (s *ItemService) GetReviewRequestedPRs(ctx context.Context) ([]model.Item, 
 	// Check cache first
 	if s.cache != nil {
 		if entry, ok := s.cache.GetList(s.currentUser, cache.ListTypeReviewRequested, cache.ListOptions{}); ok {
+			s.recordStat(func(st *FetchStats) { st.ReviewFromCache = true })
 			return entry.Items, true, nil
 		}
 	}
@@ -84,6 +114,7 @@ func (s *ItemService) GetAuthoredPRs(ctx context.Context) ([]model.Item, bool, e
 	// Check cache first
 	if s.cache != nil {
 		if entry, ok := s.cache.GetList(s.currentUser, cache.ListTypeAuthored, cache.ListOptions{}); ok {
+			s.recordStat(func(st *FetchStats) { st.AuthoredFromCache = true })
 			return entry.Items, true, nil
 		}
 	}
@@ -119,6 +150,7 @@ func (s *ItemService) GetAssignedIssues(ctx context.Context) ([]model.Item, bool
 	// Check cache first
 	if s.cache != nil {
 		if entry, ok := s.cache.GetList(s.currentUser, cache.ListTypeAssignedIssues, cache.ListOptions{}); ok {
+			s.recordStat(func(st *FetchStats) { st.AssignedFromCache = true })
 			return entry.Items, true, nil
 		}
 	}
@@ -154,6 +186,7 @@ func (s *ItemService) GetAssignedPRs(ctx context.Context) ([]model.Item, bool, e
 	// Check cache first
 	if s.cache != nil {
 		if entry, ok := s.cache.GetList(s.currentUser, cache.ListTypeAssignedPRs, cache.ListOptions{}); ok {
+			s.recordStat(func(st *FetchStats) { st.AssignedPRsFromCache = true })
 			return entry.Items, true, nil
 		}
 	}
@@ -195,6 +228,7 @@ func (s *ItemService) GetUnreadItems(ctx context.Context) (*ItemFetchResult, err
 			if entry, ok := s.cache.GetList(s.currentUser, cache.ListTypeNotifications, opts); ok {
 				result.Items = entry.Items
 				result.FromCache = true
+				s.recordStat(func(st *FetchStats) { st.NotifFromCache = true })
 				return result, nil
 			}
 		}
@@ -211,6 +245,7 @@ func (s *ItemService) GetUnreadItems(ctx context.Context) (*ItemFetchResult, err
 				log.Debug("failed to fetch new items, using cache", "error", err)
 				result.Items = entry.Items
 				result.FromCache = true
+				s.recordStat(func(st *FetchStats) { st.NotifFromCache = true })
 				return result, nil
 			}
 
@@ -219,6 +254,10 @@ func (s *ItemService) GetUnreadItems(ctx context.Context) (*ItemFetchResult, err
 			result.Items = merged
 			result.FromCache = true
 			result.NewCount = len(newItems)
+			s.recordStat(func(st *FetchStats) {
+				st.NotifFromCache = true
+				st.NotifNewCount = len(newItems)
+			})
 
 			// Update cache with merged result
 			if err := s.cache.SetList(s.currentUser, cache.ListTypeNotifications, &cache.ListCacheEntry{
@@ -281,6 +320,7 @@ func (s *ItemService) GetOrphanedContributions(ctx context.Context, opts ghclien
 	// Try cache first
 	if s.cache != nil {
 		if entry, ok := s.cache.GetList(s.currentUser, cache.ListTypeOrphaned, cacheOpts); ok {
+			s.recordStat(func(st *FetchStats) { st.OrphanedFromCache = true })
 			return entry.Items, true, nil
 		}
 	}

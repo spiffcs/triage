@@ -44,9 +44,9 @@ type ListOptions struct {
 type ListCacheEntry struct {
 	Items         []model.Item `json:"items"`
 	CachedAt      time.Time    `json:"cachedAt"`
-	LastFetchTime time.Time    `json:"lastFetchTime,omitempty"` // For incremental updates
-	SinceTime     time.Time    `json:"sinceTime,omitempty"`     // Time constraint used
-	Repos         []string     `json:"repos,omitempty"`         // For orphaned validation
+	LastFetchTime time.Time    `json:"lastFetchTime"`   // For incremental updates
+	SinceTime     time.Time    `json:"sinceTime"`       // Time constraint used
+	Repos         []string     `json:"repos,omitempty"` // For orphaned validation
 	Version       int          `json:"version"`
 }
 
@@ -73,4 +73,5 @@ type CacheStats struct {
 type ListStats struct {
 	Total int
 	Valid int
+	Items int // number of items within the list cache entry
 }
