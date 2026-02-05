@@ -36,9 +36,10 @@ func calculateColumnVisibility(windowWidth int, hideAssignedCI, hidePriority, sh
 		showCI:     true,
 	}
 
-	// Calculate base width for always-visible columns
-	// cursor(2) + type(5+2) + repo(26+2) + title(40+2) + status(20+2) + age(5)
-	baseWidth := 2 + (output.ColType + 2) + (output.ColRepo + 2) + (output.ColTitle + 2) + (output.ColStatus + 2) + output.ColAge
+	// Calculate base width for always-visible columns using minimum flex widths
+	// cursor(2) + type(5+2) + repo(20+2) + title(30+2) + status(20+2) + age(5)
+	const minTitle, minRepo = 30, 20
+	baseWidth := 2 + (output.ColType + 2) + (minRepo + 2) + (minTitle + 2) + (output.ColStatus + 2) + output.ColAge
 
 	// Add priority column if shown
 	if !hidePriority {
@@ -84,6 +85,96 @@ func calculateColumnVisibility(windowWidth int, hideAssignedCI, hidePriority, sh
 	}
 
 	return vis
+}
+
+// columnWidths holds the computed flex widths for title and repo columns
+type columnWidths struct {
+	title int
+	repo  int
+}
+
+// fixedColumnsWidth returns the total width consumed by all fixed-width columns
+// (everything except title and repo, including their 2-char gaps).
+func fixedColumnsWidth(vis columnVisibility, hideAssignedCI, hidePriority bool) int {
+	fixed := 2 // cursor
+	if !hidePriority {
+		fixed += output.ColPriority + 2
+	}
+	fixed += output.ColType + 2
+	if vis.showAuthor {
+		fixed += output.ColAuthor + 2
+	}
+	if !hideAssignedCI {
+		fixed += output.ColAssigned + 2
+	}
+	if vis.showCI {
+		fixed += output.ColCI + 2
+	}
+	fixed += output.ColStatus + 2
+	if hideAssignedCI && vis.showSignal {
+		fixed += colSignal + 2
+	}
+	fixed += output.ColAge
+	// Gaps for repo (+2) and title (+2)
+	fixed += 4
+	return fixed
+}
+
+// calculateColumnWidths computes content-aware widths for the title and repo
+// columns. It scans the visible items to find the longest content, then sizes
+// each column to fit without truncation (bounded by available terminal space).
+// Extra space stays at the right edge rather than padding between columns.
+func calculateColumnWidths(windowWidth int, vis columnVisibility, hideAssignedCI, hidePriority bool, items []triage.PrioritizedItem) columnWidths {
+	const minTitle, minRepo = 30, 20
+	const maxTitle, maxRepo = 120, 50
+
+	const rightMargin = 2
+	fixed := fixedColumnsWidth(vis, hideAssignedCI, hidePriority)
+	remaining := windowWidth - fixed - rightMargin
+
+	if remaining < minTitle+minRepo {
+		return columnWidths{title: minTitle, repo: minRepo}
+	}
+
+	// Scan items to find the longest title and repo content
+	maxTitleWidth := 0
+	maxRepoWidth := 0
+	for _, item := range items {
+		tw := format.DisplayWidth(item.Subject.Title) + format.IconWidth
+		if tw > maxTitleWidth {
+			maxTitleWidth = tw
+		}
+		rw := format.DisplayWidth(item.Repository.FullName)
+		if rw > maxRepoWidth {
+			maxRepoWidth = rw
+		}
+	}
+
+	// Clamp to min/max bounds
+	titleWidth := max(min(maxTitleWidth, maxTitle), minTitle)
+	repoWidth := max(min(maxRepoWidth, maxRepo), minRepo)
+
+	// If both fit within remaining space, we're done
+	if titleWidth+repoWidth <= remaining {
+		return columnWidths{title: titleWidth, repo: repoWidth}
+	}
+
+	// Not enough room for both at content width — shrink proportionally,
+	// giving title priority (70/30 split of available space)
+	titleWidth = remaining * 7 / 10
+	repoWidth = remaining - titleWidth
+
+	// Re-apply minimums
+	if titleWidth < minTitle {
+		titleWidth = minTitle
+		repoWidth = remaining - titleWidth
+	}
+	if repoWidth < minRepo {
+		repoWidth = minRepo
+		titleWidth = remaining - repoWidth
+	}
+
+	return columnWidths{title: titleWidth, repo: repoWidth}
 }
 
 // renderListView renders the complete list view
@@ -133,11 +224,12 @@ func renderListView(m ListModel) string {
 
 	// Calculate column visibility based on terminal width
 	vis := calculateColumnVisibility(m.windowWidth, hideAssignedCI, hidePriority, showAuthor)
+	cw := calculateColumnWidths(m.windowWidth, vis, hideAssignedCI, hidePriority, items)
 
 	// Render header
-	b.WriteString(renderHeader(hideAssignedCI, hidePriority, vis))
+	b.WriteString(renderHeader(hideAssignedCI, hidePriority, vis, cw))
 	b.WriteString("\n")
-	b.WriteString(renderSeparator(hideAssignedCI, hidePriority, vis))
+	b.WriteString(renderSeparator(m.windowWidth))
 	b.WriteString("\n")
 
 	// Calculate scroll window
@@ -146,7 +238,7 @@ func renderListView(m ListModel) string {
 	// Render visible items
 	for i := start; i < end; i++ {
 		selected := i == cursor
-		b.WriteString(renderRow(items[i], selected, m.hotTopicThreshold, m.prSizeXS, m.prSizeS, m.prSizeM, m.prSizeL, m.currentUser, hideAssignedCI, hidePriority, vis))
+		b.WriteString(renderRow(items[i], selected, m.hotTopicThreshold, m.prSizeXS, m.prSizeS, m.prSizeM, m.prSizeL, m.currentUser, hideAssignedCI, hidePriority, vis, cw, m.windowWidth))
 		b.WriteString("\n")
 	}
 
@@ -275,7 +367,7 @@ func calculateScrollWindow(cursor, total, viewHeight int) (start, end int) {
 }
 
 // renderHeader renders the table header
-func renderHeader(hideAssignedCI, hidePriority bool, vis columnVisibility) string {
+func renderHeader(hideAssignedCI, hidePriority bool, vis columnVisibility, cw columnWidths) string {
 	var parts []string
 
 	// Cursor space
@@ -305,10 +397,10 @@ func renderHeader(hideAssignedCI, hidePriority bool, vis columnVisibility) strin
 	}
 
 	// Repository column (always visible)
-	parts = append(parts, fmt.Sprintf("%-*s  ", output.ColRepo, "Repository"))
+	parts = append(parts, fmt.Sprintf("%-*s  ", cw.repo, "Repository"))
 
 	// Title column (always visible)
-	parts = append(parts, fmt.Sprintf("%-*s  ", output.ColTitle, "Title"))
+	parts = append(parts, fmt.Sprintf("%-*s  ", cw.title, "Title"))
 
 	// Status column (always visible)
 	parts = append(parts, fmt.Sprintf("%-*s  ", output.ColStatus, "Status"))
@@ -319,66 +411,18 @@ func renderHeader(hideAssignedCI, hidePriority bool, vis columnVisibility) strin
 	}
 
 	// Age column (always visible, no trailing space)
-	parts = append(parts, "Updated")
+	parts = append(parts, fmt.Sprintf("%-*s", output.ColAge, "Age"))
 
 	return listHeaderStyle.Render(strings.Join(parts, ""))
 }
 
-// tableWidth calculates the width of the table based on column visibility
-func tableWidth(hideAssignedCI, hidePriority bool, vis columnVisibility) int {
-	// Start with cursor space
-	width := 2
-
-	// Priority column
-	if !hidePriority {
-		width += output.ColPriority + 2
-	}
-
-	// Type column (always visible)
-	width += output.ColType + 2
-
-	// Author column (if visible)
-	if vis.showAuthor {
-		width += output.ColAuthor + 2
-	}
-
-	// Assigned column (non-orphaned panes)
-	if !hideAssignedCI {
-		width += output.ColAssigned + 2
-	}
-
-	// CI column (if visible)
-	if vis.showCI {
-		width += output.ColCI + 2
-	}
-
-	// Repository column (always visible)
-	width += output.ColRepo + 2
-
-	// Title column (always visible)
-	width += output.ColTitle + 2
-
-	// Status column (always visible)
-	width += output.ColStatus + 2
-
-	// Signal column (orphaned pane only, if visible)
-	if hideAssignedCI && vis.showSignal {
-		width += colSignal + 2
-	}
-
-	// Age column (always visible)
-	width += output.ColAge
-
-	return width
-}
-
-// renderSeparator renders the header separator line
-func renderSeparator(hideAssignedCI, hidePriority bool, vis columnVisibility) string {
-	return listSeparatorStyle.Render(strings.Repeat("─", tableWidth(hideAssignedCI, hidePriority, vis)))
+// renderSeparator renders the header separator line spanning the full window width
+func renderSeparator(width int) string {
+	return listSeparatorStyle.Render(strings.Repeat("─", width))
 }
 
 // renderRow renders a single item row
-func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, prSizeXS, prSizeS, prSizeM, prSizeL int, currentUser string, hideAssignedCI, hidePriority bool, vis columnVisibility) string {
+func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, prSizeXS, prSizeS, prSizeM, prSizeL int, currentUser string, hideAssignedCI, hidePriority bool, vis columnVisibility, cw columnWidths, windowWidth int) string {
 	n := item.Item
 
 	// Cursor indicator
@@ -438,14 +482,14 @@ func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, pr
 	}
 
 	// Truncate title to fit remaining space after icon
-	title, titleWidth := format.TruncateToWidth(title, output.ColTitle-format.IconWidth)
+	title, titleWidth := format.TruncateToWidth(title, cw.title-format.IconWidth)
 	title = titleIcon + title
 	titleWidth += iconDisplayWidth
-	title = format.PadRight(title, titleWidth, output.ColTitle)
+	title = format.PadRight(title, titleWidth, cw.title)
 
 	// Repository
-	repo, repoWidth := format.TruncateToWidth(n.Repository.FullName, output.ColRepo)
-	repo = format.PadRight(repo, repoWidth, output.ColRepo)
+	repo, repoWidth := format.TruncateToWidth(n.Repository.FullName, cw.repo)
+	repo = format.PadRight(repo, repoWidth, cw.repo)
 
 	// Status with colors
 	status, statusWidth := renderStatus(n, prSizeXS, prSizeS, prSizeM, prSizeL, selected)
@@ -516,7 +560,7 @@ func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, pr
 	row := strings.Join(parts, "")
 
 	if selected {
-		return listSelectedStyle.Width(tableWidth(hideAssignedCI, hidePriority, vis)).Render(row)
+		return listSelectedStyle.Width(windowWidth).Render(row)
 	}
 	return row
 }

@@ -64,11 +64,11 @@ const (
 
 // Review state constants
 const (
-	ReviewStateApproved        = "approved"
+	ReviewStateApproved         = "approved"
 	ReviewStateChangesRequested = "changes_requested"
-	ReviewStatePending         = "pending"
-	ReviewStateReviewRequired  = "review_required"
-	ReviewStateReviewed        = "reviewed"
+	ReviewStatePending          = "pending"
+	ReviewStateReviewRequired   = "review_required"
+	ReviewStateReviewed         = "reviewed"
 )
 
 // CI status constants
