@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/fatih/color"
-	"github.com/spiffcs/triage/internal/constants"
 	"github.com/spiffcs/triage/internal/format"
 	"github.com/spiffcs/triage/internal/log"
 	"github.com/spiffcs/triage/internal/model"
@@ -47,16 +46,16 @@ func (f *TableFormatter) Format(items []triage.PrioritizedItem, w io.Writer) err
 
 	// Header (↗ indicates column is clickable)
 	if _, err := fmt.Fprintf(w, "%-*s  %-*s  %-*s  %-*s  %-*s  %-*s  %s\n",
-		constants.ColPriority, "Priority",
-		constants.ColType, "Type",
-		constants.ColAssigned, "Assigned",
-		constants.ColRepo, "Repository ↗",
-		constants.ColTitle, "Title ↗",
-		constants.ColStatus, "Status",
+		ColPriority, "Priority",
+		ColType, "Type",
+		ColAssigned, "Assigned",
+		ColRepo, "Repository ↗",
+		ColTitle, "Title ↗",
+		ColStatus, "Status",
 		"Age"); err != nil {
 		log.Trace("write error", "location", "header", "error", err)
 	}
-	separatorLen := constants.ColPriority + constants.ColType + constants.ColAssigned + constants.ColRepo + constants.ColTitle + constants.ColStatus + constants.ColAge + 14
+	separatorLen := ColPriority + ColType + ColAssigned + ColRepo + ColTitle + ColStatus + ColAge + 14
 	if _, err := fmt.Fprintln(w, strings.Repeat("-", separatorLen)); err != nil {
 		log.Trace("write error", "location", "separator", "error", err)
 	}
@@ -85,7 +84,7 @@ func (f *TableFormatter) Format(items []triage.PrioritizedItem, w io.Writer) err
 			CommentCount:      n.CommentCount,
 			IsPR:              isPR,
 		}
-		if issueDetails := n.GetIssueDetails(); issueDetails != nil {
+		if issueDetails := n.IssueDetails(); issueDetails != nil {
 			iconInput.LastCommenter = issueDetails.LastCommenter
 		}
 
@@ -103,20 +102,20 @@ func (f *TableFormatter) Format(items []triage.PrioritizedItem, w io.Writer) err
 		}
 
 		// Truncate title to fit remaining space after icon
-		title, visibleTitleLen := format.TruncateToWidth(title, constants.ColTitle-format.IconWidth)
+		title, visibleTitleLen := format.TruncateToWidth(title, ColTitle-format.IconWidth)
 		title = titleIcon + title
 		visibleTitleLen += iconDisplayWidth
 
 		// Add state indicator for closed items
-		pr := n.GetPRDetails()
+		pr := n.PRDetails()
 		if n.State == "closed" || n.State == "merged" || (pr != nil && pr.Merged) {
 			suffix := " [closed]"
 			if (pr != nil && pr.Merged) || n.State == "merged" {
 				suffix = " [merged]"
 			}
 			suffixWidth := format.DisplayWidth(suffix)
-			if visibleTitleLen+suffixWidth > constants.ColTitle {
-				title, _ = format.TruncateToWidth(title, constants.ColTitle-suffixWidth)
+			if visibleTitleLen+suffixWidth > ColTitle {
+				title, _ = format.TruncateToWidth(title, ColTitle-suffixWidth)
 			}
 			title = title + suffix
 			visibleTitleLen = format.DisplayWidth(title)
@@ -124,7 +123,7 @@ func (f *TableFormatter) Format(items []triage.PrioritizedItem, w io.Writer) err
 
 		// Truncate repo if too long
 		repo := n.Repository.FullName
-		repo, visibleRepoLen := format.TruncateToWidth(repo, constants.ColRepo)
+		repo, visibleRepoLen := format.TruncateToWidth(repo, ColRepo)
 
 		// Create hyperlinked repo and pad it
 		repoURL := n.Repository.HTMLURL
@@ -132,7 +131,7 @@ func (f *TableFormatter) Format(items []triage.PrioritizedItem, w io.Writer) err
 			repoURL = fmt.Sprintf("https://github.com/%s", n.Repository.FullName)
 		}
 		linkedRepo := hyperlink(repo, repoURL)
-		linkedRepo = format.PadRight(linkedRepo, visibleRepoLen, constants.ColRepo)
+		linkedRepo = format.PadRight(linkedRepo, visibleRepoLen, ColRepo)
 
 		// Get URL for title hyperlink
 		titleURL := ""
@@ -144,33 +143,33 @@ func (f *TableFormatter) Format(items []triage.PrioritizedItem, w io.Writer) err
 
 		// Create hyperlinked title and pad it
 		linkedTitle := hyperlink(title, titleURL)
-		linkedTitle = format.PadRight(linkedTitle, visibleTitleLen, constants.ColTitle)
+		linkedTitle = format.PadRight(linkedTitle, visibleTitleLen, ColTitle)
 
 		// Format priority with color and pad
 		coloredPriority := colorPriority(item.Priority)
-		priorityStr := format.PadRight(coloredPriority, format.DisplayWidth(coloredPriority), constants.ColPriority)
+		priorityStr := format.PadRight(coloredPriority, format.DisplayWidth(coloredPriority), ColPriority)
 
 		// Format assigned column using shared logic
-		assigned := formatAssigned(&n, constants.ColAssigned)
+		assigned := formatAssigned(&n, ColAssigned)
 		assignedWidth := format.DisplayWidth(assigned)
-		assigned = format.PadRight(assigned, assignedWidth, constants.ColAssigned)
+		assigned = format.PadRight(assigned, assignedWidth, ColAssigned)
 
 		// Build status column (review state, PR size, or comment count)
 		statusRes := f.formatStatus(n)
 		statusText := statusRes.text
 		statusWidth := statusRes.visibleWidth
-		if statusWidth > constants.ColStatus {
+		if statusWidth > ColStatus {
 			// Truncate if needed - use plain text truncation
-			statusText, statusWidth = format.TruncateToWidth(statusText, constants.ColStatus)
+			statusText, statusWidth = format.TruncateToWidth(statusText, ColStatus)
 		}
-		statusText = format.PadRight(statusText, statusWidth, constants.ColStatus)
+		statusText = format.PadRight(statusText, statusWidth, ColStatus)
 
 		// Calculate age using shared logic
 		age := format.FormatAge(time.Since(n.UpdatedAt))
 
 		if _, err := fmt.Fprintf(w, "%s  %-*s  %s  %s  %s  %s  %s\n",
 			priorityStr,
-			constants.ColType, typeStr,
+			ColType, typeStr,
 			assigned,
 			linkedRepo,
 			linkedTitle,
@@ -193,7 +192,7 @@ type statusResult struct {
 // formatStatus builds the status column showing review state, PR size, or activity
 // Returns the formatted string and its visible width (excluding ANSI codes)
 func (f *TableFormatter) formatStatus(n model.Item) statusResult {
-	pr := n.GetPRDetails()
+	pr := n.PRDetails()
 
 	// For PRs, show review state and size
 	if n.IsPR() && pr != nil {
@@ -202,13 +201,13 @@ func (f *TableFormatter) formatStatus(n model.Item) statusResult {
 
 		// Review state with color (using ASCII symbols for consistent terminal width)
 		switch pr.ReviewState {
-		case constants.ReviewStateApproved:
+		case model.ReviewStateApproved:
 			textParts = append(textParts, color.GreenString("+ APPROVED"))
 			plainParts = append(plainParts, "+ APPROVED")
-		case constants.ReviewStateChangesRequested:
+		case model.ReviewStateChangesRequested:
 			textParts = append(textParts, color.YellowString("! CHANGES"))
 			plainParts = append(plainParts, "! CHANGES")
-		case constants.ReviewStatePending, constants.ReviewStateReviewRequired, constants.ReviewStateReviewed:
+		case model.ReviewStatePending, model.ReviewStateReviewRequired, model.ReviewStateReviewed:
 			textParts = append(textParts, color.CyanString("* REVIEW"))
 			plainParts = append(plainParts, "* REVIEW")
 		}
@@ -281,7 +280,7 @@ func colorPriority(p triage.PriorityLevel) string {
 // formatAssigned returns the assigned user for display
 // Priority: assignee > latest reviewer > requested reviewer
 func formatAssigned(n *model.Item, maxWidth int) string {
-	pr := n.GetPRDetails()
+	pr := n.PRDetails()
 
 	input := format.AssignedOptions{
 		Assignees: n.Assignees,

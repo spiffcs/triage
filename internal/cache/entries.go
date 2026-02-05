@@ -10,6 +10,25 @@ import (
 // or when enrichment data structure changes to invalidate old entries
 const Version = 3
 
+// Cache TTL constants
+const (
+	// DetailCacheTTL is the maximum age of cached item details before
+	// they are considered stale and require re-fetching.
+	DetailCacheTTL = 24 * time.Hour
+
+	// ItemListCacheTTL is the TTL for cached item lists (PRs, issues).
+	// Shorter than details cache because lists change more frequently.
+	ItemListCacheTTL = 5 * time.Minute
+
+	// NotificationsCacheTTL is the maximum age before a full
+	// notification list refresh is required.
+	NotificationsCacheTTL = 30 * time.Minute
+
+	// OrphanedCacheTTL is the TTL for the orphaned contributions list.
+	// Longer TTL since orphaned status changes slowly.
+	OrphanedCacheTTL = 24 * time.Hour
+)
+
 // ListType identifies the source of a list of items
 type ListType string
 

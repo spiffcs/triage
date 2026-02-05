@@ -1,4 +1,4 @@
-package triage
+package service
 
 import (
 	"context"
@@ -9,7 +9,6 @@ import (
 
 	"github.com/spiffcs/triage/internal/ghclient"
 	"github.com/spiffcs/triage/internal/model"
-	"github.com/spiffcs/triage/internal/service"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -59,19 +58,19 @@ func (r *FetchResult) Merge() ([]model.Item, MergeStats) {
 	var stats MergeStats
 
 	if len(r.ReviewPRs) > 0 {
-		merged, stats.ReviewPRsAdded = mergeItems(merged, r.ReviewPRs, model.SubjectPullRequest)
+		merged, stats.ReviewPRsAdded = deduplicateItems(merged, r.ReviewPRs, model.SubjectPullRequest)
 	}
 	if len(r.AuthoredPRs) > 0 {
-		merged, stats.AuthoredPRsAdded = mergeItems(merged, r.AuthoredPRs, model.SubjectPullRequest)
+		merged, stats.AuthoredPRsAdded = deduplicateItems(merged, r.AuthoredPRs, model.SubjectPullRequest)
 	}
 	if len(r.AssignedIssues) > 0 {
-		merged, stats.AssignedIssuesAdded = mergeItems(merged, r.AssignedIssues, model.SubjectIssue)
+		merged, stats.AssignedIssuesAdded = deduplicateItems(merged, r.AssignedIssues, model.SubjectIssue)
 	}
 	if len(r.AssignedPRs) > 0 {
-		merged, stats.AssignedPRsAdded = mergeItems(merged, r.AssignedPRs, model.SubjectPullRequest)
+		merged, stats.AssignedPRsAdded = deduplicateItems(merged, r.AssignedPRs, model.SubjectPullRequest)
 	}
 	if len(r.Orphaned) > 0 {
-		merged, stats.OrphanedAdded = mergeOrphaned(merged, r.Orphaned)
+		merged, stats.OrphanedAdded = deduplicateOrphaned(merged, r.Orphaned)
 	}
 
 	return merged, stats
@@ -79,12 +78,12 @@ func (r *FetchResult) Merge() ([]model.Item, MergeStats) {
 
 // Fetcher fetches all data sources from GitHub in parallel.
 type Fetcher struct {
-	svc        *service.ItemService
+	svc        *ItemService
 	onProgress ProgressFunc
 }
 
 // NewFetcher creates a Fetcher. onProgress may be nil (no-op).
-func NewFetcher(svc *service.ItemService, onProgress ProgressFunc) *Fetcher {
+func NewFetcher(svc *ItemService, onProgress ProgressFunc) *Fetcher {
 	return &Fetcher{
 		svc:        svc,
 		onProgress: onProgress,
@@ -119,7 +118,7 @@ func (f *Fetcher) FetchAll(ctx context.Context, opts FetchOptions) (*FetchResult
 
 	// Fetch notifications (with caching)
 	g.Go(func() error {
-		notifResult, err := f.svc.GetUnreadItems(gctx)
+		notifResult, err := f.svc.UnreadItems(gctx)
 		if err != nil {
 			if errors.Is(err, ghclient.ErrRateLimited) {
 				mu.Lock()
@@ -140,7 +139,7 @@ func (f *Fetcher) FetchAll(ctx context.Context, opts FetchOptions) (*FetchResult
 
 	// Fetch review-requested PRs
 	g.Go(func() error {
-		prs, _, err := f.svc.GetReviewRequestedPRs(gctx)
+		prs, _, err := f.svc.ReviewRequestedPRs(gctx)
 		if err != nil {
 			if errors.Is(err, ghclient.ErrRateLimited) {
 				mu.Lock()
@@ -161,7 +160,7 @@ func (f *Fetcher) FetchAll(ctx context.Context, opts FetchOptions) (*FetchResult
 
 	// Fetch authored PRs
 	g.Go(func() error {
-		prs, _, err := f.svc.GetAuthoredPRs(gctx)
+		prs, _, err := f.svc.AuthoredPRs(gctx)
 		if err != nil {
 			if errors.Is(err, ghclient.ErrRateLimited) {
 				mu.Lock()
@@ -182,7 +181,7 @@ func (f *Fetcher) FetchAll(ctx context.Context, opts FetchOptions) (*FetchResult
 
 	// Fetch assigned issues
 	g.Go(func() error {
-		issues, _, err := f.svc.GetAssignedIssues(gctx)
+		issues, _, err := f.svc.AssignedIssues(gctx)
 		if err != nil {
 			if errors.Is(err, ghclient.ErrRateLimited) {
 				mu.Lock()
@@ -203,7 +202,7 @@ func (f *Fetcher) FetchAll(ctx context.Context, opts FetchOptions) (*FetchResult
 
 	// Fetch assigned PRs
 	g.Go(func() error {
-		prs, _, err := f.svc.GetAssignedPRs(gctx)
+		prs, _, err := f.svc.AssignedPRs(gctx)
 		if err != nil {
 			if errors.Is(err, ghclient.ErrRateLimited) {
 				mu.Lock()
@@ -231,7 +230,7 @@ func (f *Fetcher) FetchAll(ctx context.Context, opts FetchOptions) (*FetchResult
 				ConsecutiveAuthorComments: opts.ConsecutiveComments,
 				MaxPerRepo:                50,
 			}
-			orphaned, _, err := f.svc.GetOrphanedContributions(gctx, searchOpts)
+			orphaned, _, err := f.svc.OrphanedContributions(gctx, searchOpts)
 			if err != nil {
 				if errors.Is(err, ghclient.ErrRateLimited) {
 					mu.Lock()
@@ -255,26 +254,26 @@ func (f *Fetcher) FetchAll(ctx context.Context, opts FetchOptions) (*FetchResult
 	return result, err
 }
 
-// mergeItems adds items that aren't already in the items list.
+// deduplicateItems adds items that aren't already in the existing list.
 // It filters existing items by subjectType and checks for duplicates
 // by repo#number and Subject.URL. Returns the merged list and count of added items.
-func mergeItems(
-	notifications []model.Item,
+func deduplicateItems(
+	existing []model.Item,
 	newItems []model.Item,
 	subjectType model.SubjectType,
 ) ([]model.Item, int) {
 	// Build sets of existing identifiers for items matching the subject type
-	existing := make(map[string]bool)
+	existingKeys := make(map[string]bool)
 	existingURLs := make(map[string]bool)
 
-	for _, n := range notifications {
+	for _, n := range existing {
 		if n.Subject.Type == subjectType {
 			if n.Subject.URL != "" {
 				existingURLs[n.Subject.URL] = true
 			}
 			if n.Details != nil {
 				key := fmt.Sprintf("%s#%d", n.Repository.FullName, n.Number)
-				existing[key] = true
+				existingKeys[key] = true
 			}
 		}
 	}
@@ -287,32 +286,32 @@ func mergeItems(
 		}
 
 		key := fmt.Sprintf("%s#%d", item.Repository.FullName, item.Number)
-		if existing[key] || existingURLs[item.Subject.URL] {
+		if existingKeys[key] || existingURLs[item.Subject.URL] {
 			continue
 		}
 
-		notifications = append(notifications, item)
-		existing[key] = true
+		existing = append(existing, item)
+		existingKeys[key] = true
 		added++
 	}
 
-	return notifications, added
+	return existing, added
 }
 
-// mergeOrphaned adds orphaned contributions that aren't already in notifications.
+// deduplicateOrphaned adds orphaned contributions that aren't already in the list.
 // Returns the merged list and the count of newly added items.
-func mergeOrphaned(notifications []model.Item, orphaned []model.Item) ([]model.Item, int) {
+func deduplicateOrphaned(existing []model.Item, orphaned []model.Item) ([]model.Item, int) {
 	// Orphaned items can be either PRs or issues, so we need to check both types
-	existing := make(map[string]bool)
+	existingKeys := make(map[string]bool)
 	existingURLs := make(map[string]bool)
 
-	for _, n := range notifications {
+	for _, n := range existing {
 		if n.Subject.URL != "" {
 			existingURLs[n.Subject.URL] = true
 		}
 		if n.Details != nil {
 			key := fmt.Sprintf("%s#%d", n.Repository.FullName, n.Number)
-			existing[key] = true
+			existingKeys[key] = true
 		}
 	}
 
@@ -324,14 +323,14 @@ func mergeOrphaned(notifications []model.Item, orphaned []model.Item) ([]model.I
 		}
 
 		key := fmt.Sprintf("%s#%d", item.Repository.FullName, item.Number)
-		if existing[key] || existingURLs[item.Subject.URL] {
+		if existingKeys[key] || existingURLs[item.Subject.URL] {
 			continue
 		}
 
-		notifications = append(notifications, item)
-		existing[key] = true
+		existing = append(existing, item)
+		existingKeys[key] = true
 		added++
 	}
 
-	return notifications, added
+	return existing, added
 }

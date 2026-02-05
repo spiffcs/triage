@@ -12,7 +12,6 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spiffcs/triage/config"
 	"github.com/spiffcs/triage/internal/cache"
-	"github.com/spiffcs/triage/internal/constants"
 	"github.com/spiffcs/triage/internal/duration"
 	"github.com/spiffcs/triage/internal/ghclient"
 	"github.com/spiffcs/triage/internal/log"
@@ -24,8 +23,25 @@ import (
 	"github.com/spiffcs/triage/internal/tui"
 )
 
+// TUI update and progress constants
+const (
+	// tuiUpdateInterval is the minimum time between TUI progress updates.
+	tuiUpdateInterval = 50 * time.Millisecond
+
+	// progressSimulationInterval is how often simulated progress ticks.
+	progressSimulationInterval = 100 * time.Millisecond
+
+	// progressSimulationIncrement is the percentage (as a fraction) to
+	// increment simulated progress per tick.
+	progressSimulationIncrement = 0.02
+
+	// logThrottlePercent is the interval (in percent) at which progress
+	// logs are emitted when not using the TUI.
+	logThrottlePercent = 5
+)
+
 // sendFetchCompleteEvent formats and sends the fetch completion TUI event.
-func sendFetchCompleteEvent(result *triage.FetchResult, err error, sinceLabel string, stats service.FetchStats, events chan tui.Event) {
+func sendFetchCompleteEvent(result *service.FetchResult, err error, sinceLabel string, stats service.FetchStats, events chan tui.Event) {
 	if err != nil {
 		sendTaskEvent(events, tui.TaskFetch, tui.StatusError, tui.WithError(err))
 		return
@@ -42,11 +58,11 @@ func sendFetchCompleteEvent(result *triage.FetchResult, err error, sinceLabel st
 }
 
 // sendRateLimitEvent sends a rate limit TUI event if the result indicates rate limiting.
-func sendRateLimitEvent(result *triage.FetchResult, events chan tui.Event) {
+func sendRateLimitEvent(result *service.FetchResult, events chan tui.Event) {
 	if !result.RateLimited || events == nil {
 		return
 	}
-	_, _, resetAt, _ := ghclient.GetRateLimitStatus()
+	_, _, resetAt, _ := ghclient.RateLimitStatus()
 	events <- tui.RateLimitEvent{
 		Limited: true,
 		ResetAt: resetAt,
@@ -54,7 +70,7 @@ func sendRateLimitEvent(result *triage.FetchResult, events chan tui.Event) {
 }
 
 // logFetchStats logs the fetch statistics.
-func logFetchStats(result *triage.FetchResult, stats service.FetchStats) {
+func logFetchStats(result *service.FetchResult, stats service.FetchStats) {
 	log.Info("fetched data",
 		"notifications", len(result.Notifications),
 		"reviewPRs", len(result.ReviewPRs),
@@ -166,13 +182,13 @@ func runList(cmd *cobra.Command, opts *Options) error {
 		sendTaskEvent(rt.events, tui.TaskFetch, tui.StatusRunning,
 			tui.WithProgress(progress), tui.WithMessage(msg))
 	}
-	fetcher := triage.NewFetcher(svc, onProgress)
+	fetcher := service.NewFetcher(svc, onProgress)
 	fetchOpts := buildFetchOptions(cfg)
 	result, err := fetcher.FetchAll(ctx, fetchOpts)
 	if err != nil {
 		log.Warn("some fetches failed", "error", err)
 	}
-	stats := svc.FetchStats()
+	stats := svc.Stats()
 	sendRateLimitEvent(result, rt.events)
 	sendFetchCompleteEvent(result, err, opts.Since, stats, rt.events)
 	logFetchStats(result, stats)
@@ -248,7 +264,7 @@ func initializeService(ctx context.Context, cfg *config.Config, sinceStr string,
 	}
 
 	rt.sendEvent(tui.TaskAuth, tui.StatusRunning)
-	currentUser, err := ghClient.GetAuthenticatedUser(ctx)
+	currentUser, err := ghClient.AuthenticatedUser(ctx)
 	if err != nil {
 		rt.sendEvent(tui.TaskAuth, tui.StatusError, tui.WithError(err))
 		return nil, fmt.Errorf("failed to get authenticated user: %w", err)
@@ -263,8 +279,8 @@ func initializeService(ctx context.Context, cfg *config.Config, sinceStr string,
 	return service.New(ghClient, c, currentUser, since), nil
 }
 
-// buildFetchOptions constructs triage.FetchOptions from config.
-func buildFetchOptions(cfg *config.Config) triage.FetchOptions {
+// buildFetchOptions constructs service.FetchOptions from config.
+func buildFetchOptions(cfg *config.Config) service.FetchOptions {
 	var orphanedRepos []string
 	var staleDays, consecutiveComments int
 	if cfg.Orphaned != nil {
@@ -273,7 +289,7 @@ func buildFetchOptions(cfg *config.Config) triage.FetchOptions {
 		consecutiveComments = cfg.Orphaned.ConsecutiveAuthorComments
 	}
 
-	return triage.FetchOptions{
+	return service.FetchOptions{
 		OrphanedRepos:       orphanedRepos,
 		StaleDays:           staleDays,
 		ConsecutiveComments: consecutiveComments,
@@ -281,7 +297,7 @@ func buildFetchOptions(cfg *config.Config) triage.FetchOptions {
 }
 
 // runEnrichment enriches all fetched items and sends TUI events.
-func runEnrichment(ctx context.Context, svc *service.ItemService, result *triage.FetchResult, rt *listRuntime) {
+func runEnrichment(ctx context.Context, svc *service.ItemService, result *service.FetchResult, rt *listRuntime) {
 	rt.sendEvent(tui.TaskEnrich, tui.StatusRunning)
 
 	totalToEnrich := len(result.Notifications) + len(result.ReviewPRs) + len(result.AuthoredPRs)
@@ -300,7 +316,7 @@ func runEnrichment(ctx context.Context, svc *service.ItemService, result *triage
 }
 
 // processResults merges, prioritizes, and filters the fetched data.
-func processResults(result *triage.FetchResult, cfg *config.Config, currentUser string, resolvedStore *resolved.Store, events chan tui.Event) []triage.PrioritizedItem {
+func processResults(result *service.FetchResult, cfg *config.Config, currentUser string, resolvedStore *resolved.Store, events chan tui.Event) []triage.PrioritizedItem {
 	// Merge all additional data sources into a single deduplicated list
 	merged, mergeStats := result.Merge()
 	if mergeStats.ReviewPRsAdded > 0 {
@@ -379,7 +395,7 @@ func enrichItems(
 	// Progress callback using atomic counter for concurrent updates
 	var lastLogPercent int64 = -1
 	var lastTUIUpdate int64 = 0 // Unix nanoseconds
-	tuiUpdateInterval := int64(constants.TUIUpdateInterval)
+	tuiThrottle := int64(tuiUpdateInterval)
 
 	// Simulated progress state for smooth TUI updates between batch completions
 	var simulatedProgress float64
@@ -393,7 +409,7 @@ func enrichItems(
 			// Throttle TUI updates to every 50ms for smooth progress without overhead
 			now := time.Now().UnixNano()
 			lastUpdate := atomic.LoadInt64(&lastTUIUpdate)
-			if now-lastUpdate >= tuiUpdateInterval || completed == int64(totalToEnrich) {
+			if now-lastUpdate >= tuiThrottle || completed == int64(totalToEnrich) {
 				if atomic.CompareAndSwapInt64(&lastTUIUpdate, lastUpdate, now) {
 					progress := float64(completed) / float64(totalToEnrich)
 					// Update simulated progress to match real progress
@@ -415,7 +431,7 @@ func enrichItems(
 		} else {
 			// Throttle log output to configured percent intervals
 			percent := (completed * 100) / int64(totalToEnrich)
-			if percent != atomic.LoadInt64(&lastLogPercent) && percent%constants.LogThrottlePercent == 0 {
+			if percent != atomic.LoadInt64(&lastLogPercent) && percent%logThrottlePercent == 0 {
 				atomic.StoreInt64(&lastLogPercent, percent)
 				log.Progress("Enriching items: %d/%d (%d%%)...", completed, totalToEnrich, percent)
 			}
@@ -426,7 +442,7 @@ func enrichItems(
 	simulationDone := make(chan struct{})
 	if useTUI {
 		go func() {
-			ticker := time.NewTicker(constants.ProgressSimulationInterval)
+			ticker := time.NewTicker(progressSimulationInterval)
 			defer ticker.Stop()
 			for {
 				select {
@@ -440,7 +456,7 @@ func enrichItems(
 						simulatedProgress = realProgress
 					} else if simulatedProgress < 0.95 {
 						// Increment slowly, capped at 95% to avoid jumping to 100% prematurely
-						simulatedProgress += constants.ProgressSimulationIncrement
+						simulatedProgress += progressSimulationIncrement
 						if simulatedProgress > 0.95 {
 							simulatedProgress = 0.95
 						}

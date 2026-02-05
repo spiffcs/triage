@@ -1,4 +1,4 @@
-package triage
+package service
 
 import (
 	"fmt"
@@ -221,18 +221,18 @@ func TestFetchResult_Merge(t *testing.T) {
 	})
 }
 
-func TestMergeItems(t *testing.T) {
+func TestDeduplicateItems(t *testing.T) {
 	tests := []struct {
-		name          string
-		notifications []model.Item
-		newItems      []model.Item
-		subjectType   model.SubjectType
-		wantLen       int
-		wantAdded     int
+		name        string
+		existing    []model.Item
+		newItems    []model.Item
+		subjectType model.SubjectType
+		wantLen     int
+		wantAdded   int
 	}{
 		{
 			name: "dedup by URL within same subject type",
-			notifications: []model.Item{
+			existing: []model.Item{
 				makeFetchItem("org/repo", 1, model.SubjectPullRequest, "url1", true),
 			},
 			newItems: []model.Item{
@@ -244,7 +244,7 @@ func TestMergeItems(t *testing.T) {
 		},
 		{
 			name: "does not dedup across subject types",
-			notifications: []model.Item{
+			existing: []model.Item{
 				makeFetchItem("org/repo", 1, model.SubjectIssue, "url1", true),
 			},
 			newItems: []model.Item{
@@ -258,7 +258,7 @@ func TestMergeItems(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, added := mergeItems(tt.notifications, tt.newItems, tt.subjectType)
+			got, added := deduplicateItems(tt.existing, tt.newItems, tt.subjectType)
 			if len(got) != tt.wantLen {
 				t.Errorf("len = %d, want %d", len(got), tt.wantLen)
 			}
@@ -269,8 +269,8 @@ func TestMergeItems(t *testing.T) {
 	}
 }
 
-func TestMergeOrphaned(t *testing.T) {
-	notifications := []model.Item{
+func TestDeduplicateOrphaned(t *testing.T) {
+	existing := []model.Item{
 		makeFetchItem("org/repo", 1, model.SubjectPullRequest, "url1", true),
 		makeFetchItem("org/repo", 2, model.SubjectIssue, "url2", true),
 	}
@@ -280,7 +280,7 @@ func TestMergeOrphaned(t *testing.T) {
 		makeFetchItem("org/repo", 3, model.SubjectIssue, "url3", true),       // unique
 	}
 
-	got, added := mergeOrphaned(notifications, orphaned)
+	got, added := deduplicateOrphaned(existing, orphaned)
 	if len(got) != 3 {
 		t.Errorf("len = %d, want 3", len(got))
 	}
