@@ -198,32 +198,21 @@ func renderTabBar(activePane pane, priorityCount, orphanedCount, assignedCount, 
 	blocked := fmt.Sprintf("[ 2: Blocked (%d) %s%s ]", blockedCount, blockedDir, blockedSortCol)
 	priority := fmt.Sprintf("[ 3: Priority (%d) %s%s ]", priorityCount, priorityDir, prioritySortCol)
 	orphaned := fmt.Sprintf("[ 4: Orphaned (%d) %s%s ]", orphanedCount, orphanedDir, orphanedSortCol)
+	statsTab := "[ 5: Stats ]"
 
-	var assignedStyled, priorityStyled, orphanedStyled, blockedStyled string
-	switch activePane {
-	case paneAssigned:
-		assignedStyled = tabActiveStyle.Render(assigned)
-		priorityStyled = tabInactiveStyle.Render(priority)
-		orphanedStyled = tabInactiveStyle.Render(orphaned)
-		blockedStyled = tabInactiveStyle.Render(blocked)
-	case panePriority:
-		assignedStyled = tabInactiveStyle.Render(assigned)
-		priorityStyled = tabActiveStyle.Render(priority)
-		orphanedStyled = tabInactiveStyle.Render(orphaned)
-		blockedStyled = tabInactiveStyle.Render(blocked)
-	case paneOrphaned:
-		assignedStyled = tabInactiveStyle.Render(assigned)
-		priorityStyled = tabInactiveStyle.Render(priority)
-		orphanedStyled = tabActiveStyle.Render(orphaned)
-		blockedStyled = tabInactiveStyle.Render(blocked)
-	case paneBlocked:
-		assignedStyled = tabInactiveStyle.Render(assigned)
-		priorityStyled = tabInactiveStyle.Render(priority)
-		orphanedStyled = tabInactiveStyle.Render(orphaned)
-		blockedStyled = tabActiveStyle.Render(blocked)
+	tabStyle := func(p pane, label string) string {
+		if activePane == p {
+			return tabActiveStyle.Render(label)
+		}
+		return tabInactiveStyle.Render(label)
 	}
 
-	return fmt.Sprintf("%s    %s    %s    %s", assignedStyled, blockedStyled, priorityStyled, orphanedStyled)
+	return fmt.Sprintf("%s    %s    %s    %s    %s",
+		tabStyle(paneAssigned, assigned),
+		tabStyle(paneBlocked, blocked),
+		tabStyle(panePriority, priority),
+		tabStyle(paneOrphaned, orphaned),
+		tabStyle(paneStats, statsTab))
 }
 
 // renderOrphanedEmptyState renders the empty state message for the orphaned pane
@@ -728,7 +717,7 @@ func renderAge(d time.Duration, selected bool) (string, int) {
 
 // renderHelp renders the help text
 func renderHelp() string {
-	return listHelpStyle.Render("Tab/1-4: panes   j/k: nav   s/S: sort   r: reset   d: done   enter: open   q: quit")
+	return listHelpStyle.Render("Tab/1-5: panes   j/k: nav   s/S: sort   r: reset   d: done   enter: open   q: quit")
 }
 
 // renderEmptyState renders the empty state message

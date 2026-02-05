@@ -19,6 +19,7 @@ import (
 	"github.com/spiffcs/triage/internal/output"
 	"github.com/spiffcs/triage/internal/resolved"
 	"github.com/spiffcs/triage/internal/service"
+	"github.com/spiffcs/triage/internal/stats"
 	"github.com/spiffcs/triage/internal/triage"
 	"github.com/spiffcs/triage/internal/tui"
 )
@@ -159,7 +160,7 @@ func runList(cmd *cobra.Command, opts *Options) error {
 	rt.startTUI()
 
 	// Load config (separate from service)
-	cfg, resolvedStore, err := loadConfig()
+	cfg, resolvedStore, statsStore, err := loadConfig()
 	if err != nil {
 		rt.close()
 		return err
@@ -204,9 +205,17 @@ func runList(cmd *cobra.Command, opts *Options) error {
 		return nil
 	}
 
+	// Record stats snapshot
+	if statsStore != nil {
+		snap := tui.ComputeSnapshotFromItems(items, cfg, svc.CurrentUser())
+		if err := statsStore.Append(snap); err != nil {
+			log.Warn("could not save stats snapshot", "error", err)
+		}
+	}
+
 	// Output
 	rt.close()
-	return renderOutput(items, opts, cfg, svc.CurrentUser(), resolvedStore)
+	return renderOutput(items, opts, cfg, svc.CurrentUser(), resolvedStore, statsStore)
 }
 
 // setupRuntime creates the runtime struct and returns a cleanup function for profiling.
@@ -229,11 +238,11 @@ func setupRuntime(opts *Options) (*listRuntime, func(), error) {
 	return rt, profiler.Stop, nil
 }
 
-// loadConfig loads configuration and resolved store.
-func loadConfig() (*config.Config, *resolved.Store, error) {
+// loadConfig loads configuration, resolved store, and stats store.
+func loadConfig() (*config.Config, *resolved.Store, *stats.Store, error) {
 	cfg, err := config.Load()
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to load config: %w", err)
+		return nil, nil, nil, fmt.Errorf("failed to load config: %w", err)
 	}
 
 	resolvedStore, err := resolved.NewStore()
@@ -241,7 +250,12 @@ func loadConfig() (*config.Config, *resolved.Store, error) {
 		log.Warn("could not load resolved store", "error", err)
 	}
 
-	return cfg, resolvedStore, nil
+	statsStore, err := stats.NewStore()
+	if err != nil {
+		log.Warn("could not load stats store", "error", err)
+	}
+
+	return cfg, resolvedStore, statsStore, nil
 }
 
 // initializeService creates the ItemService with user context.
@@ -364,7 +378,7 @@ func processResults(result *service.FetchResult, cfg *config.Config, currentUser
 }
 
 // renderOutput determines the format and outputs the results.
-func renderOutput(items []triage.PrioritizedItem, opts *Options, cfg *config.Config, currentUser string, resolvedStore *resolved.Store) error {
+func renderOutput(items []triage.PrioritizedItem, opts *Options, cfg *config.Config, currentUser string, resolvedStore *resolved.Store, statsStore *stats.Store) error {
 	format := output.Format(opts.Format)
 	if format == "" {
 		format = output.Format(cfg.DefaultFormat)
@@ -374,7 +388,14 @@ func renderOutput(items []triage.PrioritizedItem, opts *Options, cfg *config.Con
 	if shouldUseTUI(opts) && (format == "" || format == output.FormatTable) {
 		weights := cfg.GetScoreWeights()
 		blockedLabels := cfg.GetBlockedLabels()
-		return tui.RunListUI(items, resolvedStore, weights, currentUser, tui.WithConfig(cfg), tui.WithBlockedLabels(blockedLabels))
+		tuiOpts := []tui.ListOption{
+			tui.WithConfig(cfg),
+			tui.WithBlockedLabels(blockedLabels),
+		}
+		if statsStore != nil {
+			tuiOpts = append(tuiOpts, tui.WithSnapshotStore(statsStore))
+		}
+		return tui.RunListUI(items, resolvedStore, weights, currentUser, tuiOpts...)
 	}
 
 	weights := cfg.GetScoreWeights()

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"math"
 	"os/exec"
 	"runtime"
 	"sort"
@@ -11,6 +12,7 @@ import (
 	"github.com/spiffcs/triage/config"
 	"github.com/spiffcs/triage/internal/model"
 	"github.com/spiffcs/triage/internal/resolved"
+	"github.com/spiffcs/triage/internal/stats"
 	"github.com/spiffcs/triage/internal/triage"
 )
 
@@ -26,6 +28,8 @@ const (
 	paneOrphaned
 	// paneBlocked is the blocked list pane (items with "blocked" label)
 	paneBlocked
+	// paneStats is the stats dashboard pane
+	paneStats
 )
 
 // TUI layout constants
@@ -55,7 +59,7 @@ var ciStatusOrder = map[string]int{
 	model.CIStatusSuccess: 0,
 	model.CIStatusPending: 1,
 	model.CIStatusFailure: 2,
-	"":                        3, // no CI status
+	"":                    3, // no CI status
 }
 
 // Priority pane sort columns
@@ -134,6 +138,10 @@ type ListModel struct {
 
 	// Configurable labels for blocked pane
 	blockedLabels []string
+
+	// Stats pane state
+	snapshotStore     *stats.Store
+	statsScrollOffset int
 }
 
 // ListOption is a functional option for configuring ListModel
@@ -151,6 +159,13 @@ func WithConfig(cfg *config.Config) ListOption {
 func WithBlockedLabels(labels []string) ListOption {
 	return func(m *ListModel) {
 		m.blockedLabels = labels
+	}
+}
+
+// WithSnapshotStore sets the stats snapshot store for historical trends.
+func WithSnapshotStore(store *stats.Store) ListOption {
+	return func(m *ListModel) {
+		m.snapshotStore = store
 	}
 }
 
@@ -709,6 +724,8 @@ func (m *ListModel) activeItems() []triage.PrioritizedItem {
 		return m.assignedItems
 	case paneBlocked:
 		return m.blockedItems
+	case paneStats:
+		return nil
 	default:
 		return m.priorityItems
 	}
@@ -723,6 +740,8 @@ func (m *ListModel) activeCursor() int {
 		return m.assignedCursor
 	case paneBlocked:
 		return m.blockedCursor
+	case paneStats:
+		return 0
 	default:
 		return m.priorityCursor
 	}
@@ -740,6 +759,19 @@ func (m *ListModel) setActiveCursor(pos int) {
 	default:
 		m.priorityCursor = pos
 	}
+}
+
+// clampStatsScroll ensures the stats scroll offset is within valid bounds.
+func (m ListModel) clampStatsScroll() ListModel {
+	content := renderStatsView(m)
+	contentLines := strings.Count(content, "\n") + 1
+	availableHeight := m.windowHeight - tabBarLines - FooterLines
+	availableHeight = max(availableHeight, 1)
+	maxScroll := max(contentLines-availableHeight, 0)
+	if m.statsScrollOffset > maxScroll {
+		m.statsScrollOffset = maxScroll
+	}
+	return m
 }
 
 // Init implements tea.Model
@@ -774,7 +806,7 @@ func (m ListModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 
 	case "tab":
-		// Cycle through panes: Assigned -> Blocked -> Priority -> Orphaned -> Assigned
+		// Cycle through panes: Assigned -> Blocked -> Priority -> Orphaned -> Stats -> Assigned
 		switch m.activePane {
 		case paneAssigned:
 			m.activePane = paneBlocked
@@ -783,6 +815,8 @@ func (m ListModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case panePriority:
 			m.activePane = paneOrphaned
 		case paneOrphaned:
+			m.activePane = paneStats
+		case paneStats:
 			m.activePane = paneAssigned
 		}
 		return m, nil
@@ -803,7 +837,33 @@ func (m ListModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.activePane = paneOrphaned
 		return m, nil
 
+	case "5":
+		m.activePane = paneStats
+		return m, nil
+
+	case "d", "enter", "s", "S", "r":
+		if m.activePane == paneStats {
+			return m, nil
+		}
+		switch msg.String() {
+		case "d":
+			return m.markDone()
+		case "enter":
+			return m.openInBrowser()
+		case "s":
+			return m.cycleSortColumn()
+		case "S":
+			return m.toggleSortDirection()
+		case "r":
+			return m.resetSort()
+		}
+
 	case "j", "down":
+		if m.activePane == paneStats {
+			m.statsScrollOffset++
+			m = m.clampStatsScroll()
+			return m, nil
+		}
 		items := m.activeItems()
 		cursor := m.activeCursor()
 		if cursor < len(items)-1 {
@@ -812,6 +872,12 @@ func (m ListModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "k", "up":
+		if m.activePane == paneStats {
+			if m.statsScrollOffset > 0 {
+				m.statsScrollOffset--
+			}
+			return m, nil
+		}
 		cursor := m.activeCursor()
 		if cursor > 0 {
 			m.setActiveCursor(cursor - 1)
@@ -819,30 +885,24 @@ func (m ListModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "g", "home":
+		if m.activePane == paneStats {
+			m.statsScrollOffset = 0
+			return m, nil
+		}
 		m.setActiveCursor(0)
 		return m, nil
 
 	case "G", "end":
+		if m.activePane == paneStats {
+			m.statsScrollOffset = math.MaxInt
+			m = m.clampStatsScroll()
+			return m, nil
+		}
 		items := m.activeItems()
 		if len(items) > 0 {
 			m.setActiveCursor(len(items) - 1)
 		}
 		return m, nil
-
-	case "d":
-		return m.markDone()
-
-	case "enter":
-		return m.openInBrowser()
-
-	case "s":
-		return m.cycleSortColumn()
-
-	case "S":
-		return m.toggleSortDirection()
-
-	case "r":
-		return m.resetSort()
 	}
 
 	return m, nil
@@ -1191,6 +1251,10 @@ func (m ListModel) BlockedCount() int {
 func (m ListModel) View() string {
 	if m.quitting {
 		return ""
+	}
+
+	if m.activePane == paneStats {
+		return renderStatsPane(m)
 	}
 
 	return renderListView(m)

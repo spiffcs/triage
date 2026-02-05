@@ -15,13 +15,13 @@ import (
 // FetchStats records which data sources were served from cache.
 // Populated as Get* methods are called; safe for concurrent access.
 type FetchStats struct {
-	NotifFromCache    bool
-	NotifNewCount     int
-	ReviewFromCache   bool
-	AuthoredFromCache bool
-	AssignedFromCache bool
+	NotifFromCache       bool
+	NotifNewCount        int
+	ReviewFromCache      bool
+	AuthoredFromCache    bool
+	AssignedFromCache    bool
 	AssignedPRsFromCache bool
-	OrphanedFromCache bool
+	OrphanedFromCache    bool
 }
 
 // ItemService orchestrates data flow between GitHub API and cache.
