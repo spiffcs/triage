@@ -90,4 +90,3 @@ func TestNewWithOptions(t *testing.T) {
 	}
 	// The options are applied internally, we can verify New() accepts them without panic
 }
-

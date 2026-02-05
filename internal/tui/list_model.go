@@ -55,7 +55,7 @@ var ciStatusOrder = map[string]int{
 	model.CIStatusSuccess: 0,
 	model.CIStatusPending: 1,
 	model.CIStatusFailure: 2,
-	"":                        3, // no CI status
+	"":                    3, // no CI status
 }
 
 // Priority pane sort columns

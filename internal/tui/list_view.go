@@ -140,11 +140,11 @@ func calculateColumnWidths(windowWidth int, vis columnVisibility, hideAssignedCI
 	maxTitleWidth := 0
 	maxRepoWidth := 0
 	for _, item := range items {
-		tw := format.DisplayWidth(item.Item.Subject.Title) + format.IconWidth
+		tw := format.DisplayWidth(item.Subject.Title) + format.IconWidth
 		if tw > maxTitleWidth {
 			maxTitleWidth = tw
 		}
-		rw := format.DisplayWidth(item.Item.Repository.FullName)
+		rw := format.DisplayWidth(item.Repository.FullName)
 		if rw > maxRepoWidth {
 			maxRepoWidth = rw
 		}
