@@ -13,7 +13,7 @@ import (
 // without any caching logic. Use ItemStore for cache-aware fetching.
 type GitHubFetcher interface {
 	// Authentication
-	GetAuthenticatedUser(ctx context.Context) (string, error)
+	AuthenticatedUser(ctx context.Context) (string, error)
 
 	// Notifications
 	ListUnreadNotifications(ctx context.Context, since time.Time) ([]model.Item, error)

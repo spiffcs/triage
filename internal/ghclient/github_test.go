@@ -65,7 +65,7 @@ func TestItemWithPRDetails(t *testing.T) {
 	if !item.IsPR() {
 		t.Error("expected IsPR() to be true")
 	}
-	pr := item.GetPRDetails()
+	pr := item.PRDetails()
 	if pr == nil {
 		t.Fatal("expected PRDetails to be non-nil")
 	}
@@ -110,27 +110,25 @@ func TestSubjectTypes(t *testing.T) {
 	}
 }
 
-func TestSplitRepoURL(t *testing.T) {
+func TestRepoFromURL(t *testing.T) {
 	tests := []struct {
-		url      string
-		expected []string
+		url           string
+		expectedOwner string
+		expectedRepo  string
 	}{
-		{"https://api.github.com/repos/owner/repo", []string{"owner", "repo"}},
-		{"https://api.github.com/repos/org/project/issues/1", []string{"org", "project", "issues", "1"}},
-		{"", []string{}},
-		{"https://api.github.com/repos/", []string{}},
+		{"https://api.github.com/repos/owner/repo", "owner", "repo"},
+		{"https://api.github.com/repos/org/project/issues/1", "org", "project"},
+		{"", "", ""},
+		{"https://api.github.com/repos/", "", ""},
+		{"https://api.github.com/repos/owner", "", ""},
+		{"https://other.com/repos/owner/repo", "", ""},
 	}
 
 	for _, tt := range tests {
-		result := splitRepoURL(tt.url)
-		if len(result) != len(tt.expected) {
-			t.Errorf("splitRepoURL(%q): expected %v, got %v", tt.url, tt.expected, result)
-			continue
-		}
-		for i := range result {
-			if result[i] != tt.expected[i] {
-				t.Errorf("splitRepoURL(%q)[%d]: expected %q, got %q", tt.url, i, tt.expected[i], result[i])
-			}
+		owner, repo := repoFromURL(tt.url)
+		if owner != tt.expectedOwner || repo != tt.expectedRepo {
+			t.Errorf("repoFromURL(%q): expected (%q, %q), got (%q, %q)",
+				tt.url, tt.expectedOwner, tt.expectedRepo, owner, repo)
 		}
 	}
 }

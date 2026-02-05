@@ -12,7 +12,6 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spiffcs/triage/config"
 	"github.com/spiffcs/triage/internal/cache"
-	"github.com/spiffcs/triage/internal/constants"
 	"github.com/spiffcs/triage/internal/duration"
 	"github.com/spiffcs/triage/internal/ghclient"
 	"github.com/spiffcs/triage/internal/log"
@@ -23,6 +22,70 @@ import (
 	"github.com/spiffcs/triage/internal/triage"
 	"github.com/spiffcs/triage/internal/tui"
 )
+
+// TUI update and progress constants
+const (
+	// tuiUpdateInterval is the minimum time between TUI progress updates.
+	tuiUpdateInterval = 50 * time.Millisecond
+
+	// progressSimulationInterval is how often simulated progress ticks.
+	progressSimulationInterval = 100 * time.Millisecond
+
+	// progressSimulationIncrement is the percentage (as a fraction) to
+	// increment simulated progress per tick.
+	progressSimulationIncrement = 0.02
+
+	// logThrottlePercent is the interval (in percent) at which progress
+	// logs are emitted when not using the TUI.
+	logThrottlePercent = 5
+)
+
+// sendFetchCompleteEvent formats and sends the fetch completion TUI event.
+func sendFetchCompleteEvent(result *service.FetchResult, err error, sinceLabel string, stats service.FetchStats, events chan tui.Event) {
+	if err != nil {
+		sendTaskEvent(events, tui.TaskFetch, tui.StatusError, tui.WithError(err))
+		return
+	}
+
+	totalFetched := result.TotalFetched()
+	fetchMsg := fmt.Sprintf("for the past %s (%d items)", sinceLabel, totalFetched)
+	if stats.NotifFromCache && stats.NotifNewCount > 0 {
+		fetchMsg = fmt.Sprintf("for the past %s (%d items, %d new)", sinceLabel, totalFetched, stats.NotifNewCount)
+	} else if stats.NotifFromCache {
+		fetchMsg = fmt.Sprintf("for the past %s (%d items, cached)", sinceLabel, totalFetched)
+	}
+	sendTaskEvent(events, tui.TaskFetch, tui.StatusComplete, tui.WithMessage(fetchMsg))
+}
+
+// sendRateLimitEvent sends a rate limit TUI event if the result indicates rate limiting.
+func sendRateLimitEvent(result *service.FetchResult, events chan tui.Event) {
+	if !result.RateLimited || events == nil {
+		return
+	}
+	_, _, resetAt, _ := ghclient.RateLimitStatus()
+	events <- tui.RateLimitEvent{
+		Limited: true,
+		ResetAt: resetAt,
+	}
+}
+
+// logFetchStats logs the fetch statistics.
+func logFetchStats(result *service.FetchResult, stats service.FetchStats) {
+	log.Info("fetched data",
+		"notifications", len(result.Notifications),
+		"reviewPRs", len(result.ReviewPRs),
+		"authoredPRs", len(result.AuthoredPRs),
+		"assignedIssues", len(result.AssignedIssues),
+		"assignedPRs", len(result.AssignedPRs),
+		"orphaned", len(result.Orphaned),
+		"notifFromCache", stats.NotifFromCache,
+		"notifNewCount", stats.NotifNewCount,
+		"reviewFromCache", stats.ReviewFromCache,
+		"authoredFromCache", stats.AuthoredFromCache,
+		"assignedFromCache", stats.AssignedFromCache,
+		"assignedPRsFromCache", stats.AssignedPRsFromCache,
+		"orphanedFromCache", stats.OrphanedFromCache)
+}
 
 // listRuntime bundles TUI-related state that's threaded through the list command.
 type listRuntime struct {
@@ -110,22 +173,36 @@ func runList(cmd *cobra.Command, opts *Options) error {
 	}
 
 	// Fetch
-	fetchOpts := buildFetchOptions(cfg, opts.Since, rt.events)
-	result, err := fetchAll(ctx, svc, fetchOpts)
+	onProgress := func(completed, total int) {
+		progress := float64(completed) / float64(total)
+		msg := fmt.Sprintf("%s (%d/%d sources)", opts.Since, completed, total)
+		if completed == 0 {
+			msg = fmt.Sprintf("for the past %s (0/%d sources)", opts.Since, total)
+		}
+		sendTaskEvent(rt.events, tui.TaskFetch, tui.StatusRunning,
+			tui.WithProgress(progress), tui.WithMessage(msg))
+	}
+	fetcher := service.NewFetcher(svc, onProgress)
+	fetchOpts := buildFetchOptions(cfg)
+	result, err := fetcher.FetchAll(ctx, fetchOpts)
 	if err != nil {
 		log.Warn("some fetches failed", "error", err)
 	}
+	stats := svc.Stats()
+	sendRateLimitEvent(result, rt.events)
+	sendFetchCompleteEvent(result, err, opts.Since, stats, rt.events)
+	logFetchStats(result, stats)
 
 	// Enrich
 	runEnrichment(ctx, svc, result, rt)
 
 	// Process
-	if len(result.Notifications) == 0 {
+	items := processResults(result, cfg, svc.CurrentUser(), resolvedStore, rt.events)
+	if len(items) == 0 {
 		rt.close()
 		fmt.Println("No unread notifications, pending reviews, or open PRs found.")
 		return nil
 	}
-	items := processResults(result, cfg, svc.CurrentUser(), resolvedStore, rt.events)
 
 	// Output
 	rt.close()
@@ -187,7 +264,7 @@ func initializeService(ctx context.Context, cfg *config.Config, sinceStr string,
 	}
 
 	rt.sendEvent(tui.TaskAuth, tui.StatusRunning)
-	currentUser, err := ghClient.GetAuthenticatedUser(ctx)
+	currentUser, err := ghClient.AuthenticatedUser(ctx)
 	if err != nil {
 		rt.sendEvent(tui.TaskAuth, tui.StatusError, tui.WithError(err))
 		return nil, fmt.Errorf("failed to get authenticated user: %w", err)
@@ -202,8 +279,8 @@ func initializeService(ctx context.Context, cfg *config.Config, sinceStr string,
 	return service.New(ghClient, c, currentUser, since), nil
 }
 
-// buildFetchOptions constructs fetchOptions from config and parameters.
-func buildFetchOptions(cfg *config.Config, sinceLabel string, events chan tui.Event) fetchOptions {
+// buildFetchOptions constructs service.FetchOptions from config.
+func buildFetchOptions(cfg *config.Config) service.FetchOptions {
 	var orphanedRepos []string
 	var staleDays, consecutiveComments int
 	if cfg.Orphaned != nil {
@@ -212,10 +289,7 @@ func buildFetchOptions(cfg *config.Config, sinceLabel string, events chan tui.Ev
 		consecutiveComments = cfg.Orphaned.ConsecutiveAuthorComments
 	}
 
-	return fetchOptions{
-		SinceLabel:          sinceLabel,
-		Events:              events,
-		IncludeOrphaned:     len(orphanedRepos) > 0,
+	return service.FetchOptions{
 		OrphanedRepos:       orphanedRepos,
 		StaleDays:           staleDays,
 		ConsecutiveComments: consecutiveComments,
@@ -223,7 +297,7 @@ func buildFetchOptions(cfg *config.Config, sinceLabel string, events chan tui.Ev
 }
 
 // runEnrichment enriches all fetched items and sends TUI events.
-func runEnrichment(ctx context.Context, svc *service.ItemService, result *fetchResult, rt *listRuntime) {
+func runEnrichment(ctx context.Context, svc *service.ItemService, result *service.FetchResult, rt *listRuntime) {
 	rt.sendEvent(tui.TaskEnrich, tui.StatusRunning)
 
 	totalToEnrich := len(result.Notifications) + len(result.ReviewPRs) + len(result.AuthoredPRs)
@@ -242,23 +316,27 @@ func runEnrichment(ctx context.Context, svc *service.ItemService, result *fetchR
 }
 
 // processResults merges, prioritizes, and filters the fetched data.
-func processResults(result *fetchResult, cfg *config.Config, currentUser string, resolvedStore *resolved.Store, events chan tui.Event) []triage.PrioritizedItem {
-	// Merge all additional data sources into notifications
-	mergeRes := mergeAll(result)
-	if mergeRes.ReviewPRsAdded > 0 {
-		log.Info("PRs awaiting your review", "count", mergeRes.ReviewPRsAdded)
+func processResults(result *service.FetchResult, cfg *config.Config, currentUser string, resolvedStore *resolved.Store, events chan tui.Event) []triage.PrioritizedItem {
+	// Merge all additional data sources into a single deduplicated list
+	merged, mergeStats := result.Merge()
+	if mergeStats.ReviewPRsAdded > 0 {
+		log.Info("PRs awaiting your review", "count", mergeStats.ReviewPRsAdded)
 	}
-	if mergeRes.AuthoredPRsAdded > 0 {
-		log.Info("your open PRs", "count", mergeRes.AuthoredPRsAdded)
+	if mergeStats.AuthoredPRsAdded > 0 {
+		log.Info("your open PRs", "count", mergeStats.AuthoredPRsAdded)
 	}
-	if mergeRes.AssignedIssuesAdded > 0 {
-		log.Info("issues assigned to you", "count", mergeRes.AssignedIssuesAdded)
+	if mergeStats.AssignedIssuesAdded > 0 {
+		log.Info("issues assigned to you", "count", mergeStats.AssignedIssuesAdded)
 	}
-	if mergeRes.AssignedPRsAdded > 0 {
-		log.Info("PRs assigned to you", "count", mergeRes.AssignedPRsAdded)
+	if mergeStats.AssignedPRsAdded > 0 {
+		log.Info("PRs assigned to you", "count", mergeStats.AssignedPRsAdded)
 	}
-	if mergeRes.OrphanedAdded > 0 {
-		log.Info("orphaned contributions", "count", mergeRes.OrphanedAdded)
+	if mergeStats.OrphanedAdded > 0 {
+		log.Info("orphaned contributions", "count", mergeStats.OrphanedAdded)
+	}
+
+	if len(merged) == 0 {
+		return nil
 	}
 
 	weights := cfg.GetScoreWeights()
@@ -266,19 +344,19 @@ func processResults(result *fetchResult, cfg *config.Config, currentUser string,
 
 	sendTaskEvent(events, tui.TaskProcess, tui.StatusRunning)
 
-	// Debug: log state of notifications before prioritization
+	// Debug: log state of items before prioritization
 	var withDetails, withoutDetails int
-	for _, n := range result.Notifications {
+	for _, n := range merged {
 		if n.Details != nil {
 			withDetails++
 		} else {
 			withoutDetails++
 		}
 	}
-	log.Debug("notifications before prioritization", "total", len(result.Notifications), "withDetails", withDetails, "withoutDetails", withoutDetails)
+	log.Debug("items before prioritization", "total", len(merged), "withDetails", withDetails, "withoutDetails", withoutDetails)
 
 	engine := triage.NewEngine(currentUser, weights, quickWinLabels)
-	items := engine.Prioritize(result.Notifications)
+	items := engine.Prioritize(merged)
 	items = applyFilters(items, cfg, resolvedStore)
 
 	sendTaskEvent(events, tui.TaskProcess, tui.StatusComplete, tui.WithCount(len(items)))
@@ -317,7 +395,7 @@ func enrichItems(
 	// Progress callback using atomic counter for concurrent updates
 	var lastLogPercent int64 = -1
 	var lastTUIUpdate int64 = 0 // Unix nanoseconds
-	tuiUpdateInterval := int64(constants.TUIUpdateInterval)
+	tuiThrottle := int64(tuiUpdateInterval)
 
 	// Simulated progress state for smooth TUI updates between batch completions
 	var simulatedProgress float64
@@ -331,7 +409,7 @@ func enrichItems(
 			// Throttle TUI updates to every 50ms for smooth progress without overhead
 			now := time.Now().UnixNano()
 			lastUpdate := atomic.LoadInt64(&lastTUIUpdate)
-			if now-lastUpdate >= tuiUpdateInterval || completed == int64(totalToEnrich) {
+			if now-lastUpdate >= tuiThrottle || completed == int64(totalToEnrich) {
 				if atomic.CompareAndSwapInt64(&lastTUIUpdate, lastUpdate, now) {
 					progress := float64(completed) / float64(totalToEnrich)
 					// Update simulated progress to match real progress
@@ -353,7 +431,7 @@ func enrichItems(
 		} else {
 			// Throttle log output to configured percent intervals
 			percent := (completed * 100) / int64(totalToEnrich)
-			if percent != atomic.LoadInt64(&lastLogPercent) && percent%constants.LogThrottlePercent == 0 {
+			if percent != atomic.LoadInt64(&lastLogPercent) && percent%logThrottlePercent == 0 {
 				atomic.StoreInt64(&lastLogPercent, percent)
 				log.Progress("Enriching items: %d/%d (%d%%)...", completed, totalToEnrich, percent)
 			}
@@ -364,7 +442,7 @@ func enrichItems(
 	simulationDone := make(chan struct{})
 	if useTUI {
 		go func() {
-			ticker := time.NewTicker(constants.ProgressSimulationInterval)
+			ticker := time.NewTicker(progressSimulationInterval)
 			defer ticker.Stop()
 			for {
 				select {
@@ -378,7 +456,7 @@ func enrichItems(
 						simulatedProgress = realProgress
 					} else if simulatedProgress < 0.95 {
 						// Increment slowly, capped at 95% to avoid jumping to 100% prematurely
-						simulatedProgress += constants.ProgressSimulationIncrement
+						simulatedProgress += progressSimulationIncrement
 						if simulatedProgress > 0.95 {
 							simulatedProgress = 0.95
 						}
@@ -400,41 +478,35 @@ func enrichItems(
 
 	// Enrich notifications
 	if len(notifications) > 0 {
-		enrichWg.Add(1)
-		go func() {
-			defer enrichWg.Done()
+		enrichWg.Go(func() {
 			cacheHits, err := svc.Enrich(ctx, notifications, onProgress)
 			if err != nil {
 				log.Warn("some notifications could not be enriched", "error", err)
 			}
 			atomic.AddInt64(totalCacheHits, int64(cacheHits))
-		}()
+		})
 	}
 
 	// Enrich review-requested PRs
 	if len(reviewPRs) > 0 {
-		enrichWg.Add(1)
-		go func() {
-			defer enrichWg.Done()
+		enrichWg.Go(func() {
 			cacheHits, err := svc.Enrich(ctx, reviewPRs, onProgress)
 			if err != nil {
 				log.Warn("some review PRs could not be enriched", "error", err)
 			}
 			atomic.AddInt64(totalCacheHits, int64(cacheHits))
-		}()
+		})
 	}
 
 	// Enrich authored PRs
 	if len(authoredPRs) > 0 {
-		enrichWg.Add(1)
-		go func() {
-			defer enrichWg.Done()
+		enrichWg.Go(func() {
 			cacheHits, err := svc.Enrich(ctx, authoredPRs, onProgress)
 			if err != nil {
 				log.Warn("some authored PRs could not be enriched", "error", err)
 			}
 			atomic.AddInt64(totalCacheHits, int64(cacheHits))
-		}()
+		})
 	}
 
 	enrichWg.Wait()

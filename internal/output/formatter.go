@@ -7,6 +7,19 @@ import (
 	"github.com/spiffcs/triage/internal/triage"
 )
 
+// Column width constants for table/list display
+const (
+	ColPriority = 10
+	ColType     = 5
+	ColAuthor   = 15
+	ColAssigned = 12
+	ColCI       = 2
+	ColRepo     = 26
+	ColTitle    = 40
+	ColStatus   = 20
+	ColAge      = 5
+)
+
 // Format represents the output format
 type Format string
 
@@ -18,11 +31,6 @@ const (
 // Formatter defines the interface for output formatters
 type Formatter interface {
 	Format(items []triage.PrioritizedItem, w io.Writer) error
-}
-
-// NewFormatter creates a formatter for the specified format
-func NewFormatter(format Format) Formatter {
-	return NewFormatterWithWeights(format, config.DefaultScoreWeights(), "")
 }
 
 // NewFormatterWithWeights creates a formatter with custom score weights

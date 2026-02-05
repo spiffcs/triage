@@ -48,9 +48,9 @@ func runRateLimitStatus(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	limits, _, err := client.RawClient().RateLimit.Get(ctx)
+	limits, err := client.RateLimits(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get rate limits: %w", err)
+		return err
 	}
 
 	fmt.Println("GitHub API Rate Limits:")

@@ -10,6 +10,25 @@ import (
 // or when enrichment data structure changes to invalidate old entries
 const Version = 3
 
+// Cache TTL constants
+const (
+	// DetailCacheTTL is the maximum age of cached item details before
+	// they are considered stale and require re-fetching.
+	DetailCacheTTL = 24 * time.Hour
+
+	// ItemListCacheTTL is the TTL for cached item lists (PRs, issues).
+	// Shorter than details cache because lists change more frequently.
+	ItemListCacheTTL = 5 * time.Minute
+
+	// NotificationsCacheTTL is the maximum age before a full
+	// notification list refresh is required.
+	NotificationsCacheTTL = 30 * time.Minute
+
+	// OrphanedCacheTTL is the TTL for the orphaned contributions list.
+	// Longer TTL since orphaned status changes slowly.
+	OrphanedCacheTTL = 24 * time.Hour
+)
+
 // ListType identifies the source of a list of items
 type ListType string
 
@@ -44,9 +63,9 @@ type ListOptions struct {
 type ListCacheEntry struct {
 	Items         []model.Item `json:"items"`
 	CachedAt      time.Time    `json:"cachedAt"`
-	LastFetchTime time.Time    `json:"lastFetchTime,omitempty"` // For incremental updates
-	SinceTime     time.Time    `json:"sinceTime,omitempty"`     // Time constraint used
-	Repos         []string     `json:"repos,omitempty"`         // For orphaned validation
+	LastFetchTime time.Time    `json:"lastFetchTime"`   // For incremental updates
+	SinceTime     time.Time    `json:"sinceTime"`       // Time constraint used
+	Repos         []string     `json:"repos,omitempty"` // For orphaned validation
 	Version       int          `json:"version"`
 }
 
@@ -73,4 +92,5 @@ type CacheStats struct {
 type ListStats struct {
 	Total int
 	Valid int
+	Items int // number of items within the list cache entry
 }

@@ -6,9 +6,9 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/spiffcs/triage/internal/constants"
 	"github.com/spiffcs/triage/internal/format"
 	"github.com/spiffcs/triage/internal/model"
+	"github.com/spiffcs/triage/internal/output"
 	"github.com/spiffcs/triage/internal/triage"
 )
 
@@ -20,12 +20,78 @@ const (
 // tabBarLines is the number of lines used for the tab bar (including top padding)
 const tabBarLines = 3
 
+// columnVisibility tracks which optional columns should be shown based on terminal width
+type columnVisibility struct {
+	showSignal bool // Orphaned pane only - first to hide
+	showAuthor bool // Second to hide
+	showCI     bool // Third to hide
+}
+
+// calculateColumnVisibility determines which columns to show based on available width.
+// Columns are hidden in priority order: Signal (first) → Author → CI (last).
+func calculateColumnVisibility(windowWidth int, hideAssignedCI, hidePriority, showAuthor bool) columnVisibility {
+	vis := columnVisibility{
+		showSignal: true,
+		showAuthor: showAuthor,
+		showCI:     true,
+	}
+
+	// Calculate base width for always-visible columns
+	// cursor(2) + type(5+2) + repo(26+2) + title(40+2) + status(20+2) + age(5)
+	baseWidth := 2 + (output.ColType + 2) + (output.ColRepo + 2) + (output.ColTitle + 2) + (output.ColStatus + 2) + output.ColAge
+
+	// Add priority column if shown
+	if !hidePriority {
+		baseWidth += output.ColPriority + 2
+	}
+
+	// Add assigned column width for assigned/blocked/priority panes
+	if !hideAssignedCI {
+		baseWidth += output.ColAssigned + 2
+	}
+
+	// Calculate widths for optional columns
+	ciWidth := output.ColCI + 2
+	authorWidth := output.ColAuthor + 2
+	signalWidth := colSignal + 2
+
+	// Orphaned pane has Signal column
+	if hideAssignedCI {
+		// Hide columns in order: Signal first, then Author, then CI
+		if windowWidth < baseWidth+ciWidth+authorWidth+signalWidth {
+			vis.showSignal = false
+		}
+		if windowWidth < baseWidth+ciWidth+authorWidth {
+			vis.showAuthor = false
+		}
+		if windowWidth < baseWidth+ciWidth {
+			vis.showCI = false
+		}
+	} else if hidePriority && showAuthor {
+		// Assigned/Blocked pane: Author, CI columns
+		// Hide columns in order: Author first, then CI
+		if windowWidth < baseWidth+ciWidth+authorWidth {
+			vis.showAuthor = false
+		}
+		if windowWidth < baseWidth+ciWidth {
+			vis.showCI = false
+		}
+	} else {
+		// Priority pane: just CI column as optional
+		if windowWidth < baseWidth+ciWidth {
+			vis.showCI = false
+		}
+	}
+
+	return vis
+}
+
 // renderListView renders the complete list view
 func renderListView(m ListModel) string {
 	var b strings.Builder
 
 	// Calculate available height for items (account for tab bar)
-	availableHeight := m.windowHeight - constants.HeaderLines - constants.FooterLines - tabBarLines
+	availableHeight := m.windowHeight - HeaderLines - FooterLines - tabBarLines
 
 	// Get active pane's items and cursor
 	items := m.activeItems()
@@ -42,11 +108,11 @@ func renderListView(m ListModel) string {
 
 	// Render tab bar with top padding
 	b.WriteString("\n")
-	b.WriteString(renderTabBar(m.activePane, len(m.priorityItems), len(m.orphanedItems), m.GetAssignedCount(), m.GetBlockedCount(),
-		m.GetPrioritySortColumn(), m.GetPrioritySortDesc(),
-		m.GetOrphanedSortColumn(), m.GetOrphanedSortDesc(),
-		m.GetAssignedSortColumn(), m.GetAssignedSortDesc(),
-		m.GetBlockedSortColumn(), m.GetBlockedSortDesc()))
+	b.WriteString(renderTabBar(m.activePane, len(m.priorityItems), len(m.orphanedItems), m.AssignedCount(), m.BlockedCount(),
+		m.PrioritySortColumn(), m.PrioritySortDesc(),
+		m.OrphanedSortColumn(), m.OrphanedSortDesc(),
+		m.AssignedSortColumn(), m.AssignedSortDesc(),
+		m.BlockedSortColumn(), m.BlockedSortDesc()))
 	b.WriteString("\n\n")
 
 	if len(items) == 0 {
@@ -65,10 +131,13 @@ func renderListView(m ListModel) string {
 		return b.String()
 	}
 
+	// Calculate column visibility based on terminal width
+	vis := calculateColumnVisibility(m.windowWidth, hideAssignedCI, hidePriority, showAuthor)
+
 	// Render header
-	b.WriteString(renderHeader(hideAssignedCI, hidePriority, showAuthor))
+	b.WriteString(renderHeader(hideAssignedCI, hidePriority, vis))
 	b.WriteString("\n")
-	b.WriteString(renderSeparator(hideAssignedCI, hidePriority, showAuthor))
+	b.WriteString(renderSeparator(hideAssignedCI, hidePriority, vis))
 	b.WriteString("\n")
 
 	// Calculate scroll window
@@ -77,7 +146,7 @@ func renderListView(m ListModel) string {
 	// Render visible items
 	for i := start; i < end; i++ {
 		selected := i == cursor
-		b.WriteString(renderRow(items[i], selected, m.hotTopicThreshold, m.prSizeXS, m.prSizeS, m.prSizeM, m.prSizeL, m.currentUser, hideAssignedCI, hidePriority, showAuthor))
+		b.WriteString(renderRow(items[i], selected, m.hotTopicThreshold, m.prSizeXS, m.prSizeS, m.prSizeM, m.prSizeL, m.currentUser, hideAssignedCI, hidePriority, vis))
 		b.WriteString("\n")
 	}
 
@@ -206,86 +275,110 @@ func calculateScrollWindow(cursor, total, viewHeight int) (start, end int) {
 }
 
 // renderHeader renders the table header
-func renderHeader(hideAssignedCI, hidePriority, showAuthor bool) string {
-	// Orphaned pane: Type, Author, CI, Repo, Title, Status, Signal, Updated
-	if hideAssignedCI {
-		if hidePriority {
-			return listHeaderStyle.Render(fmt.Sprintf(
-				"  %-*s  %-*s  %-*s  %-*s  %-*s  %-*s  %-*s  %s",
-				constants.ColType, "Type",
-				constants.ColAuthor, "Author",
-				constants.ColCI, "CI",
-				constants.ColRepo, "Repository",
-				constants.ColTitle, "Title",
-				constants.ColStatus, "Status",
-				colSignal, "Signal",
-				"Updated",
-			))
-		}
-		return listHeaderStyle.Render(fmt.Sprintf(
-			"  %-*s  %-*s  %-*s  %-*s  %-*s  %-*s  %s",
-			constants.ColPriority, "Priority",
-			constants.ColType, "Type",
-			constants.ColRepo, "Repository",
-			constants.ColTitle, "Title",
-			constants.ColStatus, "Status",
-			colSignal, "Signal",
-			"Age",
-		))
+func renderHeader(hideAssignedCI, hidePriority bool, vis columnVisibility) string {
+	var parts []string
+
+	// Cursor space
+	parts = append(parts, "  ")
+
+	// Priority column (Priority pane only)
+	if !hidePriority {
+		parts = append(parts, fmt.Sprintf("%-*s  ", output.ColPriority, "Priority"))
 	}
-	// Assigned pane: Type, Author, Assigned, CI, Repo, Title, Status, Updated
-	if hidePriority && showAuthor {
-		return listHeaderStyle.Render(fmt.Sprintf(
-			"  %-*s  %-*s  %-*s  %-*s  %-*s  %-*s  %-*s  %s",
-			constants.ColType, "Type",
-			constants.ColAuthor, "Author",
-			constants.ColAssigned, "Assigned",
-			constants.ColCI, "CI",
-			constants.ColRepo, "Repository",
-			constants.ColTitle, "Title",
-			constants.ColStatus, "Status",
-			"Updated",
-		))
+
+	// Type column (always visible)
+	parts = append(parts, fmt.Sprintf("%-*s  ", output.ColType, "Type"))
+
+	// Author column (Orphaned/Assigned/Blocked panes, if visible)
+	if vis.showAuthor {
+		parts = append(parts, fmt.Sprintf("%-*s  ", output.ColAuthor, "Author"))
 	}
-	// Priority pane: Priority, Type, Assigned, CI, Repo, Title, Status, Updated
-	return listHeaderStyle.Render(fmt.Sprintf(
-		"  %-*s  %-*s  %-*s  %-*s  %-*s  %-*s  %-*s  %s",
-		constants.ColPriority, "Priority",
-		constants.ColType, "Type",
-		constants.ColAssigned, "Assigned",
-		constants.ColCI, "CI",
-		constants.ColRepo, "Repository",
-		constants.ColTitle, "Title",
-		constants.ColStatus, "Status",
-		"Updated",
-	))
+
+	// Assigned column (Assigned/Blocked/Priority panes)
+	if !hideAssignedCI {
+		parts = append(parts, fmt.Sprintf("%-*s  ", output.ColAssigned, "Assigned"))
+	}
+
+	// CI column (if visible)
+	if vis.showCI {
+		parts = append(parts, fmt.Sprintf("%-*s  ", output.ColCI, "CI"))
+	}
+
+	// Repository column (always visible)
+	parts = append(parts, fmt.Sprintf("%-*s  ", output.ColRepo, "Repository"))
+
+	// Title column (always visible)
+	parts = append(parts, fmt.Sprintf("%-*s  ", output.ColTitle, "Title"))
+
+	// Status column (always visible)
+	parts = append(parts, fmt.Sprintf("%-*s  ", output.ColStatus, "Status"))
+
+	// Signal column (Orphaned pane only, if visible)
+	if hideAssignedCI && vis.showSignal {
+		parts = append(parts, fmt.Sprintf("%-*s  ", colSignal, "Signal"))
+	}
+
+	// Age column (always visible, no trailing space)
+	parts = append(parts, "Updated")
+
+	return listHeaderStyle.Render(strings.Join(parts, ""))
 }
 
 // tableWidth calculates the width of the table based on column visibility
-func tableWidth(hideAssignedCI, hidePriority, showAuthor bool) int {
-	priorityWidth := constants.ColPriority + 2 // column + spacing
-	if hidePriority {
-		priorityWidth = 0
+func tableWidth(hideAssignedCI, hidePriority bool, vis columnVisibility) int {
+	// Start with cursor space
+	width := 2
+
+	// Priority column
+	if !hidePriority {
+		width += output.ColPriority + 2
 	}
-	// Orphaned pane: Type, Author, Repo, Title, Status, Signal, Updated
-	if hideAssignedCI {
-		return 2 + priorityWidth + constants.ColType + 2 + constants.ColAuthor + 2 + constants.ColRepo + 2 + constants.ColTitle + 2 + constants.ColStatus + 2 + colSignal + 2 + constants.ColAge
+
+	// Type column (always visible)
+	width += output.ColType + 2
+
+	// Author column (if visible)
+	if vis.showAuthor {
+		width += output.ColAuthor + 2
 	}
-	// Assigned pane: Type, Author, Assigned, CI, Repo, Title, Status, Updated
-	if hidePriority && showAuthor {
-		return 2 + constants.ColType + 2 + constants.ColAuthor + 2 + constants.ColAssigned + 2 + constants.ColCI + 2 + constants.ColRepo + 2 + constants.ColTitle + 2 + constants.ColStatus + 2 + constants.ColAge
+
+	// Assigned column (non-orphaned panes)
+	if !hideAssignedCI {
+		width += output.ColAssigned + 2
 	}
-	// Priority pane: Priority, Type, Assigned, CI, Repo, Title, Status, Updated
-	return 2 + priorityWidth + constants.ColType + 2 + constants.ColAssigned + 2 + constants.ColCI + 2 + constants.ColRepo + 2 + constants.ColTitle + 2 + constants.ColStatus + 2 + constants.ColAge
+
+	// CI column (if visible)
+	if vis.showCI {
+		width += output.ColCI + 2
+	}
+
+	// Repository column (always visible)
+	width += output.ColRepo + 2
+
+	// Title column (always visible)
+	width += output.ColTitle + 2
+
+	// Status column (always visible)
+	width += output.ColStatus + 2
+
+	// Signal column (orphaned pane only, if visible)
+	if hideAssignedCI && vis.showSignal {
+		width += colSignal + 2
+	}
+
+	// Age column (always visible)
+	width += output.ColAge
+
+	return width
 }
 
 // renderSeparator renders the header separator line
-func renderSeparator(hideAssignedCI, hidePriority, showAuthor bool) string {
-	return listSeparatorStyle.Render(strings.Repeat("─", tableWidth(hideAssignedCI, hidePriority, showAuthor)))
+func renderSeparator(hideAssignedCI, hidePriority bool, vis columnVisibility) string {
+	return listSeparatorStyle.Render(strings.Repeat("─", tableWidth(hideAssignedCI, hidePriority, vis)))
 }
 
 // renderRow renders a single item row
-func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, prSizeXS, prSizeS, prSizeM, prSizeL int, currentUser string, hideAssignedCI, hidePriority, showAuthor bool) string {
+func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, prSizeXS, prSizeS, prSizeM, prSizeL int, currentUser string, hideAssignedCI, hidePriority bool, vis columnVisibility) string {
 	n := item.Item
 
 	// Cursor indicator
@@ -299,10 +392,10 @@ func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, pr
 	var typeStr string
 	if isPR {
 		typeStr = applyStyle(listTypePRStyle, "PR", selected)
-		typeStr = format.PadRight(typeStr, 2, constants.ColType)
+		typeStr = format.PadRight(typeStr, 2, output.ColType)
 	} else {
 		typeStr = applyStyle(listTypeISSStyle, "ISS", selected)
-		typeStr = format.PadRight(typeStr, 3, constants.ColType)
+		typeStr = format.PadRight(typeStr, 3, output.ColType)
 	}
 
 	// Priority with color - need to pad based on visible width
@@ -310,7 +403,7 @@ func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, pr
 	if !hidePriority {
 		var priorityWidth int
 		priority, priorityWidth = renderPriority(item.Priority, selected)
-		priority = format.PadRight(priority, priorityWidth, constants.ColPriority)
+		priority = format.PadRight(priority, priorityWidth, output.ColPriority)
 		priority += "  " // spacing
 	}
 
@@ -327,7 +420,7 @@ func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, pr
 		CommentCount:      n.CommentCount,
 		IsPR:              isPR,
 	}
-	if issueDetails := n.GetIssueDetails(); issueDetails != nil {
+	if issueDetails := n.IssueDetails(); issueDetails != nil {
 		iconInput.LastCommenter = issueDetails.LastCommenter
 	}
 
@@ -345,101 +438,85 @@ func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, pr
 	}
 
 	// Truncate title to fit remaining space after icon
-	title, titleWidth := format.TruncateToWidth(title, constants.ColTitle-format.IconWidth)
+	title, titleWidth := format.TruncateToWidth(title, output.ColTitle-format.IconWidth)
 	title = titleIcon + title
 	titleWidth += iconDisplayWidth
-	title = format.PadRight(title, titleWidth, constants.ColTitle)
+	title = format.PadRight(title, titleWidth, output.ColTitle)
 
 	// Repository
-	repo, repoWidth := format.TruncateToWidth(n.Repository.FullName, constants.ColRepo)
-	repo = format.PadRight(repo, repoWidth, constants.ColRepo)
+	repo, repoWidth := format.TruncateToWidth(n.Repository.FullName, output.ColRepo)
+	repo = format.PadRight(repo, repoWidth, output.ColRepo)
 
 	// Status with colors
 	status, statusWidth := renderStatus(n, prSizeXS, prSizeS, prSizeM, prSizeL, selected)
-	if statusWidth > constants.ColStatus {
-		status, statusWidth = format.TruncateToWidth(status, constants.ColStatus)
+	if statusWidth > output.ColStatus {
+		status, statusWidth = format.TruncateToWidth(status, output.ColStatus)
 	}
-	status = format.PadRight(status, statusWidth, constants.ColStatus)
+	status = format.PadRight(status, statusWidth, output.ColStatus)
 
 	// Age using shared logic with color coding
 	age, ageWidth := renderAge(time.Since(n.UpdatedAt), selected)
-	age = format.PadRight(age, ageWidth, constants.ColAge)
+	age = format.PadRight(age, ageWidth, output.ColAge)
 
-	var row string
-	if hideAssignedCI {
-		// Orphaned view: no Assigned, but add Signal, Author, and CI columns
-		signal, signalWidth := renderSignal(&n, selected)
-		signal = format.PadRight(signal, signalWidth, colSignal)
+	// Build row dynamically based on pane type and column visibility
+	var parts []string
+	parts = append(parts, cursor)
 
-		author := "─"
-		if n.Author != "" {
-			author, _ = format.TruncateToWidth(n.Author, constants.ColAuthor)
-		}
-		author = format.PadRight(author, len(author), constants.ColAuthor)
-
-		ci, ciWidth := renderCI(&n, isPR, selected)
-		ci = format.PadRight(ci, ciWidth, constants.ColCI)
-
-		row = fmt.Sprintf("%s%s%s  %s  %s  %s  %s  %s  %s  %s",
-			cursor,
-			priority,
-			typeStr,
-			author,
-			ci,
-			repo,
-			title,
-			status,
-			signal,
-			age,
-		)
-	} else if hidePriority && showAuthor {
-		// Assigned view: Author, Assigned, and CI columns
-		author := "─"
-		if n.Author != "" {
-			author, _ = format.TruncateToWidth(n.Author, constants.ColAuthor)
-		}
-		author = format.PadRight(author, len(author), constants.ColAuthor)
-
-		assigned, assignedWidth := renderAssigned(&n, selected)
-		assigned = format.PadRight(assigned, assignedWidth, constants.ColAssigned)
-
-		ci, ciWidth := renderCI(&n, isPR, selected)
-		ci = format.PadRight(ci, ciWidth, constants.ColCI)
-
-		row = fmt.Sprintf("%s%s  %s  %s  %s  %s  %s  %s  %s",
-			cursor,
-			typeStr,
-			author,
-			assigned,
-			ci,
-			repo,
-			title,
-			status,
-			age,
-		)
-	} else {
-		// Priority view: Assigned and CI columns
-		assigned, assignedWidth := renderAssigned(&n, selected)
-		assigned = format.PadRight(assigned, assignedWidth, constants.ColAssigned)
-
-		ci, ciWidth := renderCI(&n, isPR, selected)
-		ci = format.PadRight(ci, ciWidth, constants.ColCI)
-
-		row = fmt.Sprintf("%s%s%s  %s  %s  %s  %s  %s  %s",
-			cursor,
-			priority,
-			typeStr,
-			assigned,
-			ci,
-			repo,
-			title,
-			status,
-			age,
-		)
+	// Priority column (Priority pane only)
+	if !hidePriority {
+		parts = append(parts, priority)
 	}
 
+	// Type column (always visible)
+	parts = append(parts, typeStr+"  ")
+
+	// Author column (Orphaned/Assigned/Blocked panes, if visible)
+	if vis.showAuthor {
+		author := "─"
+		if n.Author != "" {
+			author, _ = format.TruncateToWidth(n.Author, output.ColAuthor)
+		}
+		author = format.PadRight(author, len(author), output.ColAuthor)
+		parts = append(parts, author+"  ")
+	}
+
+	// Assigned column (non-orphaned panes)
+	if !hideAssignedCI {
+		assigned, assignedWidth := renderAssigned(&n, selected)
+		assigned = format.PadRight(assigned, assignedWidth, output.ColAssigned)
+		parts = append(parts, assigned+"  ")
+	}
+
+	// CI column (if visible)
+	if vis.showCI {
+		ci, ciWidth := renderCI(&n, isPR, selected)
+		ci = format.PadRight(ci, ciWidth, output.ColCI)
+		parts = append(parts, ci+"  ")
+	}
+
+	// Repository column (always visible)
+	parts = append(parts, repo+"  ")
+
+	// Title column (always visible)
+	parts = append(parts, title+"  ")
+
+	// Status column (always visible)
+	parts = append(parts, status+"  ")
+
+	// Signal column (Orphaned pane only, if visible)
+	if hideAssignedCI && vis.showSignal {
+		signal, signalWidth := renderSignal(&n, selected)
+		signal = format.PadRight(signal, signalWidth, colSignal)
+		parts = append(parts, signal+"  ")
+	}
+
+	// Age column (always visible)
+	parts = append(parts, age)
+
+	row := strings.Join(parts, "")
+
 	if selected {
-		return listSelectedStyle.Width(tableWidth(hideAssignedCI, hidePriority, showAuthor)).Render(row)
+		return listSelectedStyle.Width(tableWidth(hideAssignedCI, hidePriority, vis)).Render(row)
 	}
 	return row
 }
@@ -523,16 +600,16 @@ func renderCI(n *model.Item, isPR bool, selected bool) (string, int) {
 	if !isPR {
 		return "─", 1 // dash for non-PRs
 	}
-	pr := n.GetPRDetails()
+	pr := n.PRDetails()
 	if pr == nil {
 		return "─", 1 // dash if no details
 	}
 	switch pr.CIStatus {
-	case constants.CIStatusSuccess:
+	case model.CIStatusSuccess:
 		return applyStyle(listCISuccessStyle, "✓", selected), 1
-	case constants.CIStatusFailure:
+	case model.CIStatusFailure:
 		return applyStyle(listCIFailureStyle, "✗", selected), 1
-	case constants.CIStatusPending:
+	case model.CIStatusPending:
 		return applyStyle(listCIPendingStyle, "○", selected), 1
 	default:
 		return "─", 1 // dash for no CI
@@ -542,7 +619,7 @@ func renderCI(n *model.Item, isPR bool, selected bool) (string, int) {
 // renderAssigned renders the Assigned column using shared logic
 // Returns the string and its visible width
 func renderAssigned(n *model.Item, selected bool) (string, int) {
-	pr := n.GetPRDetails()
+	pr := n.PRDetails()
 
 	input := format.AssignedOptions{
 		Assignees: n.Assignees,
@@ -559,7 +636,7 @@ func renderAssigned(n *model.Item, selected bool) (string, int) {
 	}
 
 	// Truncate if needed
-	assigned = format.TruncateUsername(assigned, constants.ColAssigned)
+	assigned = format.TruncateUsername(assigned, output.ColAssigned)
 
 	return assigned, len(assigned)
 }
@@ -567,20 +644,20 @@ func renderAssigned(n *model.Item, selected bool) (string, int) {
 // renderStatus renders the status column with colors
 // Returns the colored string and its visible width
 func renderStatus(n model.Item, sizeXS, sizeS, sizeM, sizeL int, selected bool) (string, int) {
-	pr := n.GetPRDetails()
+	pr := n.PRDetails()
 
 	if n.IsPR() && pr != nil {
 		var coloredParts []string
 		var plainWidth int
 
 		switch pr.ReviewState {
-		case constants.ReviewStateApproved:
+		case model.ReviewStateApproved:
 			coloredParts = append(coloredParts, applyStyle(listApprovedStyle, "+ APPROVED", selected))
 			plainWidth += 10
-		case constants.ReviewStateChangesRequested:
+		case model.ReviewStateChangesRequested:
 			coloredParts = append(coloredParts, applyStyle(listChangesStyle, "! CHANGES", selected))
 			plainWidth += 9
-		case constants.ReviewStatePending, constants.ReviewStateReviewRequired, constants.ReviewStateReviewed:
+		case model.ReviewStatePending, model.ReviewStateReviewRequired, model.ReviewStateReviewed:
 			coloredParts = append(coloredParts, applyStyle(listReviewStyle, "* REVIEW", selected))
 			plainWidth += 8
 		}

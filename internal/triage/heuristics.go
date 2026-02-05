@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/spiffcs/triage/config"
-	"github.com/spiffcs/triage/internal/constants"
 	"github.com/spiffcs/triage/internal/model"
 )
 
@@ -92,7 +91,7 @@ func (h *Heuristics) detailModifiers(n *model.Item) int {
 
 	// Author-specific modifiers for their own PRs
 	if n.Author == h.CurrentUser && n.IsPR() {
-		if pr := n.GetPRDetails(); pr != nil {
+		if pr := n.PRDetails(); pr != nil {
 			modifier += h.authoredPRModifiers(n, pr)
 		}
 	}
@@ -105,7 +104,7 @@ func (h *Heuristics) authoredPRModifiers(n *model.Item, pr *model.PRDetails) int
 	modifier := 0
 
 	// PR is approved and ready to merge - urgent action needed!
-	if pr.ReviewState == constants.ReviewStateApproved {
+	if pr.ReviewState == model.ReviewStateApproved {
 		modifier += h.Weights.ApprovedPRBonus
 		if pr.Mergeable {
 			modifier += h.Weights.MergeablePRBonus
@@ -113,7 +112,7 @@ func (h *Heuristics) authoredPRModifiers(n *model.Item, pr *model.PRDetails) int
 	}
 
 	// PR has changes requested - needs work
-	if pr.ReviewState == constants.ReviewStateChangesRequested {
+	if pr.ReviewState == model.ReviewStateChangesRequested {
 		modifier += h.Weights.ChangesRequestedBonus
 	}
 
@@ -156,7 +155,7 @@ func (h *Heuristics) isLowHangingFruit(n *model.Item) bool {
 	}
 
 	// Small PRs are quick to review
-	if pr := n.GetPRDetails(); pr != nil {
+	if pr := n.PRDetails(); pr != nil {
 		if pr.ChangedFiles <= h.Weights.SmallPRMaxFiles && (pr.Additions+pr.Deletions) <= h.Weights.SmallPRMaxLines {
 			return true
 		}
@@ -181,12 +180,12 @@ func (h *Heuristics) Priority(n *model.Item, score int) PriorityLevel {
 
 	// Authored PRs that are approved and mergeable are urgent (if enabled)
 	if reason == model.ReasonAuthor && n.IsPR() {
-		if pr := n.GetPRDetails(); pr != nil {
-			if pr.ReviewState == constants.ReviewStateApproved && pr.Mergeable && h.Weights.ApprovedMergeablePRIsUrgent {
+		if pr := n.PRDetails(); pr != nil {
+			if pr.ReviewState == model.ReviewStateApproved && pr.Mergeable && h.Weights.ApprovedMergeablePRIsUrgent {
 				return PriorityUrgent
 			}
 			// PRs with changes requested need attention (if enabled)
-			if pr.ReviewState == constants.ReviewStateChangesRequested && h.Weights.ChangesRequestedPRIsUrgent {
+			if pr.ReviewState == model.ReviewStateChangesRequested && h.Weights.ChangesRequestedPRIsUrgent {
 				return PriorityUrgent
 			}
 		}
@@ -256,7 +255,7 @@ func (h *Heuristics) determineAuthoredItemAction(n *model.Item) string {
 		return "Check activity on your issue"
 	}
 
-	pr := n.GetPRDetails()
+	pr := n.PRDetails()
 	if pr == nil {
 		return "Check activity on your item"
 	}
@@ -267,17 +266,17 @@ func (h *Heuristics) determineAuthoredItemAction(n *model.Item) string {
 	}
 
 	// Approved and mergeable - merge it!
-	if pr.ReviewState == constants.ReviewStateApproved && pr.Mergeable {
+	if pr.ReviewState == model.ReviewStateApproved && pr.Mergeable {
 		return "Merge PR"
 	}
 
 	// Approved but not mergeable (conflicts?)
-	if pr.ReviewState == constants.ReviewStateApproved && !pr.Mergeable {
+	if pr.ReviewState == model.ReviewStateApproved && !pr.Mergeable {
 		return "Resolve conflicts & merge"
 	}
 
 	// Changes requested
-	if pr.ReviewState == constants.ReviewStateChangesRequested {
+	if pr.ReviewState == model.ReviewStateChangesRequested {
 		return "Address review feedback"
 	}
 
@@ -289,14 +288,14 @@ func (h *Heuristics) determineAuthoredItemAction(n *model.Item) string {
 	// Stale PR - needs attention
 	daysSinceUpdate := int(time.Since(n.UpdatedAt).Hours() / 24)
 	if daysSinceUpdate >= h.Weights.StalePRThresholdDays {
-		if pr.ReviewState == constants.ReviewStatePending {
+		if pr.ReviewState == model.ReviewStatePending {
 			return "Request review (stale)"
 		}
 		return "Follow up on PR"
 	}
 
 	// Pending review
-	if pr.ReviewState == constants.ReviewStatePending {
+	if pr.ReviewState == model.ReviewStatePending {
 		return "Awaiting review"
 	}
 

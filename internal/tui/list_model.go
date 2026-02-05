@@ -9,7 +9,6 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spiffcs/triage/config"
-	"github.com/spiffcs/triage/internal/constants"
 	"github.com/spiffcs/triage/internal/model"
 	"github.com/spiffcs/triage/internal/resolved"
 	"github.com/spiffcs/triage/internal/triage"
@@ -29,6 +28,15 @@ const (
 	paneBlocked
 )
 
+// TUI layout constants
+const (
+	// HeaderLines is the number of lines used for the list view header.
+	HeaderLines = 2
+
+	// FooterLines is the number of lines used for the list view footer.
+	FooterLines = 3
+)
+
 // SortColumn represents the available sort columns
 type SortColumn string
 
@@ -44,9 +52,9 @@ var priorityOrder = map[triage.PriorityLevel]int{
 // ciStatusOrder maps CI status to sort order (lower = higher priority for descending)
 // Success at top when descending, failure/none at bottom
 var ciStatusOrder = map[string]int{
-	constants.CIStatusSuccess: 0,
-	constants.CIStatusPending: 1,
-	constants.CIStatusFailure: 2,
+	model.CIStatusSuccess: 0,
+	model.CIStatusPending: 1,
+	model.CIStatusFailure: 2,
 	"":                        3, // no CI status
 }
 
@@ -334,8 +342,8 @@ func (m *ListModel) sortPriorityItems() {
 		case SortSize:
 			// Custom sorting: PRs with review data come first, then everything else by comments
 			// Direction is handled within this case (not using standard less+invert pattern)
-			prA := a.GetPRDetails()
-			prB := b.GetPRDetails()
+			prA := a.PRDetails()
+			prB := b.PRDetails()
 			aSize, bSize := 0, 0
 			if prA != nil {
 				aSize = prA.Additions + prA.Deletions
@@ -372,8 +380,8 @@ func (m *ListModel) sortPriorityItems() {
 		case SortCI:
 			// Sort by CI status: success > pending > failure > none
 			// Non-PRs are treated as having no CI status
-			prA := a.GetPRDetails()
-			prB := b.GetPRDetails()
+			prA := a.PRDetails()
+			prB := b.PRDetails()
 			var ciA, ciB string
 			if prA != nil {
 				ciA = prA.CIStatus
@@ -449,8 +457,8 @@ func (m *ListModel) sortOrphanedItems() {
 		case SortSize:
 			// Custom sorting: PRs with review data come first, then everything else by comments
 			// Direction is handled within this case (not using standard less+invert pattern)
-			prA := a.GetPRDetails()
-			prB := b.GetPRDetails()
+			prA := a.PRDetails()
+			prB := b.PRDetails()
 			aSize, bSize := 0, 0
 			if prA != nil {
 				aSize = prA.Additions + prA.Deletions
@@ -487,8 +495,8 @@ func (m *ListModel) sortOrphanedItems() {
 		case SortCI:
 			// Sort by CI status: success > pending > failure > none
 			// Non-PRs are treated as having no CI status
-			prA := a.GetPRDetails()
-			prB := b.GetPRDetails()
+			prA := a.PRDetails()
+			prB := b.PRDetails()
 			var ciA, ciB string
 			if prA != nil {
 				ciA = prA.CIStatus
@@ -531,8 +539,8 @@ func (m *ListModel) sortAssignedItems() {
 		case SortSize:
 			// Custom sorting: PRs with review data come first, then everything else by comments
 			// Direction is handled within this case (not using standard less+invert pattern)
-			prA := a.GetPRDetails()
-			prB := b.GetPRDetails()
+			prA := a.PRDetails()
+			prB := b.PRDetails()
 			aSize, bSize := 0, 0
 			if prA != nil {
 				aSize = prA.Additions + prA.Deletions
@@ -577,8 +585,8 @@ func (m *ListModel) sortAssignedItems() {
 		case SortCI:
 			// Sort by CI status: success > pending > failure > none
 			// Non-PRs are treated as having no CI status
-			prA := a.GetPRDetails()
-			prB := b.GetPRDetails()
+			prA := a.PRDetails()
+			prB := b.PRDetails()
 			var ciA, ciB string
 			if prA != nil {
 				ciA = prA.CIStatus
@@ -621,8 +629,8 @@ func (m *ListModel) sortBlockedItems() {
 		case SortSize:
 			// Custom sorting: PRs with review data come first, then everything else by comments
 			// Direction is handled within this case (not using standard less+invert pattern)
-			prA := a.GetPRDetails()
-			prB := b.GetPRDetails()
+			prA := a.PRDetails()
+			prB := b.PRDetails()
 			aSize, bSize := 0, 0
 			if prA != nil {
 				aSize = prA.Additions + prA.Deletions
@@ -667,8 +675,8 @@ func (m *ListModel) sortBlockedItems() {
 		case SortCI:
 			// Sort by CI status: success > pending > failure > none
 			// Non-PRs are treated as having no CI status
-			prA := a.GetPRDetails()
-			prB := b.GetPRDetails()
+			prA := a.PRDetails()
+			prB := b.PRDetails()
 			var ciA, ciB string
 			if prA != nil {
 				ciA = prA.CIStatus
@@ -1129,53 +1137,53 @@ func (m *ListModel) preserveCursorPosition(item *triage.PrioritizedItem) {
 	}
 }
 
-// GetPrioritySortColumn returns the current priority sort column for rendering
-func (m ListModel) GetPrioritySortColumn() SortColumn {
+// PrioritySortColumn returns the current priority sort column for rendering
+func (m ListModel) PrioritySortColumn() SortColumn {
 	return m.prioritySortColumn
 }
 
-// GetPrioritySortDesc returns whether priority sort is descending
-func (m ListModel) GetPrioritySortDesc() bool {
+// PrioritySortDesc returns whether priority sort is descending
+func (m ListModel) PrioritySortDesc() bool {
 	return m.prioritySortDesc
 }
 
-// GetOrphanedSortColumn returns the current orphaned sort column for rendering
-func (m ListModel) GetOrphanedSortColumn() SortColumn {
+// OrphanedSortColumn returns the current orphaned sort column for rendering
+func (m ListModel) OrphanedSortColumn() SortColumn {
 	return m.orphanedSortColumn
 }
 
-// GetOrphanedSortDesc returns whether orphaned sort is descending
-func (m ListModel) GetOrphanedSortDesc() bool {
+// OrphanedSortDesc returns whether orphaned sort is descending
+func (m ListModel) OrphanedSortDesc() bool {
 	return m.orphanedSortDesc
 }
 
-// GetAssignedSortColumn returns the current assigned sort column for rendering
-func (m ListModel) GetAssignedSortColumn() SortColumn {
+// AssignedSortColumn returns the current assigned sort column for rendering
+func (m ListModel) AssignedSortColumn() SortColumn {
 	return m.assignedSortColumn
 }
 
-// GetAssignedSortDesc returns whether assigned sort is descending
-func (m ListModel) GetAssignedSortDesc() bool {
+// AssignedSortDesc returns whether assigned sort is descending
+func (m ListModel) AssignedSortDesc() bool {
 	return m.assignedSortDesc
 }
 
-// GetAssignedCount returns the number of assigned items
-func (m ListModel) GetAssignedCount() int {
+// AssignedCount returns the number of assigned items
+func (m ListModel) AssignedCount() int {
 	return len(m.assignedItems)
 }
 
-// GetBlockedSortColumn returns the current blocked sort column for rendering
-func (m ListModel) GetBlockedSortColumn() SortColumn {
+// BlockedSortColumn returns the current blocked sort column for rendering
+func (m ListModel) BlockedSortColumn() SortColumn {
 	return m.blockedSortColumn
 }
 
-// GetBlockedSortDesc returns whether blocked sort is descending
-func (m ListModel) GetBlockedSortDesc() bool {
+// BlockedSortDesc returns whether blocked sort is descending
+func (m ListModel) BlockedSortDesc() bool {
 	return m.blockedSortDesc
 }
 
-// GetBlockedCount returns the number of blocked items
-func (m ListModel) GetBlockedCount() int {
+// BlockedCount returns the number of blocked items
+func (m ListModel) BlockedCount() int {
 	return len(m.blockedItems)
 }
 

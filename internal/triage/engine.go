@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/spiffcs/triage/config"
-	"github.com/spiffcs/triage/internal/constants"
 	"github.com/spiffcs/triage/internal/model"
 )
 
@@ -47,7 +46,7 @@ func (e *Engine) Prioritize(items []model.Item) []PrioritizedItem {
 		PriorityFYI:       4,
 	}
 
-	sort.Slice(items, func(i, j int) bool {
+	sort.Slice(pItems, func(i, j int) bool {
 		pi, pj := priorityOrder[pItems[i].Priority], priorityOrder[pItems[j].Priority]
 		if pi != pj {
 			return pi < pj
@@ -94,7 +93,7 @@ func FilterOutMerged(items []PrioritizedItem) []PrioritizedItem {
 	filtered := make([]PrioritizedItem, 0, len(items))
 	for _, item := range items {
 		// Skip if it's a merged PR
-		if pr := item.GetPRDetails(); pr != nil && pr.Merged {
+		if pr := item.PRDetails(); pr != nil && pr.Merged {
 			continue
 		}
 		filtered = append(filtered, item)
@@ -224,12 +223,12 @@ func FilterByGreenCI(items []PrioritizedItem) []PrioritizedItem {
 			continue
 		}
 		// Exclude PRs without PR details (can't determine CI status)
-		pr := item.GetPRDetails()
+		pr := item.PRDetails()
 		if pr == nil {
 			continue
 		}
 		// Keep PRs with successful CI
-		if pr.CIStatus == constants.CIStatusSuccess {
+		if pr.CIStatus == model.CIStatusSuccess {
 			filtered = append(filtered, item)
 		}
 	}

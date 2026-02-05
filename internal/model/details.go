@@ -39,8 +39,8 @@ func (i *Item) IsPR() bool {
 	return i.Type == ItemTypePullRequest
 }
 
-// GetPRDetails returns the PRDetails if this is a PR, nil otherwise.
-func (i *Item) GetPRDetails() *PRDetails {
+// PRDetails returns the PRDetails if this is a PR, nil otherwise.
+func (i *Item) PRDetails() *PRDetails {
 	if i.Details == nil {
 		return nil
 	}
@@ -48,8 +48,8 @@ func (i *Item) GetPRDetails() *PRDetails {
 	return pr
 }
 
-// GetIssueDetails returns the IssueDetails if this is an issue, nil otherwise.
-func (i *Item) GetIssueDetails() *IssueDetails {
+// IssueDetails returns the IssueDetails if this is an issue, nil otherwise.
+func (i *Item) IssueDetails() *IssueDetails {
 	if i.Details == nil {
 		return nil
 	}

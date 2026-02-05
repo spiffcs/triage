@@ -6,10 +6,10 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	gh "github.com/google/go-github/v57/github"
-	"github.com/spiffcs/triage/internal/constants"
 	"github.com/spiffcs/triage/internal/log"
 	"github.com/spiffcs/triage/internal/model"
 	"golang.org/x/oauth2"
@@ -38,7 +38,7 @@ func (t *rateLimitTransport) RoundTrip(req *http.Request) (*http.Response, error
 	}
 
 	// Log warning if rate limit is low
-	if remaining <= constants.RateLimitLowWatermark && remaining > 0 {
+	if remaining <= RateLimitLowWatermark && remaining > 0 {
 		log.Debug("rate limit low", "remaining", remaining, "resets_at", resetAt.Format(time.RFC3339))
 	}
 
@@ -116,8 +116,8 @@ func NewClient(ctx context.Context, token string) (*Client, error) {
 	}, nil
 }
 
-// GetAuthenticatedUser returns the authenticated user's login
-func (c *Client) GetAuthenticatedUser(ctx context.Context) (string, error) {
+// AuthenticatedUser returns the authenticated user's login
+func (c *Client) AuthenticatedUser(ctx context.Context) (string, error) {
 	user, _, err := c.client.Users.Get(ctx, "")
 	if err != nil {
 		return "", fmt.Errorf("failed to get authenticated user: %w", err)
@@ -125,9 +125,13 @@ func (c *Client) GetAuthenticatedUser(ctx context.Context) (string, error) {
 	return user.GetLogin(), nil
 }
 
-// RawClient returns the underlying go-github client for advanced operations
-func (c *Client) RawClient() *gh.Client {
-	return c.client
+// RateLimits fetches the current GitHub API rate limit status.
+func (c *Client) RateLimits(ctx context.Context) (*gh.RateLimits, error) {
+	limits, _, err := c.client.RateLimit.Get(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get rate limits: %w", err)
+	}
+	return limits, nil
 }
 
 // Token returns the GitHub token for GraphQL API calls
@@ -147,7 +151,7 @@ func (c *Client) ListReviewRequestedPRs(ctx context.Context, username string) ([
 		},
 	}
 
-	var notifications []model.Item
+	var items []model.Item
 
 	for {
 		result, resp, err := c.client.Search.Issues(ctx, query, opts)
@@ -156,9 +160,12 @@ func (c *Client) ListReviewRequestedPRs(ctx context.Context, username string) ([
 		}
 
 		for _, issue := range result.Issues {
-			// Convert search result to item format
-			item := c.prToItem(issue)
-			notifications = append(notifications, item)
+			items = append(items, issueToItem(issue,
+				fmt.Sprintf("review-requested-%d", issue.GetID()),
+				model.ReasonReviewRequested,
+				model.SubjectPullRequest,
+				&model.PRDetails{ReviewState: "pending"},
+			))
 		}
 
 		if resp.NextPage == 0 {
@@ -167,52 +174,65 @@ func (c *Client) ListReviewRequestedPRs(ctx context.Context, username string) ([
 		opts.Page = resp.NextPage
 	}
 
-	return notifications, nil
+	return items, nil
 }
 
-// prToItem converts a PR from search results to a model.Item
-func (c *Client) prToItem(issue *gh.Issue) model.Item {
-	// Extract owner/repo from the repository URL
-	// Issue.RepositoryURL format: https://api.github.com/repos/owner/repo
-	repoURL := issue.GetRepositoryURL()
-	parts := splitRepoURL(repoURL)
+// repoFromURL extracts owner and repo name from a GitHub API repository URL.
+// URL format: https://api.github.com/repos/owner/repo
+func repoFromURL(url string) (owner, repo string) {
+	const prefix = "https://api.github.com/repos/"
+	trimmed := strings.TrimPrefix(url, prefix)
+	if trimmed == url || trimmed == "" {
+		return "", ""
+	}
+	parts := strings.SplitN(trimmed, "/", 3)
+	if len(parts) < 2 {
+		return "", ""
+	}
+	return parts[0], parts[1]
+}
+
+// issueToItem converts a GitHub search result issue to a model.Item.
+// This is the shared conversion logic used by all search-based item constructors.
+func issueToItem(issue *gh.Issue, id string, reason model.ItemReason, subjectType model.SubjectType, details model.Details) model.Item {
+	owner, repo := repoFromURL(issue.GetRepositoryURL())
 	fullName := ""
-	repoName := ""
-	if len(parts) >= 2 {
-		fullName = parts[0] + "/" + parts[1]
-		repoName = parts[1]
+	if owner != "" && repo != "" {
+		fullName = owner + "/" + repo
 	}
 
-	// Extract labels
 	var labels []string
 	for _, label := range issue.Labels {
 		labels = append(labels, label.GetName())
 	}
 
-	// Extract assignees
 	var assignees []string
 	for _, assignee := range issue.Assignees {
 		assignees = append(assignees, assignee.GetLogin())
 	}
 
-	notification := model.Item{
-		ID:        fmt.Sprintf("review-requested-%d", issue.GetID()),
-		Reason:    model.ReasonReviewRequested,
-		Unread:    true, // Treat as unread since review is pending
+	itemType := model.ItemTypeIssue
+	if subjectType == model.SubjectPullRequest {
+		itemType = model.ItemTypePullRequest
+	}
+
+	return model.Item{
+		ID:        id,
+		Reason:    reason,
+		Unread:    true,
 		UpdatedAt: issue.GetUpdatedAt().Time,
 		Repository: model.Repository{
-			Name:     repoName,
+			Name:     repo,
 			FullName: fullName,
 			HTMLURL:  fmt.Sprintf("https://github.com/%s", fullName),
 		},
 		Subject: model.Subject{
 			Title: issue.GetTitle(),
 			URL:   issue.GetURL(),
-			Type:  model.SubjectPullRequest,
+			Type:  subjectType,
 		},
-		URL: issue.GetURL(),
-		// Promoted common fields
-		Type:         model.ItemTypePullRequest,
+		URL:          issue.GetURL(),
+		Type:         itemType,
 		Number:       issue.GetNumber(),
 		State:        issue.GetState(),
 		HTMLURL:      issue.GetHTMLURL(),
@@ -221,54 +241,8 @@ func (c *Client) prToItem(issue *gh.Issue) model.Item {
 		CommentCount: issue.GetComments(),
 		Labels:       labels,
 		Assignees:    assignees,
-		// PR-specific details
-		Details: &model.PRDetails{
-			ReviewState: "pending",
-		},
+		Details:      details,
 	}
-
-	return notification
-}
-
-// splitRepoURL extracts owner and repo from a GitHub API repo URL
-func splitRepoURL(url string) []string {
-	// URL format: https://api.github.com/repos/owner/repo
-	parts := []string{}
-	if url == "" {
-		return parts
-	}
-	// Find the /repos/ part and extract what follows
-	idx := len("https://api.github.com/repos/")
-	if len(url) <= idx {
-		return parts
-	}
-	remainder := url[idx:]
-	// Split by /
-	for _, p := range splitBySlash(remainder) {
-		if p != "" {
-			parts = append(parts, p)
-		}
-	}
-	return parts
-}
-
-func splitBySlash(s string) []string {
-	var result []string
-	current := ""
-	for _, c := range s {
-		if c == '/' {
-			if current != "" {
-				result = append(result, current)
-				current = ""
-			}
-		} else {
-			current += string(c)
-		}
-	}
-	if current != "" {
-		result = append(result, current)
-	}
-	return result
 }
 
 // ListAssignedIssues fetches open issues assigned to the user
@@ -283,7 +257,7 @@ func (c *Client) ListAssignedIssues(ctx context.Context, username string) ([]mod
 		},
 	}
 
-	var notifications []model.Item
+	var items []model.Item
 
 	for {
 		result, resp, err := c.client.Search.Issues(ctx, query, opts)
@@ -292,8 +266,12 @@ func (c *Client) ListAssignedIssues(ctx context.Context, username string) ([]mod
 		}
 
 		for _, issue := range result.Issues {
-			item := c.assignedIssueToItem(issue)
-			notifications = append(notifications, item)
+			items = append(items, issueToItem(issue,
+				fmt.Sprintf("assigned-%d", issue.GetID()),
+				model.ReasonAssign,
+				model.SubjectIssue,
+				&model.IssueDetails{},
+			))
 		}
 
 		if resp.NextPage == 0 {
@@ -302,63 +280,7 @@ func (c *Client) ListAssignedIssues(ctx context.Context, username string) ([]mod
 		opts.Page = resp.NextPage
 	}
 
-	return notifications, nil
-}
-
-// assignedIssueToItem converts an assigned issue to a model.Item
-func (c *Client) assignedIssueToItem(issue *gh.Issue) model.Item {
-	repoURL := issue.GetRepositoryURL()
-	parts := splitRepoURL(repoURL)
-	fullName := ""
-	repoName := ""
-	if len(parts) >= 2 {
-		fullName = parts[0] + "/" + parts[1]
-		repoName = parts[1]
-	}
-
-	// Extract labels
-	var labels []string
-	for _, label := range issue.Labels {
-		labels = append(labels, label.GetName())
-	}
-
-	// Extract assignees
-	var assignees []string
-	for _, assignee := range issue.Assignees {
-		assignees = append(assignees, assignee.GetLogin())
-	}
-
-	notification := model.Item{
-		ID:        fmt.Sprintf("assigned-%d", issue.GetID()),
-		Reason:    model.ReasonAssign,
-		Unread:    true,
-		UpdatedAt: issue.GetUpdatedAt().Time,
-		Repository: model.Repository{
-			Name:     repoName,
-			FullName: fullName,
-			HTMLURL:  fmt.Sprintf("https://github.com/%s", fullName),
-		},
-		Subject: model.Subject{
-			Title: issue.GetTitle(),
-			URL:   issue.GetURL(),
-			Type:  model.SubjectIssue,
-		},
-		URL: issue.GetURL(),
-		// Promoted common fields
-		Type:         model.ItemTypeIssue,
-		Number:       issue.GetNumber(),
-		State:        issue.GetState(),
-		HTMLURL:      issue.GetHTMLURL(),
-		CreatedAt:    issue.GetCreatedAt().Time,
-		Author:       issue.GetUser().GetLogin(),
-		CommentCount: issue.GetComments(),
-		Labels:       labels,
-		Assignees:    assignees,
-		// Issue-specific details
-		Details: &model.IssueDetails{},
-	}
-
-	return notification
+	return items, nil
 }
 
 // ListAssignedPRs fetches open PRs assigned to the user
@@ -382,8 +304,12 @@ func (c *Client) ListAssignedPRs(ctx context.Context, username string) ([]model.
 		}
 
 		for _, issue := range result.Issues {
-			item := c.assignedPRToItem(issue)
-			items = append(items, item)
+			items = append(items, issueToItem(issue,
+				fmt.Sprintf("assigned-pr-%d", issue.GetID()),
+				model.ReasonAssign,
+				model.SubjectPullRequest,
+				&model.PRDetails{},
+			))
 		}
 
 		if resp.NextPage == 0 {
@@ -393,60 +319,6 @@ func (c *Client) ListAssignedPRs(ctx context.Context, username string) ([]model.
 	}
 
 	return items, nil
-}
-
-// assignedPRToItem converts an assigned PR to a model.Item
-func (c *Client) assignedPRToItem(issue *gh.Issue) model.Item {
-	repoURL := issue.GetRepositoryURL()
-	parts := splitRepoURL(repoURL)
-	fullName := ""
-	repoName := ""
-	if len(parts) >= 2 {
-		fullName = parts[0] + "/" + parts[1]
-		repoName = parts[1]
-	}
-
-	// Extract labels
-	var labels []string
-	for _, label := range issue.Labels {
-		labels = append(labels, label.GetName())
-	}
-
-	// Extract assignees
-	var assignees []string
-	for _, assignee := range issue.Assignees {
-		assignees = append(assignees, assignee.GetLogin())
-	}
-
-	return model.Item{
-		ID:        fmt.Sprintf("assigned-pr-%d", issue.GetID()),
-		Reason:    model.ReasonAssign,
-		Unread:    true,
-		UpdatedAt: issue.GetUpdatedAt().Time,
-		Repository: model.Repository{
-			Name:     repoName,
-			FullName: fullName,
-			HTMLURL:  fmt.Sprintf("https://github.com/%s", fullName),
-		},
-		Subject: model.Subject{
-			Title: issue.GetTitle(),
-			URL:   issue.GetURL(),
-			Type:  model.SubjectPullRequest,
-		},
-		URL: issue.GetURL(),
-		// Promoted common fields
-		Type:         model.ItemTypePullRequest,
-		Number:       issue.GetNumber(),
-		State:        issue.GetState(),
-		HTMLURL:      issue.GetHTMLURL(),
-		CreatedAt:    issue.GetCreatedAt().Time,
-		Author:       issue.GetUser().GetLogin(),
-		Labels:       labels,
-		Assignees:    assignees,
-		CommentCount: issue.GetComments(),
-		// PR-specific details
-		Details: &model.PRDetails{},
-	}
 }
 
 // ListAuthoredPRs fetches open PRs authored by the user
@@ -461,7 +333,7 @@ func (c *Client) ListAuthoredPRs(ctx context.Context, username string) ([]model.
 		},
 	}
 
-	var notifications []model.Item
+	var items []model.Item
 
 	for {
 		result, resp, err := c.client.Search.Issues(ctx, query, opts)
@@ -470,8 +342,12 @@ func (c *Client) ListAuthoredPRs(ctx context.Context, username string) ([]model.
 		}
 
 		for _, issue := range result.Issues {
-			item := c.authoredPRToItem(issue)
-			notifications = append(notifications, item)
+			items = append(items, issueToItem(issue,
+				fmt.Sprintf("authored-%d", issue.GetID()),
+				model.ReasonAuthor,
+				model.SubjectPullRequest,
+				&model.PRDetails{Draft: issue.GetDraft()},
+			))
 		}
 
 		if resp.NextPage == 0 {
@@ -480,65 +356,5 @@ func (c *Client) ListAuthoredPRs(ctx context.Context, username string) ([]model.
 		opts.Page = resp.NextPage
 	}
 
-	return notifications, nil
-}
-
-// authoredPRToItem converts an authored PR to a model.Item
-func (c *Client) authoredPRToItem(issue *gh.Issue) model.Item {
-	repoURL := issue.GetRepositoryURL()
-	parts := splitRepoURL(repoURL)
-	fullName := ""
-	repoName := ""
-	owner := ""
-	if len(parts) >= 2 {
-		owner = parts[0]
-		repoName = parts[1]
-		fullName = owner + "/" + repoName
-	}
-
-	// Extract labels
-	var labels []string
-	for _, label := range issue.Labels {
-		labels = append(labels, label.GetName())
-	}
-
-	// Extract assignees
-	var assignees []string
-	for _, assignee := range issue.Assignees {
-		assignees = append(assignees, assignee.GetLogin())
-	}
-
-	notification := model.Item{
-		ID:        fmt.Sprintf("authored-%d", issue.GetID()),
-		Reason:    model.ReasonAuthor,
-		Unread:    true,
-		UpdatedAt: issue.GetUpdatedAt().Time,
-		Repository: model.Repository{
-			Name:     repoName,
-			FullName: fullName,
-			HTMLURL:  fmt.Sprintf("https://github.com/%s", fullName),
-		},
-		Subject: model.Subject{
-			Title: issue.GetTitle(),
-			URL:   issue.GetURL(),
-			Type:  model.SubjectPullRequest,
-		},
-		URL: issue.GetURL(),
-		// Promoted common fields
-		Type:         model.ItemTypePullRequest,
-		Number:       issue.GetNumber(),
-		State:        issue.GetState(),
-		HTMLURL:      issue.GetHTMLURL(),
-		CreatedAt:    issue.GetCreatedAt().Time,
-		Author:       issue.GetUser().GetLogin(),
-		CommentCount: issue.GetComments(),
-		Labels:       labels,
-		Assignees:    assignees,
-		// PR-specific details
-		Details: &model.PRDetails{
-			Draft: issue.GetDraft(),
-		},
-	}
-
-	return notification
+	return items, nil
 }

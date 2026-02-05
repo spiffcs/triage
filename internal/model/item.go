@@ -62,6 +62,29 @@ const (
 	SubjectDiscussion  SubjectType = "Discussion"
 )
 
+// Review state constants
+const (
+	ReviewStateApproved        = "approved"
+	ReviewStateChangesRequested = "changes_requested"
+	ReviewStatePending         = "pending"
+	ReviewStateReviewRequired  = "review_required"
+	ReviewStateReviewed        = "reviewed"
+)
+
+// CI status constants
+const (
+	CIStatusSuccess = "success"
+	CIStatusFailure = "failure"
+	CIStatusPending = "pending"
+)
+
+// Item state constants
+const (
+	StateOpen   = "open"
+	StateClosed = "closed"
+	StateMerged = "merged"
+)
+
 // ItemType represents whether an item is an issue or pull request
 type ItemType string
 

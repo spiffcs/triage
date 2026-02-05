@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spiffcs/triage/internal/constants"
 	"github.com/spiffcs/triage/internal/log"
 	"github.com/spiffcs/triage/internal/model"
 )
@@ -21,26 +20,6 @@ type Key struct {
 	SubjectType  model.SubjectType
 	Number       int
 }
-
-// Store defines the interface for caching operations.
-// This interface enables mocking the cache in unit tests.
-type Store interface {
-	// Item details cache
-	Get(key Key, updatedAt time.Time) (*model.Item, bool)
-	Set(key Key, updatedAt time.Time, item *model.Item) error
-	Clear() error
-
-	// Unified list cache
-	GetList(username string, listType ListType, opts ListOptions) (*ListCacheEntry, bool)
-	SetList(username string, listType ListType, entry *ListCacheEntry) error
-
-	// Stats
-	Stats() (total int, validCount int, err error)
-	DetailedStats() (*CacheStats, error)
-}
-
-// Ensure Cache implements Store interface.
-var _ Store = (*Cache)(nil)
 
 // Cache stores notification details to avoid repeated API calls
 type Cache struct {
@@ -105,7 +84,7 @@ func (c *Cache) Get(key Key, updatedAt time.Time) (*model.Item, bool) {
 	}
 
 	// Also invalidate if cache is too old
-	if time.Since(entry.CachedAt) > constants.DetailCacheTTL {
+	if time.Since(entry.CachedAt) > DetailCacheTTL {
 		return nil, false
 	}
 
@@ -168,16 +147,16 @@ func (c *Cache) Stats() (total int, validCount int, err error) {
 	return totalCount, validCount, nil
 }
 
-// ttlForListType returns the TTL for a given list type
-func ttlForListType(listType ListType) time.Duration {
+// TTLForListType returns the TTL for a given list type.
+func TTLForListType(listType ListType) time.Duration {
 	switch listType {
 	case ListTypeNotifications:
-		return constants.NotificationsCacheTTL
+		return NotificationsCacheTTL
 	case ListTypeOrphaned:
-		return constants.OrphanedCacheTTL
+		return OrphanedCacheTTL
 	default:
 		// review-requested, authored, assigned-issues
-		return constants.ItemListCacheTTL
+		return ItemListCacheTTL
 	}
 }
 
@@ -208,7 +187,7 @@ func (c *Cache) GetList(username string, listType ListType, opts ListOptions) (*
 	}
 
 	// Check TTL
-	ttl := ttlForListType(listType)
+	ttl := TTLForListType(listType)
 	if time.Since(entry.CachedAt) > ttl {
 		return nil, false
 	}
@@ -313,7 +292,8 @@ func (c *Cache) DetailedStats() (*CacheStats, error) {
 
 			ls := stats.ListStats[matchedType]
 			ls.Total++
-			ttl := ttlForListType(matchedType)
+			ls.Items += len(listEntry.Items)
+			ttl := TTLForListType(matchedType)
 			if now.Sub(listEntry.CachedAt) <= ttl {
 				ls.Valid++
 			}
@@ -325,7 +305,7 @@ func (c *Cache) DetailedStats() (*CacheStats, error) {
 			if err := json.Unmarshal(data, &cacheEntry); err != nil {
 				continue
 			}
-			if now.Sub(cacheEntry.CachedAt) <= constants.DetailCacheTTL {
+			if now.Sub(cacheEntry.CachedAt) <= DetailCacheTTL {
 				stats.DetailValid++
 			}
 		}

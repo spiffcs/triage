@@ -1,3 +1,4 @@
+// Package cmd implements the CLI commands for the triage tool.
 package cmd
 
 import (
