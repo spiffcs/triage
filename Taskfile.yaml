@@ -144,6 +144,15 @@ tasks:
       - cmd: .github/scripts/go-mod-tidy-check.sh && echo "go.mod and go.sum are tidy!"
         silent: true
 
+  unreleased:
+    desc: Show unreleased changes since the latest tag
+    deps: [tools]
+    cmds:
+      - "{{ .TOOL_DIR }}/chronicle -n --since-tag {{ .LATEST_TAG }} | {{ .TOOL_DIR }}/glow -w 0"
+    vars:
+      LATEST_TAG:
+        sh: git describe --tags --abbrev=0
+
   changelog:
     desc: Generate a changelog
     deps: [tools]
