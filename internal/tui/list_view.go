@@ -183,6 +183,9 @@ func renderListView(m ListModel) string {
 
 	// Calculate available height for items (account for tab bar)
 	availableHeight := m.windowHeight - HeaderLines - FooterLines - tabBarLines
+	if availableHeight < 0 {
+		availableHeight = 0
+	}
 
 	// Get active pane's items and cursor
 	items := m.activeItems()
@@ -218,7 +221,7 @@ func renderListView(m ListModel) string {
 			b.WriteString(renderEmptyState())
 		}
 		b.WriteString("\n\n")
-		b.WriteString(renderHelp())
+		b.WriteString(renderHelp(m.TypeFilterLabel()))
 		return b.String()
 	}
 
@@ -242,15 +245,15 @@ func renderListView(m ListModel) string {
 		b.WriteString("\n")
 	}
 
-	// Pad remaining space
+	// Pad remaining space so the help text stays pinned to the bottom
 	renderedRows := end - start
-	for i := renderedRows; i < availableHeight && i < len(items); i++ {
+	for i := renderedRows; i < availableHeight; i++ {
 		b.WriteString("\n")
 	}
 
 	// Render footer
 	b.WriteString("\n")
-	b.WriteString(renderHelp())
+	b.WriteString(renderHelp(m.TypeFilterLabel()))
 
 	// Status message
 	if m.statusMsg != "" {
@@ -770,9 +773,9 @@ func renderAge(d time.Duration, selected bool) (string, int) {
 	}
 }
 
-// renderHelp renders the help text
-func renderHelp() string {
-	return listHelpStyle.Render("Tab/1-4: panes   j/k: nav   s/S: sort   r: reset   d: done   enter: open   q: quit")
+// renderHelp renders the help text with the current type filter label
+func renderHelp(filterLabel string) string {
+	return listHelpStyle.Render("Tab/1-4: panes   j/k: nav   s/S: sort   r: reset   t: " + filterLabel + "   d: done   enter: open   q: quit")
 }
 
 // renderEmptyState renders the empty state message

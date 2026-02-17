@@ -28,6 +28,15 @@ const (
 	paneBlocked
 )
 
+// typeFilter controls which item types are displayed
+type typeFilter int
+
+const (
+	typeFilterAll   typeFilter = iota // Show all items
+	typeFilterPR                      // Show only pull requests
+	typeFilterIssue                   // Show only issues
+)
+
 // TUI layout constants
 const (
 	// HeaderLines is the number of lines used for the list view header.
@@ -118,6 +127,7 @@ type ListModel struct {
 	prSizeM           int
 	prSizeL           int
 	currentUser       string
+	typeFilter        typeFilter // Global filter: all, PRs only, or issues only
 
 	// Sort state per pane
 	prioritySortColumn SortColumn
@@ -700,18 +710,39 @@ func (m *ListModel) sortBlockedItems() {
 	})
 }
 
-// activeItems returns the items for the active pane
+// itemIsPR checks whether an item is a pull request using the same logic as renderRow.
+func itemIsPR(item triage.PrioritizedItem) bool {
+	return item.Type == model.ItemTypePullRequest || item.Subject.Type == model.SubjectPullRequest
+}
+
+// activeItems returns the items for the active pane, filtered by the current type filter
 func (m *ListModel) activeItems() []triage.PrioritizedItem {
+	var items []triage.PrioritizedItem
 	switch m.activePane {
 	case paneOrphaned:
-		return m.orphanedItems
+		items = m.orphanedItems
 	case paneAssigned:
-		return m.assignedItems
+		items = m.assignedItems
 	case paneBlocked:
-		return m.blockedItems
+		items = m.blockedItems
 	default:
-		return m.priorityItems
+		items = m.priorityItems
 	}
+
+	if m.typeFilter == typeFilterAll {
+		return items
+	}
+
+	filtered := make([]triage.PrioritizedItem, 0, len(items))
+	for _, item := range items {
+		isPR := itemIsPR(item)
+		if m.typeFilter == typeFilterPR && isPR {
+			filtered = append(filtered, item)
+		} else if m.typeFilter == typeFilterIssue && !isPR {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
 }
 
 // activeCursor returns the cursor position for the active pane
@@ -843,6 +874,9 @@ func (m ListModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "r":
 		return m.resetSort()
+
+	case "t":
+		return m.cycleTypeFilter()
 	}
 
 	return m, nil
@@ -867,28 +901,45 @@ func (m ListModel) markDone() (tea.Model, tea.Cmd) {
 		return m, clearStatusAfter(2 * time.Second)
 	}
 
-	// Remove from the active pane's list
+	// Remove from the active pane's underlying (unfiltered) list.
+	// When a type filter is active, cursor indexes the filtered view,
+	// so we find the item by ID in the underlying slice.
+	removeByID := func(items []triage.PrioritizedItem, id string) []triage.PrioritizedItem {
+		for i, it := range items {
+			if it.ID == id {
+				return append(items[:i], items[i+1:]...)
+			}
+		}
+		return items
+	}
+
 	switch m.activePane {
 	case paneOrphaned:
-		m.orphanedItems = append(m.orphanedItems[:cursor], m.orphanedItems[cursor+1:]...)
+		m.orphanedItems = removeByID(m.orphanedItems, n.ID)
 		if m.orphanedCursor >= len(m.orphanedItems) && m.orphanedCursor > 0 {
 			m.orphanedCursor = len(m.orphanedItems) - 1
 		}
 	case paneAssigned:
-		m.assignedItems = append(m.assignedItems[:cursor], m.assignedItems[cursor+1:]...)
+		m.assignedItems = removeByID(m.assignedItems, n.ID)
 		if m.assignedCursor >= len(m.assignedItems) && m.assignedCursor > 0 {
 			m.assignedCursor = len(m.assignedItems) - 1
 		}
 	case paneBlocked:
-		m.blockedItems = append(m.blockedItems[:cursor], m.blockedItems[cursor+1:]...)
+		m.blockedItems = removeByID(m.blockedItems, n.ID)
 		if m.blockedCursor >= len(m.blockedItems) && m.blockedCursor > 0 {
 			m.blockedCursor = len(m.blockedItems) - 1
 		}
 	default:
-		m.priorityItems = append(m.priorityItems[:cursor], m.priorityItems[cursor+1:]...)
+		m.priorityItems = removeByID(m.priorityItems, n.ID)
 		if m.priorityCursor >= len(m.priorityItems) && m.priorityCursor > 0 {
 			m.priorityCursor = len(m.priorityItems) - 1
 		}
+	}
+
+	// Clamp cursor for the filtered view as well
+	filtered := m.activeItems()
+	if cursor >= len(filtered) && cursor > 0 {
+		m.setActiveCursor(len(filtered) - 1)
 	}
 
 	m.statusMsg = "Marked as done"
@@ -1116,6 +1167,38 @@ func (m ListModel) resetSort() (tea.Model, tea.Cmd) {
 	m.statusTime = time.Now()
 
 	return m, clearStatusAfter(2 * time.Second)
+}
+
+// cycleTypeFilter cycles through All -> PRs -> Issues -> All
+func (m ListModel) cycleTypeFilter() (tea.Model, tea.Cmd) {
+	switch m.typeFilter {
+	case typeFilterAll:
+		m.typeFilter = typeFilterPR
+	case typeFilterPR:
+		m.typeFilter = typeFilterIssue
+	default:
+		m.typeFilter = typeFilterAll
+	}
+
+	// Reset cursor to 0 since the visible list has changed
+	m.setActiveCursor(0)
+
+	m.statusMsg = "Filter: " + m.TypeFilterLabel()
+	m.statusTime = time.Now()
+
+	return m, clearStatusAfter(2 * time.Second)
+}
+
+// TypeFilterLabel returns a display label for the current type filter
+func (m ListModel) TypeFilterLabel() string {
+	switch m.typeFilter {
+	case typeFilterPR:
+		return "PRs"
+	case typeFilterIssue:
+		return "issues"
+	default:
+		return "all"
+	}
 }
 
 // preserveCursorPosition finds the item after sorting and sets the cursor to it

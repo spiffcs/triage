@@ -22,6 +22,21 @@ type Store struct {
 	mu      sync.RWMutex
 }
 
+// NewStoreFromPath creates a resolved items store at the given file path.
+func NewStoreFromPath(path string) (*Store, error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return nil, err
+	}
+	s := &Store{
+		path:    path,
+		entries: make(map[string]ResolvedEntry),
+	}
+	if err := s.load(); err != nil {
+		log.Debug("could not load resolved store, starting fresh", "error", err)
+	}
+	return s, nil
+}
+
 // NewStore creates a new resolved items store
 func NewStore() (*Store, error) {
 	cacheDir, err := os.UserCacheDir()
