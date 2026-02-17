@@ -906,7 +906,7 @@ func (m ListModel) markDone() (tea.Model, tea.Cmd) {
 	// so we find the item by ID in the underlying slice.
 	removeByID := func(items []triage.PrioritizedItem, id string) []triage.PrioritizedItem {
 		for i, it := range items {
-			if it.Item.ID == id {
+			if it.ID == id {
 				return append(items[:i], items[i+1:]...)
 			}
 		}
