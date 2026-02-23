@@ -8,7 +8,7 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/fatih/color v1.18.0
 	github.com/google/go-github/v57 v57.0.0
-	github.com/mattn/go-runewidth v0.0.19
+	github.com/mattn/go-runewidth v0.0.20
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/oauth2 v0.35.0
 	golang.org/x/sync v0.19.0
