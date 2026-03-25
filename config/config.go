@@ -28,12 +28,12 @@ type Config struct {
 
 // UIPreferences stores user interface preferences like sort settings
 type UIPreferences struct {
-	QueueSortColumn string `yaml:"queue_sort_column,omitempty"`
-	QueueSortDesc   *bool  `yaml:"queue_sort_desc,omitempty"`
-	OrphanedSortColumn string `yaml:"orphaned_sort_column,omitempty"`
-	OrphanedSortDesc   *bool  `yaml:"orphaned_sort_desc,omitempty"`
-	AssignedSortColumn string `yaml:"assigned_sort_column,omitempty"`
-	AssignedSortDesc   *bool  `yaml:"assigned_sort_desc,omitempty"`
+	QueueSortColumn      string `yaml:"queue_sort_column,omitempty"`
+	QueueSortDesc        *bool  `yaml:"queue_sort_desc,omitempty"`
+	OrphanedSortColumn   string `yaml:"orphaned_sort_column,omitempty"`
+	OrphanedSortDesc     *bool  `yaml:"orphaned_sort_desc,omitempty"`
+	AssignedSortColumn   string `yaml:"assigned_sort_column,omitempty"`
+	AssignedSortDesc     *bool  `yaml:"assigned_sort_desc,omitempty"`
 	BlockedSortColumn    string `yaml:"blocked_sort_column,omitempty"`
 	BlockedSortDesc      *bool  `yaml:"blocked_sort_desc,omitempty"`
 	DependabotSortColumn string `yaml:"dependabot_sort_column,omitempty"`
