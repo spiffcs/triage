@@ -102,27 +102,27 @@ var dependabotSortColumns = []SortColumn{SortUpdated, SortSize, SortRepo, SortCI
 
 // Default sort columns
 const (
-	defaultQueueSortColumn     = SortPriority
-	defaultOrphanedSortColumn  = SortUpdated
-	defaultAssignedSortColumn  = SortUpdated
-	defaultBlockedSortColumn   = SortUpdated
+	defaultQueueSortColumn      = SortPriority
+	defaultOrphanedSortColumn   = SortUpdated
+	defaultAssignedSortColumn   = SortUpdated
+	defaultBlockedSortColumn    = SortUpdated
 	defaultDependabotSortColumn = SortUpdated
 )
 
 // ListModel is the Bubble Tea model for the interactive notification list
 type ListModel struct {
 	items             []triage.PrioritizedItem
-	queueItems      []triage.PrioritizedItem // Queue items (excluding orphaned and assigned)
-	orphanedItems   []triage.PrioritizedItem // Only orphaned items
-	assignedItems   []triage.PrioritizedItem // Items assigned to current user
-	blockedItems    []triage.PrioritizedItem // Items with "blocked" label
-	dependabotItems []triage.PrioritizedItem // PRs authored by dependabot
-	activePane      pane                     // Which pane is focused
-	queueCursor      int // Cursor for queue pane
-	orphanedCursor   int // Cursor for orphaned pane
-	assignedCursor   int // Cursor for assigned pane
-	blockedCursor    int // Cursor for blocked pane
-	dependabotCursor int // Cursor for dependabot pane
+	queueItems        []triage.PrioritizedItem // Queue items (excluding orphaned and assigned)
+	orphanedItems     []triage.PrioritizedItem // Only orphaned items
+	assignedItems     []triage.PrioritizedItem // Items assigned to current user
+	blockedItems      []triage.PrioritizedItem // Items with "blocked" label
+	dependabotItems   []triage.PrioritizedItem // PRs authored by dependabot
+	activePane        pane                     // Which pane is focused
+	queueCursor       int                      // Cursor for queue pane
+	orphanedCursor    int                      // Cursor for orphaned pane
+	assignedCursor    int                      // Cursor for assigned pane
+	blockedCursor     int                      // Cursor for blocked pane
+	dependabotCursor  int                      // Cursor for dependabot pane
 	resolved          *resolved.Store
 	windowWidth       int
 	windowHeight      int
@@ -177,27 +177,27 @@ func WithBlockedLabels(labels []string) ListOption {
 // NewListModel creates a new list model
 func NewListModel(items []triage.PrioritizedItem, store *resolved.Store, weights config.ScoreWeights, currentUser string, opts ...ListOption) ListModel {
 	m := ListModel{
-		items:              items,
-		resolved:           store,
-		windowWidth:        80,
-		windowHeight:       24,
-		hotTopicThreshold:  weights.HotTopicThreshold,
-		prSizeXS:           weights.PRSizeXS,
-		prSizeS:            weights.PRSizeS,
-		prSizeM:            weights.PRSizeM,
-		prSizeL:            weights.PRSizeL,
-		currentUser:        currentUser,
-		activePane:         paneAssigned,
-		queueCursor:     0,
-		orphanedCursor:     0,
-		assignedCursor:     0,
-		blockedCursor:      0,
-		queueSortColumn: defaultQueueSortColumn,
-		queueSortDesc:   true, // default: descending (highest priority first)
-		orphanedSortColumn: defaultOrphanedSortColumn,
-		orphanedSortDesc:   true, // default: descending (most stale first)
-		assignedSortColumn: defaultAssignedSortColumn,
-		assignedSortDesc:   true, // default: descending (most recent first)
+		items:                items,
+		resolved:             store,
+		windowWidth:          80,
+		windowHeight:         24,
+		hotTopicThreshold:    weights.HotTopicThreshold,
+		prSizeXS:             weights.PRSizeXS,
+		prSizeS:              weights.PRSizeS,
+		prSizeM:              weights.PRSizeM,
+		prSizeL:              weights.PRSizeL,
+		currentUser:          currentUser,
+		activePane:           paneAssigned,
+		queueCursor:          0,
+		orphanedCursor:       0,
+		assignedCursor:       0,
+		blockedCursor:        0,
+		queueSortColumn:      defaultQueueSortColumn,
+		queueSortDesc:        true, // default: descending (highest priority first)
+		orphanedSortColumn:   defaultOrphanedSortColumn,
+		orphanedSortDesc:     true, // default: descending (most stale first)
+		assignedSortColumn:   defaultAssignedSortColumn,
+		assignedSortDesc:     true, // default: descending (most recent first)
 		blockedSortColumn:    defaultBlockedSortColumn,
 		blockedSortDesc:      true, // default: descending (most recent first)
 		dependabotSortColumn: defaultDependabotSortColumn,
