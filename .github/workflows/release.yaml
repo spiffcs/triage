@@ -21,8 +21,11 @@ on:
           - install-script-only
 
 permissions:
-  contents: write
-  id-token: write
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   validations:
@@ -35,6 +38,9 @@ jobs:
     needs: validations
     if: ${{ github.event.inputs.phase != 'install-script-only' }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # required to create GitHub releases
+      id-token: write # required for signing
     environment: production
     steps:
       - name: Checkout
@@ -83,4 +89,7 @@ jobs:
     uses: ./.github/workflows/release-install-script.yaml
     with:
       tag: ${{ github.event.inputs.version || github.ref_name }}
-    secrets: inherit
+    secrets:
+      R2_INSTALL_ACCESS_KEY_ID: ${{ secrets.R2_INSTALL_ACCESS_KEY_ID }}
+      R2_INSTALL_SECRET_ACCESS_KEY: ${{ secrets.R2_INSTALL_SECRET_ACCESS_KEY }}
+      R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
