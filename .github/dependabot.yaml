@@ -4,6 +4,11 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
+      semver-major: 30
+      semver-minor: 7
+      semver-patch: 3
     commit-message:
       prefix: "chore(deps)"
 
@@ -11,5 +16,10 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
+      semver-major: 30
+      semver-minor: 7
+      semver-patch: 3
     commit-message:
       prefix: "chore(deps)"

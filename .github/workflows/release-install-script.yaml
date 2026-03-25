@@ -17,6 +17,10 @@ name: "Release install script"
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ inputs.tag }}
+  cancel-in-progress: false
+
 on:
   workflow_call:
     inputs:
@@ -57,9 +61,12 @@ jobs:
 
       # configure AWS CLI to work with Cloudflare R2
       - name: Configure AWS CLI for R2
+        env:
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_INSTALL_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_INSTALL_SECRET_ACCESS_KEY }}
         run: |
-          aws configure set aws_access_key_id ${{ secrets.R2_INSTALL_ACCESS_KEY_ID }}
-          aws configure set aws_secret_access_key ${{ secrets.R2_INSTALL_SECRET_ACCESS_KEY }}
+          aws configure set aws_access_key_id "$R2_ACCESS_KEY_ID"
+          aws configure set aws_secret_access_key "$R2_SECRET_ACCESS_KEY"
           aws configure set region auto
 
       # always upload install script to versioned path for historical access
