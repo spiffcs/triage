@@ -20,12 +20,14 @@ type pane int
 const (
 	// paneAssigned is the assigned list pane (items assigned to current user)
 	paneAssigned pane = iota
-	// panePriority is the priority list pane (non-orphaned items)
-	panePriority
-	// paneOrphaned is the orphaned list pane
-	paneOrphaned
+	// paneQueue is the queue list pane (non-orphaned items)
+	paneQueue
 	// paneBlocked is the blocked list pane (items with "blocked" label)
 	paneBlocked
+	// paneDependabot is the dependabot list pane (PRs authored by dependabot)
+	paneDependabot
+	// paneOrphaned is the orphaned list pane
+	paneOrphaned
 )
 
 // typeFilter controls which item types are displayed
@@ -67,7 +69,7 @@ var ciStatusOrder = map[string]int{
 	"":                    3, // no CI status
 }
 
-// Priority pane sort columns
+// Queue pane sort columns
 const (
 	SortPriority SortColumn = "priority"
 	SortUpdated  SortColumn = "updated"
@@ -83,8 +85,8 @@ const (
 	SortCI       SortColumn = "ci"
 )
 
-// prioritySortColumns defines the cycling order for priority pane
-var prioritySortColumns = []SortColumn{SortPriority, SortUpdated, SortRepo, SortSize, SortCI}
+// queueSortColumns defines the cycling order for queue pane
+var queueSortColumns = []SortColumn{SortPriority, SortUpdated, SortRepo, SortSize, SortCI}
 
 // orphanedSortColumns defines the cycling order for orphaned pane
 var orphanedSortColumns = []SortColumn{SortStale, SortUpdated, SortSize, SortAuthor, SortRepo, SortCI}
@@ -95,26 +97,32 @@ var assignedSortColumns = []SortColumn{SortUpdated, SortSize, SortAuthor, SortRe
 // blockedSortColumns defines the cycling order for blocked pane
 var blockedSortColumns = []SortColumn{SortUpdated, SortSize, SortAuthor, SortRepo, SortCI}
 
+// dependabotSortColumns defines the cycling order for dependabot pane
+var dependabotSortColumns = []SortColumn{SortUpdated, SortSize, SortRepo, SortCI}
+
 // Default sort columns
 const (
-	defaultPrioritySortColumn = SortPriority
-	defaultOrphanedSortColumn = SortUpdated
-	defaultAssignedSortColumn = SortUpdated
-	defaultBlockedSortColumn  = SortUpdated
+	defaultQueueSortColumn     = SortPriority
+	defaultOrphanedSortColumn  = SortUpdated
+	defaultAssignedSortColumn  = SortUpdated
+	defaultBlockedSortColumn   = SortUpdated
+	defaultDependabotSortColumn = SortUpdated
 )
 
 // ListModel is the Bubble Tea model for the interactive notification list
 type ListModel struct {
 	items             []triage.PrioritizedItem
-	priorityItems     []triage.PrioritizedItem // Items excluding orphaned and assigned
-	orphanedItems     []triage.PrioritizedItem // Only orphaned items
-	assignedItems     []triage.PrioritizedItem // Items assigned to current user
-	blockedItems      []triage.PrioritizedItem // Items with "blocked" label
-	activePane        pane                     // Which pane is focused
-	priorityCursor    int                      // Cursor for priority pane
-	orphanedCursor    int                      // Cursor for orphaned pane
-	assignedCursor    int                      // Cursor for assigned pane
-	blockedCursor     int                      // Cursor for blocked pane
+	queueItems      []triage.PrioritizedItem // Queue items (excluding orphaned and assigned)
+	orphanedItems   []triage.PrioritizedItem // Only orphaned items
+	assignedItems   []triage.PrioritizedItem // Items assigned to current user
+	blockedItems    []triage.PrioritizedItem // Items with "blocked" label
+	dependabotItems []triage.PrioritizedItem // PRs authored by dependabot
+	activePane      pane                     // Which pane is focused
+	queueCursor      int // Cursor for queue pane
+	orphanedCursor   int // Cursor for orphaned pane
+	assignedCursor   int // Cursor for assigned pane
+	blockedCursor    int // Cursor for blocked pane
+	dependabotCursor int // Cursor for dependabot pane
 	resolved          *resolved.Store
 	windowWidth       int
 	windowHeight      int
@@ -130,14 +138,16 @@ type ListModel struct {
 	typeFilter        typeFilter // Global filter: all, PRs only, or issues only
 
 	// Sort state per pane
-	prioritySortColumn SortColumn
-	prioritySortDesc   bool
-	orphanedSortColumn SortColumn
-	orphanedSortDesc   bool
-	assignedSortColumn SortColumn
-	assignedSortDesc   bool
-	blockedSortColumn  SortColumn
-	blockedSortDesc    bool
+	queueSortColumn      SortColumn
+	queueSortDesc        bool
+	orphanedSortColumn   SortColumn
+	orphanedSortDesc     bool
+	assignedSortColumn   SortColumn
+	assignedSortDesc     bool
+	blockedSortColumn    SortColumn
+	blockedSortDesc      bool
+	dependabotSortColumn SortColumn
+	dependabotSortDesc   bool
 
 	// Config for persisting preferences
 	config *config.Config
@@ -178,59 +188,74 @@ func NewListModel(items []triage.PrioritizedItem, store *resolved.Store, weights
 		prSizeL:            weights.PRSizeL,
 		currentUser:        currentUser,
 		activePane:         paneAssigned,
-		priorityCursor:     0,
+		queueCursor:     0,
 		orphanedCursor:     0,
 		assignedCursor:     0,
 		blockedCursor:      0,
-		prioritySortColumn: defaultPrioritySortColumn,
-		prioritySortDesc:   true, // default: descending (highest priority first)
+		queueSortColumn: defaultQueueSortColumn,
+		queueSortDesc:   true, // default: descending (highest priority first)
 		orphanedSortColumn: defaultOrphanedSortColumn,
 		orphanedSortDesc:   true, // default: descending (most stale first)
 		assignedSortColumn: defaultAssignedSortColumn,
 		assignedSortDesc:   true, // default: descending (most recent first)
-		blockedSortColumn:  defaultBlockedSortColumn,
-		blockedSortDesc:    true, // default: descending (most recent first)
+		blockedSortColumn:    defaultBlockedSortColumn,
+		blockedSortDesc:      true, // default: descending (most recent first)
+		dependabotSortColumn: defaultDependabotSortColumn,
+		dependabotSortDesc:   true, // default: descending (most recent first)
 	}
 	for _, opt := range opts {
 		opt(&m)
 	}
 	// Load sort preferences from config if available
 	m.loadSortPreferences()
-	// Split items into priority and orphaned lists
+	// Split items into queue and orphaned lists
 	m.splitItems()
 	return m
 }
 
-// splitItems separates items into priority, orphaned, assigned, and blocked lists
+// splitItems separates items into queue, orphaned, assigned, blocked, and dependabot lists
 func (m *ListModel) splitItems() {
-	m.priorityItems = nil
+	m.queueItems = nil
 	m.orphanedItems = nil
 	m.assignedItems = nil
 	m.blockedItems = nil
+	m.dependabotItems = nil
 	for _, item := range m.items {
 		// Check for blocked label AND assigned to current user - blocked items don't go to other panes
 		if m.hasBlockedLabel(item) && m.isAssignedToCurrentUser(item) {
 			m.blockedItems = append(m.blockedItems, item)
 			continue
 		}
+		// Dependabot PRs get their own pane
+		if isDependabot(item) {
+			m.dependabotItems = append(m.dependabotItems, item)
+			continue
+		}
 		// Check assignment - assigned items never go to orphaned
 		if m.isAssignedToCurrentUser(item) {
 			m.assignedItems = append(m.assignedItems, item)
 		} else if m.hasAnyAssignee(item) {
-			// Assigned to someone else - goes to priority (no longer orphaned)
-			m.priorityItems = append(m.priorityItems, item)
+			// Assigned to someone else - goes to queue (no longer orphaned)
+			m.queueItems = append(m.queueItems, item)
 		} else if item.Reason == model.ReasonOrphaned {
 			// Only truly unassigned items with orphaned reason go here
 			m.orphanedItems = append(m.orphanedItems, item)
 		} else {
-			m.priorityItems = append(m.priorityItems, item)
+			m.queueItems = append(m.queueItems, item)
 		}
 	}
 	// Sort all lists based on configured column and direction
-	m.sortPriorityItems()
+	m.sortQueueItems()
 	m.sortOrphanedItems()
 	m.sortAssignedItems()
 	m.sortBlockedItems()
+	m.sortDependabotItems()
+}
+
+// isDependabot checks if an item was authored by dependabot.
+func isDependabot(item triage.PrioritizedItem) bool {
+	return strings.EqualFold(item.Author, "dependabot") ||
+		strings.EqualFold(item.Author, "dependabot[bot]")
 }
 
 // isAssignedToCurrentUser checks if the item is assigned to the current user
@@ -273,11 +298,11 @@ func (m *ListModel) loadSortPreferences() {
 		return
 	}
 	ui := m.config.UI
-	if ui.PrioritySortColumn != "" {
-		m.prioritySortColumn = SortColumn(ui.PrioritySortColumn)
+	if ui.QueueSortColumn != "" {
+		m.queueSortColumn = SortColumn(ui.QueueSortColumn)
 	}
-	if ui.PrioritySortDesc != nil {
-		m.prioritySortDesc = *ui.PrioritySortDesc
+	if ui.QueueSortDesc != nil {
+		m.queueSortDesc = *ui.QueueSortDesc
 	}
 	if ui.OrphanedSortColumn != "" {
 		m.orphanedSortColumn = SortColumn(ui.OrphanedSortColumn)
@@ -297,6 +322,12 @@ func (m *ListModel) loadSortPreferences() {
 	if ui.BlockedSortDesc != nil {
 		m.blockedSortDesc = *ui.BlockedSortDesc
 	}
+	if ui.DependabotSortColumn != "" {
+		m.dependabotSortColumn = SortColumn(ui.DependabotSortColumn)
+	}
+	if ui.DependabotSortDesc != nil {
+		m.dependabotSortDesc = *ui.DependabotSortDesc
+	}
 }
 
 // saveSortPreferences saves sort preferences to config
@@ -307,31 +338,33 @@ func (m *ListModel) saveSortPreferences() {
 	if m.config.UI == nil {
 		m.config.UI = &config.UIPreferences{}
 	}
-	m.config.UI.PrioritySortColumn = string(m.prioritySortColumn)
-	m.config.UI.PrioritySortDesc = &m.prioritySortDesc
+	m.config.UI.QueueSortColumn = string(m.queueSortColumn)
+	m.config.UI.QueueSortDesc = &m.queueSortDesc
 	m.config.UI.OrphanedSortColumn = string(m.orphanedSortColumn)
 	m.config.UI.OrphanedSortDesc = &m.orphanedSortDesc
 	m.config.UI.AssignedSortColumn = string(m.assignedSortColumn)
 	m.config.UI.AssignedSortDesc = &m.assignedSortDesc
 	m.config.UI.BlockedSortColumn = string(m.blockedSortColumn)
 	m.config.UI.BlockedSortDesc = &m.blockedSortDesc
+	m.config.UI.DependabotSortColumn = string(m.dependabotSortColumn)
+	m.config.UI.DependabotSortDesc = &m.dependabotSortDesc
 	// Save async to avoid blocking UI
 	go func() {
 		_ = m.config.SaveUIPreferences()
 	}()
 }
 
-// sortPriorityItems sorts the priority items by the configured column and direction.
-func (m *ListModel) sortPriorityItems() {
-	if len(m.priorityItems) == 0 {
+// sortQueueItems sorts the queue items by the configured column and direction.
+func (m *ListModel) sortQueueItems() {
+	if len(m.queueItems) == 0 {
 		return
 	}
 
-	column := m.prioritySortColumn
-	desc := m.prioritySortDesc
+	column := m.queueSortColumn
+	desc := m.queueSortDesc
 
-	sort.Slice(m.priorityItems, func(i, j int) bool {
-		a, b := m.priorityItems[i], m.priorityItems[j]
+	sort.Slice(m.queueItems, func(i, j int) bool {
+		a, b := m.queueItems[i], m.queueItems[j]
 		var less bool
 
 		switch column {
@@ -710,6 +743,79 @@ func (m *ListModel) sortBlockedItems() {
 	})
 }
 
+// sortDependabotItems sorts the dependabot items by the configured column and direction.
+func (m *ListModel) sortDependabotItems() {
+	if len(m.dependabotItems) == 0 {
+		return
+	}
+
+	column := m.dependabotSortColumn
+	desc := m.dependabotSortDesc
+
+	sort.Slice(m.dependabotItems, func(i, j int) bool {
+		a, b := m.dependabotItems[i], m.dependabotItems[j]
+		var less bool
+
+		switch column {
+		case SortUpdated:
+			less = a.UpdatedAt.Before(b.UpdatedAt)
+		case SortSize:
+			prA := a.PRDetails()
+			prB := b.PRDetails()
+			aSize, bSize := 0, 0
+			if prA != nil {
+				aSize = prA.Additions + prA.Deletions
+			}
+			if prB != nil {
+				bSize = prB.Additions + prB.Deletions
+			}
+			aHasReviewData := prA != nil && aSize > 0
+			bHasReviewData := prB != nil && bSize > 0
+
+			if aHasReviewData && !bHasReviewData {
+				return true
+			}
+			if !aHasReviewData && bHasReviewData {
+				return false
+			}
+
+			if aHasReviewData && bHasReviewData {
+				if desc {
+					return aSize < bSize
+				}
+				return aSize > bSize
+			}
+
+			if desc {
+				return a.CommentCount > b.CommentCount
+			}
+			return a.CommentCount < b.CommentCount
+		case SortRepo:
+			less = strings.ToLower(a.Repository.FullName) > strings.ToLower(b.Repository.FullName)
+		case SortCI:
+			prA := a.PRDetails()
+			prB := b.PRDetails()
+			var ciA, ciB string
+			if prA != nil {
+				ciA = prA.CIStatus
+			}
+			if prB != nil {
+				ciB = prB.CIStatus
+			}
+			orderA := ciStatusOrder[ciA]
+			orderB := ciStatusOrder[ciB]
+			less = orderA > orderB
+		default:
+			less = a.UpdatedAt.Before(b.UpdatedAt)
+		}
+
+		if desc {
+			return !less
+		}
+		return less
+	})
+}
+
 // itemIsPR checks whether an item is a pull request using the same logic as renderRow.
 func itemIsPR(item triage.PrioritizedItem) bool {
 	return item.Type == model.ItemTypePullRequest || item.Subject.Type == model.SubjectPullRequest
@@ -725,8 +831,10 @@ func (m *ListModel) activeItems() []triage.PrioritizedItem {
 		items = m.assignedItems
 	case paneBlocked:
 		items = m.blockedItems
+	case paneDependabot:
+		items = m.dependabotItems
 	default:
-		items = m.priorityItems
+		items = m.queueItems
 	}
 
 	if m.typeFilter == typeFilterAll {
@@ -754,8 +862,10 @@ func (m *ListModel) activeCursor() int {
 		return m.assignedCursor
 	case paneBlocked:
 		return m.blockedCursor
+	case paneDependabot:
+		return m.dependabotCursor
 	default:
-		return m.priorityCursor
+		return m.queueCursor
 	}
 }
 
@@ -768,8 +878,10 @@ func (m *ListModel) setActiveCursor(pos int) {
 		m.assignedCursor = pos
 	case paneBlocked:
 		m.blockedCursor = pos
+	case paneDependabot:
+		m.dependabotCursor = pos
 	default:
-		m.priorityCursor = pos
+		m.queueCursor = pos
 	}
 }
 
@@ -805,13 +917,15 @@ func (m ListModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 
 	case "tab":
-		// Cycle through panes: Assigned -> Blocked -> Priority -> Orphaned -> Assigned
+		// Cycle through panes: Assigned -> Blocked -> Queue -> Dependabot -> Orphaned -> Assigned
 		switch m.activePane {
 		case paneAssigned:
 			m.activePane = paneBlocked
 		case paneBlocked:
-			m.activePane = panePriority
-		case panePriority:
+			m.activePane = paneQueue
+		case paneQueue:
+			m.activePane = paneDependabot
+		case paneDependabot:
 			m.activePane = paneOrphaned
 		case paneOrphaned:
 			m.activePane = paneAssigned
@@ -827,10 +941,14 @@ func (m ListModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "3":
-		m.activePane = panePriority
+		m.activePane = paneQueue
 		return m, nil
 
 	case "4":
+		m.activePane = paneDependabot
+		return m, nil
+
+	case "5":
 		m.activePane = paneOrphaned
 		return m, nil
 
@@ -929,10 +1047,15 @@ func (m ListModel) markDone() (tea.Model, tea.Cmd) {
 		if m.blockedCursor >= len(m.blockedItems) && m.blockedCursor > 0 {
 			m.blockedCursor = len(m.blockedItems) - 1
 		}
+	case paneDependabot:
+		m.dependabotItems = removeByID(m.dependabotItems, n.ID)
+		if m.dependabotCursor >= len(m.dependabotItems) && m.dependabotCursor > 0 {
+			m.dependabotCursor = len(m.dependabotItems) - 1
+		}
 	default:
-		m.priorityItems = removeByID(m.priorityItems, n.ID)
-		if m.priorityCursor >= len(m.priorityItems) && m.priorityCursor > 0 {
-			m.priorityCursor = len(m.priorityItems) - 1
+		m.queueItems = removeByID(m.queueItems, n.ID)
+		if m.queueCursor >= len(m.queueItems) && m.queueCursor > 0 {
+			m.queueCursor = len(m.queueItems) - 1
 		}
 	}
 
@@ -998,9 +1121,12 @@ func (m ListModel) cycleSortColumn() (tea.Model, tea.Cmd) {
 	case paneBlocked:
 		columns = blockedSortColumns
 		currentCol = &m.blockedSortColumn
+	case paneDependabot:
+		columns = dependabotSortColumns
+		currentCol = &m.dependabotSortColumn
 	default:
-		columns = prioritySortColumns
-		currentCol = &m.prioritySortColumn
+		columns = queueSortColumns
+		currentCol = &m.queueSortColumn
 	}
 
 	// Find current column index and cycle to next
@@ -1022,8 +1148,10 @@ func (m ListModel) cycleSortColumn() (tea.Model, tea.Cmd) {
 		m.sortAssignedItems()
 	case paneBlocked:
 		m.sortBlockedItems()
+	case paneDependabot:
+		m.sortDependabotItems()
 	default:
-		m.sortPriorityItems()
+		m.sortQueueItems()
 	}
 
 	// Preserve cursor position on the same item
@@ -1047,8 +1175,12 @@ func (m ListModel) cycleSortColumn() (tea.Model, tea.Cmd) {
 		if !m.blockedSortDesc {
 			direction = "▲"
 		}
+	case paneDependabot:
+		if !m.dependabotSortDesc {
+			direction = "▲"
+		}
 	default:
-		if !m.prioritySortDesc {
+		if !m.queueSortDesc {
 			direction = "▲"
 		}
 	}
@@ -1078,9 +1210,12 @@ func (m ListModel) toggleSortDirection() (tea.Model, tea.Cmd) {
 	case paneBlocked:
 		m.blockedSortDesc = !m.blockedSortDesc
 		m.sortBlockedItems()
+	case paneDependabot:
+		m.dependabotSortDesc = !m.dependabotSortDesc
+		m.sortDependabotItems()
 	default:
-		m.prioritySortDesc = !m.prioritySortDesc
-		m.sortPriorityItems()
+		m.queueSortDesc = !m.queueSortDesc
+		m.sortQueueItems()
 	}
 
 	// Preserve cursor position on the same item
@@ -1102,9 +1237,12 @@ func (m ListModel) toggleSortDirection() (tea.Model, tea.Cmd) {
 	case paneBlocked:
 		col = m.blockedSortColumn
 		desc = m.blockedSortDesc
+	case paneDependabot:
+		col = m.dependabotSortColumn
+		desc = m.dependabotSortDesc
 	default:
-		col = m.prioritySortColumn
-		desc = m.prioritySortDesc
+		col = m.queueSortColumn
+		desc = m.queueSortDesc
 	}
 	direction := "▼"
 	if !desc {
@@ -1139,10 +1277,14 @@ func (m ListModel) resetSort() (tea.Model, tea.Cmd) {
 		m.blockedSortColumn = defaultBlockedSortColumn
 		m.blockedSortDesc = true
 		m.sortBlockedItems()
+	case paneDependabot:
+		m.dependabotSortColumn = defaultDependabotSortColumn
+		m.dependabotSortDesc = true
+		m.sortDependabotItems()
 	default:
-		m.prioritySortColumn = defaultPrioritySortColumn
-		m.prioritySortDesc = true
-		m.sortPriorityItems()
+		m.queueSortColumn = defaultQueueSortColumn
+		m.queueSortDesc = true
+		m.sortQueueItems()
 	}
 
 	// Preserve cursor position on the same item
@@ -1160,8 +1302,10 @@ func (m ListModel) resetSort() (tea.Model, tea.Cmd) {
 		col = m.assignedSortColumn
 	case paneBlocked:
 		col = m.blockedSortColumn
+	case paneDependabot:
+		col = m.dependabotSortColumn
 	default:
-		col = m.prioritySortColumn
+		col = m.queueSortColumn
 	}
 	m.statusMsg = "Reset to default sort: " + string(col) + " ▼"
 	m.statusTime = time.Now()
@@ -1220,14 +1364,14 @@ func (m *ListModel) preserveCursorPosition(item *triage.PrioritizedItem) {
 	}
 }
 
-// PrioritySortColumn returns the current priority sort column for rendering
-func (m ListModel) PrioritySortColumn() SortColumn {
-	return m.prioritySortColumn
+// QueueSortColumn returns the current queue sort column for rendering
+func (m ListModel) QueueSortColumn() SortColumn {
+	return m.queueSortColumn
 }
 
-// PrioritySortDesc returns whether priority sort is descending
-func (m ListModel) PrioritySortDesc() bool {
-	return m.prioritySortDesc
+// QueueSortDesc returns whether queue sort is descending
+func (m ListModel) QueueSortDesc() bool {
+	return m.queueSortDesc
 }
 
 // OrphanedSortColumn returns the current orphaned sort column for rendering
@@ -1268,6 +1412,21 @@ func (m ListModel) BlockedSortDesc() bool {
 // BlockedCount returns the number of blocked items
 func (m ListModel) BlockedCount() int {
 	return len(m.blockedItems)
+}
+
+// DependabotSortColumn returns the current dependabot sort column for rendering
+func (m ListModel) DependabotSortColumn() SortColumn {
+	return m.dependabotSortColumn
+}
+
+// DependabotSortDesc returns whether dependabot sort is descending
+func (m ListModel) DependabotSortDesc() bool {
+	return m.dependabotSortDesc
+}
+
+// DependabotCount returns the number of dependabot items
+func (m ListModel) DependabotCount() int {
+	return len(m.dependabotItems)
 }
 
 // View implements tea.Model

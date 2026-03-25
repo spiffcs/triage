@@ -28,14 +28,16 @@ type Config struct {
 
 // UIPreferences stores user interface preferences like sort settings
 type UIPreferences struct {
-	PrioritySortColumn string `yaml:"priority_sort_column,omitempty"`
-	PrioritySortDesc   *bool  `yaml:"priority_sort_desc,omitempty"`
+	QueueSortColumn string `yaml:"queue_sort_column,omitempty"`
+	QueueSortDesc   *bool  `yaml:"queue_sort_desc,omitempty"`
 	OrphanedSortColumn string `yaml:"orphaned_sort_column,omitempty"`
 	OrphanedSortDesc   *bool  `yaml:"orphaned_sort_desc,omitempty"`
 	AssignedSortColumn string `yaml:"assigned_sort_column,omitempty"`
 	AssignedSortDesc   *bool  `yaml:"assigned_sort_desc,omitempty"`
-	BlockedSortColumn  string `yaml:"blocked_sort_column,omitempty"`
-	BlockedSortDesc    *bool  `yaml:"blocked_sort_desc,omitempty"`
+	BlockedSortColumn    string `yaml:"blocked_sort_column,omitempty"`
+	BlockedSortDesc      *bool  `yaml:"blocked_sort_desc,omitempty"`
+	DependabotSortColumn string `yaml:"dependabot_sort_column,omitempty"`
+	DependabotSortDesc   *bool  `yaml:"dependabot_sort_desc,omitempty"`
 }
 
 // OrphanedConfig configures orphaned contribution detection
@@ -564,22 +566,24 @@ func mergeUIPreferences(global, local *UIPreferences) *UIPreferences {
 	result := &UIPreferences{}
 
 	if global != nil {
-		result.PrioritySortColumn = global.PrioritySortColumn
-		result.PrioritySortDesc = global.PrioritySortDesc
+		result.QueueSortColumn = global.QueueSortColumn
+		result.QueueSortDesc = global.QueueSortDesc
 		result.OrphanedSortColumn = global.OrphanedSortColumn
 		result.OrphanedSortDesc = global.OrphanedSortDesc
 		result.AssignedSortColumn = global.AssignedSortColumn
 		result.AssignedSortDesc = global.AssignedSortDesc
 		result.BlockedSortColumn = global.BlockedSortColumn
 		result.BlockedSortDesc = global.BlockedSortDesc
+		result.DependabotSortColumn = global.DependabotSortColumn
+		result.DependabotSortDesc = global.DependabotSortDesc
 	}
 
 	if local != nil {
-		if local.PrioritySortColumn != "" {
-			result.PrioritySortColumn = local.PrioritySortColumn
+		if local.QueueSortColumn != "" {
+			result.QueueSortColumn = local.QueueSortColumn
 		}
-		if local.PrioritySortDesc != nil {
-			result.PrioritySortDesc = local.PrioritySortDesc
+		if local.QueueSortDesc != nil {
+			result.QueueSortDesc = local.QueueSortDesc
 		}
 		if local.OrphanedSortColumn != "" {
 			result.OrphanedSortColumn = local.OrphanedSortColumn
@@ -599,13 +603,20 @@ func mergeUIPreferences(global, local *UIPreferences) *UIPreferences {
 		if local.BlockedSortDesc != nil {
 			result.BlockedSortDesc = local.BlockedSortDesc
 		}
+		if local.DependabotSortColumn != "" {
+			result.DependabotSortColumn = local.DependabotSortColumn
+		}
+		if local.DependabotSortDesc != nil {
+			result.DependabotSortDesc = local.DependabotSortDesc
+		}
 	}
 
 	// Return nil if effectively empty
-	if result.PrioritySortColumn == "" && result.PrioritySortDesc == nil &&
+	if result.QueueSortColumn == "" && result.QueueSortDesc == nil &&
 		result.OrphanedSortColumn == "" && result.OrphanedSortDesc == nil &&
 		result.AssignedSortColumn == "" && result.AssignedSortDesc == nil &&
-		result.BlockedSortColumn == "" && result.BlockedSortDesc == nil {
+		result.BlockedSortColumn == "" && result.BlockedSortDesc == nil &&
+		result.DependabotSortColumn == "" && result.DependabotSortDesc == nil {
 		return nil
 	}
 

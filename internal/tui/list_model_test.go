@@ -3,6 +3,7 @@ package tui
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -100,5 +101,85 @@ func TestMarkDoneWithTypeFilter(t *testing.T) {
 	}
 	if filtered[0].Item.ID != "pr-1" {
 		t.Errorf("expected remaining PR to be pr-1, got %s", filtered[0].Item.ID)
+	}
+}
+
+func TestHelpVisibleAfterSort(t *testing.T) {
+	store := newTestStore(t)
+	now := time.Now()
+	items := []triage.PrioritizedItem{
+		makeItem("pr-1", model.ItemTypePullRequest, now),
+		makeItem("pr-2", model.ItemTypePullRequest, now.Add(-1*time.Hour)),
+		makeItem("pr-3", model.ItemTypePullRequest, now.Add(-2*time.Hour)),
+	}
+
+	m := NewListModel(items, store, config.ScoreWeights{}, "testuser")
+	m.windowWidth = 160
+	m.windowHeight = 30
+
+	// Verify help appears before sort
+	view := m.View()
+	if !strings.Contains(view, "j/k: nav") {
+		t.Fatal("help text should be visible before sort")
+	}
+
+	// Cycle sort column (simulates pressing 's')
+	result, _ := m.cycleSortColumn()
+	m = result.(ListModel)
+
+	view = m.View()
+	if !strings.Contains(view, "j/k: nav") {
+		t.Fatal("help text should be visible after cycleSortColumn")
+	}
+
+	// Toggle sort direction (simulates pressing 'S')
+	result, _ = m.toggleSortDirection()
+	m = result.(ListModel)
+
+	view = m.View()
+	if !strings.Contains(view, "j/k: nav") {
+		t.Fatal("help text should be visible after toggleSortDirection")
+	}
+
+	// Reset sort (simulates pressing 'r')
+	result, _ = m.resetSort()
+	m = result.(ListModel)
+
+	view = m.View()
+	if !strings.Contains(view, "j/k: nav") {
+		t.Fatal("help text should be visible after resetSort")
+	}
+}
+
+func TestViewHeightConstantAcrossSortAndClear(t *testing.T) {
+	store := newTestStore(t)
+	now := time.Now()
+	items := []triage.PrioritizedItem{
+		makeItem("pr-1", model.ItemTypePullRequest, now),
+		makeItem("pr-2", model.ItemTypePullRequest, now.Add(-1*time.Hour)),
+		makeItem("pr-3", model.ItemTypePullRequest, now.Add(-2*time.Hour)),
+	}
+
+	m := NewListModel(items, store, config.ScoreWeights{}, "testuser")
+	m.windowWidth = 160
+	m.windowHeight = 30
+
+	// Measure height before sort (no status message)
+	beforeLines := strings.Count(m.View(), "\n")
+
+	// Sort: status message appears
+	result, _ := m.cycleSortColumn()
+	m = result.(ListModel)
+	afterSortLines := strings.Count(m.View(), "\n")
+
+	// Clear status: simulates the 2-second timer firing
+	m.statusMsg = ""
+	afterClearLines := strings.Count(m.View(), "\n")
+
+	t.Logf("lines - before: %d, after sort: %d, after clear: %d", beforeLines, afterSortLines, afterClearLines)
+
+	if beforeLines != afterSortLines || afterSortLines != afterClearLines {
+		t.Errorf("view height should stay constant: before=%d, afterSort=%d, afterClear=%d",
+			beforeLines, afterSortLines, afterClearLines)
 	}
 }

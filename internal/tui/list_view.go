@@ -46,7 +46,7 @@ func calculateColumnVisibility(windowWidth int, hideAssignedCI, hidePriority, sh
 		baseWidth += output.ColPriority + 2
 	}
 
-	// Add assigned column width for assigned/blocked/priority panes
+	// Add assigned column width for assigned/blocked/queue panes
 	if !hideAssignedCI {
 		baseWidth += output.ColAssigned + 2
 	}
@@ -78,7 +78,7 @@ func calculateColumnVisibility(windowWidth int, hideAssignedCI, hidePriority, sh
 			vis.showCI = false
 		}
 	} else {
-		// Priority pane: just CI column as optional
+		// Queue pane: just CI column as optional
 		if windowWidth < baseWidth+ciWidth {
 			vis.showCI = false
 		}
@@ -195,18 +195,15 @@ func renderListView(m ListModel) string {
 	// Orphaned pane: hide Assigned/CI, show Author/Signal, hide Priority
 	// Assigned pane: show Author AND Assigned, hide CI/Signal, hide Priority
 	// Blocked pane: show Author AND Assigned, hide CI/Signal, hide Priority (similar to Assigned)
-	// Priority pane: show Assigned/CI, hide Author, show Priority
+	// Dependabot pane: show Assigned/CI, hide Author, hide Priority
+	// Queue pane: show Assigned/CI, hide Author, show Priority
 	hideAssignedCI := m.activePane == paneOrphaned
-	hidePriority := m.activePane == paneOrphaned || m.activePane == paneAssigned || m.activePane == paneBlocked
+	hidePriority := m.activePane != paneQueue
 	showAuthor := m.activePane == paneOrphaned || m.activePane == paneAssigned || m.activePane == paneBlocked
 
 	// Render tab bar with top padding
 	b.WriteString("\n")
-	b.WriteString(renderTabBar(m.activePane, len(m.priorityItems), len(m.orphanedItems), m.AssignedCount(), m.BlockedCount(),
-		m.PrioritySortColumn(), m.PrioritySortDesc(),
-		m.OrphanedSortColumn(), m.OrphanedSortDesc(),
-		m.AssignedSortColumn(), m.AssignedSortDesc(),
-		m.BlockedSortColumn(), m.BlockedSortDesc()))
+	b.WriteString(renderTabBar(m))
 	b.WriteString("\n\n")
 
 	if len(items) == 0 {
@@ -217,6 +214,8 @@ func renderListView(m ListModel) string {
 			b.WriteString(renderAssignedEmptyState())
 		case paneBlocked:
 			b.WriteString(renderBlockedEmptyState())
+		case paneDependabot:
+			b.WriteString(renderDependabotEmptyState())
 		default:
 			b.WriteString(renderEmptyState())
 		}
@@ -255,9 +254,9 @@ func renderListView(m ListModel) string {
 	b.WriteString("\n")
 	b.WriteString(renderHelp(m.TypeFilterLabel()))
 
-	// Status message
+	// Status message (always render the line to keep view height constant)
+	b.WriteString("\n")
 	if m.statusMsg != "" {
-		b.WriteString("\n")
 		b.WriteString(listStatusStyle.Render(m.statusMsg))
 	}
 
@@ -265,60 +264,36 @@ func renderListView(m ListModel) string {
 }
 
 // renderTabBar renders the tab bar at the top of the view
-func renderTabBar(activePane pane, priorityCount, orphanedCount, assignedCount, blockedCount int,
-	prioritySortCol SortColumn, prioritySortDesc bool,
-	orphanedSortCol SortColumn, orphanedSortDesc bool,
-	assignedSortCol SortColumn, assignedSortDesc bool,
-	blockedSortCol SortColumn, blockedSortDesc bool) string {
-
-	// Format sort indicator
-	priorityDir := "▼"
-	if !prioritySortDesc {
-		priorityDir = "▲"
-	}
-	orphanedDir := "▼"
-	if !orphanedSortDesc {
-		orphanedDir = "▲"
-	}
-	assignedDir := "▼"
-	if !assignedSortDesc {
-		assignedDir = "▲"
-	}
-	blockedDir := "▼"
-	if !blockedSortDesc {
-		blockedDir = "▲"
+func renderTabBar(m ListModel) string {
+	sortDir := func(desc bool) string {
+		if desc {
+			return "▼"
+		}
+		return "▲"
 	}
 
-	assigned := fmt.Sprintf("[ 1: Assigned (%d) %s%s ]", assignedCount, assignedDir, assignedSortCol)
-	blocked := fmt.Sprintf("[ 2: Blocked (%d) %s%s ]", blockedCount, blockedDir, blockedSortCol)
-	priority := fmt.Sprintf("[ 3: Priority (%d) %s%s ]", priorityCount, priorityDir, prioritySortCol)
-	orphaned := fmt.Sprintf("[ 4: Orphaned (%d) %s%s ]", orphanedCount, orphanedDir, orphanedSortCol)
-
-	var assignedStyled, priorityStyled, orphanedStyled, blockedStyled string
-	switch activePane {
-	case paneAssigned:
-		assignedStyled = tabActiveStyle.Render(assigned)
-		priorityStyled = tabInactiveStyle.Render(priority)
-		orphanedStyled = tabInactiveStyle.Render(orphaned)
-		blockedStyled = tabInactiveStyle.Render(blocked)
-	case panePriority:
-		assignedStyled = tabInactiveStyle.Render(assigned)
-		priorityStyled = tabActiveStyle.Render(priority)
-		orphanedStyled = tabInactiveStyle.Render(orphaned)
-		blockedStyled = tabInactiveStyle.Render(blocked)
-	case paneOrphaned:
-		assignedStyled = tabInactiveStyle.Render(assigned)
-		priorityStyled = tabInactiveStyle.Render(priority)
-		orphanedStyled = tabActiveStyle.Render(orphaned)
-		blockedStyled = tabInactiveStyle.Render(blocked)
-	case paneBlocked:
-		assignedStyled = tabInactiveStyle.Render(assigned)
-		priorityStyled = tabInactiveStyle.Render(priority)
-		orphanedStyled = tabInactiveStyle.Render(orphaned)
-		blockedStyled = tabActiveStyle.Render(blocked)
+	type tab struct {
+		pane  pane
+		label string
+	}
+	tabs := []tab{
+		{paneAssigned, fmt.Sprintf("[ 1: Assigned (%d) %s%s ]", m.AssignedCount(), sortDir(m.AssignedSortDesc()), m.AssignedSortColumn())},
+		{paneBlocked, fmt.Sprintf("[ 2: Blocked (%d) %s%s ]", m.BlockedCount(), sortDir(m.BlockedSortDesc()), m.BlockedSortColumn())},
+		{paneQueue, fmt.Sprintf("[ 3: Queue (%d) %s%s ]", len(m.queueItems), sortDir(m.QueueSortDesc()), m.QueueSortColumn())},
+		{paneDependabot, fmt.Sprintf("[ 4: Deps (%d) %s%s ]", m.DependabotCount(), sortDir(m.DependabotSortDesc()), m.DependabotSortColumn())},
+		{paneOrphaned, fmt.Sprintf("[ 5: Orphaned (%d) %s%s ]", len(m.orphanedItems), sortDir(m.OrphanedSortDesc()), m.OrphanedSortColumn())},
 	}
 
-	return fmt.Sprintf("%s    %s    %s    %s", assignedStyled, blockedStyled, priorityStyled, orphanedStyled)
+	var parts []string
+	for _, t := range tabs {
+		if t.pane == m.activePane {
+			parts = append(parts, tabActiveStyle.Render(t.label))
+		} else {
+			parts = append(parts, tabInactiveStyle.Render(t.label))
+		}
+	}
+
+	return strings.Join(parts, "    ")
 }
 
 // renderOrphanedEmptyState renders the empty state message for the orphaned pane
@@ -339,6 +314,11 @@ func (m ListModel) renderOrphanedEmptyState() string {
 // renderAssignedEmptyState renders the empty state message for the assigned pane
 func renderAssignedEmptyState() string {
 	return listEmptyStyle.Render("No items assigned to you.\nItems where you are an assignee will appear here.")
+}
+
+// renderDependabotEmptyState renders the empty state message for the dependabot pane
+func renderDependabotEmptyState() string {
+	return listEmptyStyle.Render("No dependabot PRs.\nPRs authored by dependabot will appear here.")
 }
 
 // renderBlockedEmptyState renders the empty state message for the blocked pane
@@ -376,7 +356,7 @@ func renderHeader(hideAssignedCI, hidePriority bool, vis columnVisibility, cw co
 	// Cursor space
 	parts = append(parts, "  ")
 
-	// Priority column (Priority pane only)
+	// Priority column (Queue pane only)
 	if !hidePriority {
 		parts = append(parts, fmt.Sprintf("%-*s  ", output.ColPriority, "Priority"))
 	}
@@ -389,7 +369,7 @@ func renderHeader(hideAssignedCI, hidePriority bool, vis columnVisibility, cw co
 		parts = append(parts, fmt.Sprintf("%-*s  ", output.ColAuthor, "Author"))
 	}
 
-	// Assigned column (Assigned/Blocked/Priority panes)
+	// Assigned column (Assigned/Blocked/Queue panes)
 	if !hideAssignedCI {
 		parts = append(parts, fmt.Sprintf("%-*s  ", output.ColAssigned, "Assigned"))
 	}
@@ -509,7 +489,7 @@ func renderRow(item triage.PrioritizedItem, selected bool, hotTopicThreshold, pr
 	var parts []string
 	parts = append(parts, cursor)
 
-	// Priority column (Priority pane only)
+	// Priority column (Queue pane only)
 	if !hidePriority {
 		parts = append(parts, priority)
 	}
@@ -775,7 +755,7 @@ func renderAge(d time.Duration, selected bool) (string, int) {
 
 // renderHelp renders the help text with the current type filter label
 func renderHelp(filterLabel string) string {
-	return listHelpStyle.Render("Tab/1-4: panes   j/k: nav   s/S: sort   r: reset   t: " + filterLabel + "   d: done   enter: open   q: quit")
+	return listHelpStyle.Render("Tab/1-5: panes   j/k: nav   s/S: sort   r: reset   t: " + filterLabel + "   d: done   enter: open   q: quit")
 }
 
 // renderEmptyState renders the empty state message
