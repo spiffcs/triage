@@ -20,6 +20,7 @@ type FetchOptions struct {
 	OrphanedRepos       []string
 	StaleDays           int
 	ConsecutiveComments int
+	MaxItemsPerRepo     int
 }
 
 // FetchResult contains all data fetched from GitHub.
@@ -224,11 +225,15 @@ func (f *Fetcher) FetchAll(ctx context.Context, opts FetchOptions) (*FetchResult
 	// Fetch orphaned contributions (if configured)
 	if len(opts.OrphanedRepos) > 0 {
 		g.Go(func() error {
+			maxPerRepo := opts.MaxItemsPerRepo
+			if maxPerRepo <= 0 {
+				maxPerRepo = 100
+			}
 			searchOpts := ghclient.OrphanedSearchOptions{
 				Repos:                     opts.OrphanedRepos,
 				StaleDays:                 opts.StaleDays,
 				ConsecutiveAuthorComments: opts.ConsecutiveComments,
-				MaxPerRepo:                50,
+				MaxPerRepo:                maxPerRepo,
 			}
 			orphaned, _, err := f.svc.OrphanedContributions(gctx, searchOpts)
 			if err != nil {
