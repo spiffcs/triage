@@ -179,6 +179,15 @@ func (c *Client) ListUnreadNotifications(ctx context.Context, since time.Time) (
 	})
 }
 
+// ListAllNotifications fetches all notifications including read ones
+func (c *Client) ListAllNotifications(ctx context.Context, since time.Time) ([]model.Item, error) {
+	return c.ListNotifications(ctx, NotificationOptions{
+		All:   true,
+		Since: since,
+		Types: []model.SubjectType{model.SubjectIssue, model.SubjectPullRequest},
+	})
+}
+
 // MarkAsRead marks a notification as read
 func (c *Client) MarkAsRead(ctx context.Context, notificationID string) error {
 	_, err := c.client.Activity.MarkThreadRead(ctx, notificationID)

@@ -12,15 +12,19 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// ProgressFunc is called as fetch sources complete.
-type ProgressFunc func(completed, total int)
+// ProgressFunc is called as fetch sources start and complete.
+// The source parameter names what is being fetched (e.g., "notifications", "review PRs").
+// When a source starts, completed reflects the count before this source.
+// When a source completes, completed reflects the count including this source.
+type ProgressFunc func(completed, total int, source string)
 
 // FetchOptions configures the fetch operation.
 type FetchOptions struct {
-	OrphanedRepos       []string
-	StaleDays           int
-	ConsecutiveComments int
-	MaxItemsPerRepo     int
+	OrphanedRepos            []string
+	StaleDays                int
+	ConsecutiveComments      int
+	IncludeReadNotifications bool
+	MaxItemsPerRepo          int
 }
 
 // FetchResult contains all data fetched from GitHub.
@@ -91,9 +95,9 @@ func NewFetcher(svc *ItemService, onProgress ProgressFunc) *Fetcher {
 	}
 }
 
-func (f *Fetcher) reportProgress(completed, total int) {
+func (f *Fetcher) reportProgress(completed, total int, source string) {
 	if f.onProgress != nil {
-		f.onProgress(completed, total)
+		f.onProgress(completed, total, source)
 	}
 }
 
@@ -105,11 +109,16 @@ func (f *Fetcher) FetchAll(ctx context.Context, opts FetchOptions) (*FetchResult
 	}
 
 	var completedFetches int32
-	f.reportProgress(0, totalFetches)
+	f.reportProgress(0, totalFetches, "")
 
-	updateProgress := func() {
+	startSource := func(source string) {
+		current := int(atomic.LoadInt32(&completedFetches))
+		f.reportProgress(current, totalFetches, source)
+	}
+
+	completeSource := func(source string) {
 		current := int(atomic.AddInt32(&completedFetches, 1))
-		f.reportProgress(current, totalFetches)
+		f.reportProgress(current, totalFetches, source)
 	}
 
 	result := &FetchResult{}
@@ -119,112 +128,118 @@ func (f *Fetcher) FetchAll(ctx context.Context, opts FetchOptions) (*FetchResult
 
 	// Fetch notifications (with caching)
 	g.Go(func() error {
-		notifResult, err := f.svc.UnreadItems(gctx)
+		startSource("notifications")
+		notifResult, err := f.svc.UnreadItems(gctx, opts.IncludeReadNotifications)
 		if err != nil {
 			if errors.Is(err, ghclient.ErrRateLimited) {
 				mu.Lock()
 				result.RateLimited = true
 				mu.Unlock()
-				updateProgress()
+				completeSource("notifications")
 				return nil
 			}
-			updateProgress()
+			completeSource("notifications")
 			return fmt.Errorf("notifications: %w", err)
 		}
 		mu.Lock()
 		result.Notifications = notifResult.Items
 		mu.Unlock()
-		updateProgress()
+		completeSource("notifications")
 		return nil
 	})
 
 	// Fetch review-requested PRs
 	g.Go(func() error {
+		startSource("review PRs")
 		prs, _, err := f.svc.ReviewRequestedPRs(gctx)
 		if err != nil {
 			if errors.Is(err, ghclient.ErrRateLimited) {
 				mu.Lock()
 				result.RateLimited = true
 				mu.Unlock()
-				updateProgress()
+				completeSource("review PRs")
 				return nil
 			}
-			updateProgress()
+			completeSource("review PRs")
 			return fmt.Errorf("review-requested PRs: %w", err)
 		}
 		mu.Lock()
 		result.ReviewPRs = prs
 		mu.Unlock()
-		updateProgress()
+		completeSource("review PRs")
 		return nil
 	})
 
 	// Fetch authored PRs
 	g.Go(func() error {
+		startSource("authored PRs")
 		prs, _, err := f.svc.AuthoredPRs(gctx)
 		if err != nil {
 			if errors.Is(err, ghclient.ErrRateLimited) {
 				mu.Lock()
 				result.RateLimited = true
 				mu.Unlock()
-				updateProgress()
+				completeSource("authored PRs")
 				return nil
 			}
-			updateProgress()
+			completeSource("authored PRs")
 			return fmt.Errorf("authored PRs: %w", err)
 		}
 		mu.Lock()
 		result.AuthoredPRs = prs
 		mu.Unlock()
-		updateProgress()
+		completeSource("authored PRs")
 		return nil
 	})
 
 	// Fetch assigned issues
 	g.Go(func() error {
+		startSource("assigned issues")
 		issues, _, err := f.svc.AssignedIssues(gctx)
 		if err != nil {
 			if errors.Is(err, ghclient.ErrRateLimited) {
 				mu.Lock()
 				result.RateLimited = true
 				mu.Unlock()
-				updateProgress()
+				completeSource("assigned issues")
 				return nil
 			}
-			updateProgress()
+			completeSource("assigned issues")
 			return fmt.Errorf("assigned issues: %w", err)
 		}
 		mu.Lock()
 		result.AssignedIssues = issues
 		mu.Unlock()
-		updateProgress()
+		completeSource("assigned issues")
 		return nil
 	})
 
 	// Fetch assigned PRs
 	g.Go(func() error {
+		startSource("assigned PRs")
 		prs, _, err := f.svc.AssignedPRs(gctx)
 		if err != nil {
 			if errors.Is(err, ghclient.ErrRateLimited) {
 				mu.Lock()
 				result.RateLimited = true
 				mu.Unlock()
-				updateProgress()
+				completeSource("assigned PRs")
 				return nil
 			}
-			updateProgress()
+			completeSource("assigned PRs")
 			return fmt.Errorf("assigned PRs: %w", err)
 		}
 		mu.Lock()
 		result.AssignedPRs = prs
 		mu.Unlock()
-		updateProgress()
+		completeSource("assigned PRs")
 		return nil
 	})
 
 	// Fetch orphaned contributions (if configured)
 	if len(opts.OrphanedRepos) > 0 {
 		g.Go(func() error {
+			startSource("orphaned")
 			maxPerRepo := opts.MaxItemsPerRepo
 			if maxPerRepo <= 0 {
 				maxPerRepo = 100
@@ -241,16 +256,16 @@ func (f *Fetcher) FetchAll(ctx context.Context, opts FetchOptions) (*FetchResult
 					mu.Lock()
 					result.RateLimited = true
 					mu.Unlock()
-					updateProgress()
+					completeSource("orphaned")
 					return nil
 				}
-				updateProgress()
+				completeSource("orphaned")
 				return fmt.Errorf("orphaned contributions: %w", err)
 			}
 			mu.Lock()
 			result.Orphaned = orphaned
 			mu.Unlock()
-			updateProgress()
+			completeSource("orphaned")
 			return nil
 		})
 	}
