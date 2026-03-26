@@ -111,46 +111,46 @@ const (
 
 // ListModel is the Bubble Tea model for the interactive notification list
 type ListModel struct {
-	items             []triage.PrioritizedItem
-	queueItems        []triage.PrioritizedItem // Queue items (excluding orphaned and assigned)
-	orphanedItems     []triage.PrioritizedItem // Only orphaned items
-	assignedItems     []triage.PrioritizedItem // Items assigned to current user
-	blockedItems      []triage.PrioritizedItem // Items with "blocked" label
-	dependabotItems   []triage.PrioritizedItem // PRs authored by dependabot
-	activePane        pane                     // Which pane is focused
-	queueCursor       int                      // Cursor for queue pane
-	orphanedCursor    int                      // Cursor for orphaned pane
-	assignedCursor    int                      // Cursor for assigned pane
-	blockedCursor     int                      // Cursor for blocked pane
-	dependabotCursor  int                      // Cursor for dependabot pane
-	showDone          bool                     // Whether to show done items instead of active
+	items            []triage.PrioritizedItem
+	queueItems       []triage.PrioritizedItem // Queue items (excluding orphaned and assigned)
+	orphanedItems    []triage.PrioritizedItem // Only orphaned items
+	assignedItems    []triage.PrioritizedItem // Items assigned to current user
+	blockedItems     []triage.PrioritizedItem // Items with "blocked" label
+	dependabotItems  []triage.PrioritizedItem // PRs authored by dependabot
+	activePane       pane                     // Which pane is focused
+	queueCursor      int                      // Cursor for queue pane
+	orphanedCursor   int                      // Cursor for orphaned pane
+	assignedCursor   int                      // Cursor for assigned pane
+	blockedCursor    int                      // Cursor for blocked pane
+	dependabotCursor int                      // Cursor for dependabot pane
+	showDone         bool                     // Whether to show done items instead of active
 
 	// Done (resolved) items per pane
-	queueDoneItems     []triage.PrioritizedItem
-	orphanedDoneItems  []triage.PrioritizedItem
-	assignedDoneItems  []triage.PrioritizedItem
-	blockedDoneItems   []triage.PrioritizedItem
+	queueDoneItems      []triage.PrioritizedItem
+	orphanedDoneItems   []triage.PrioritizedItem
+	assignedDoneItems   []triage.PrioritizedItem
+	blockedDoneItems    []triage.PrioritizedItem
 	dependabotDoneItems []triage.PrioritizedItem
 
 	// Cursors for done view per pane
-	queueDoneCursor     int
-	orphanedDoneCursor  int
-	assignedDoneCursor  int
-	blockedDoneCursor   int
+	queueDoneCursor      int
+	orphanedDoneCursor   int
+	assignedDoneCursor   int
+	blockedDoneCursor    int
 	dependabotDoneCursor int
-	resolved          *resolved.Store
-	windowWidth       int
-	windowHeight      int
-	statusMsg         string
-	statusTime        time.Time
-	quitting          bool
-	hotTopicThreshold int
-	prSizeXS          int
-	prSizeS           int
-	prSizeM           int
-	prSizeL           int
-	currentUser       string
-	typeFilter        typeFilter // Global filter: all, PRs only, or issues only
+	resolved             *resolved.Store
+	windowWidth          int
+	windowHeight         int
+	statusMsg            string
+	statusTime           time.Time
+	quitting             bool
+	hotTopicThreshold    int
+	prSizeXS             int
+	prSizeS              int
+	prSizeM              int
+	prSizeL              int
+	currentUser          string
+	typeFilter           typeFilter // Global filter: all, PRs only, or issues only
 
 	// Sort state per pane
 	queueSortColumn      SortColumn

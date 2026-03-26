@@ -288,17 +288,11 @@ func buildFetchOptions(cfg *config.Config) service.FetchOptions {
 	}
 
 	return service.FetchOptions{
-<<<<<<< HEAD
 		OrphanedRepos:            orphanedRepos,
 		StaleDays:                staleDays,
 		ConsecutiveComments:      consecutiveComments,
 		IncludeReadNotifications: cfg.IncludeReadNotifications,
-=======
-		OrphanedRepos:       orphanedRepos,
-		StaleDays:           staleDays,
-		ConsecutiveComments: consecutiveComments,
-		MaxItemsPerRepo:     maxItemsPerRepo,
->>>>>>> main
+		MaxItemsPerRepo:          maxItemsPerRepo,
 	}
 }
 

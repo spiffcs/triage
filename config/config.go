@@ -11,12 +11,12 @@ import (
 
 // Config represents the application configuration
 type Config struct {
-	DefaultFormat             string    `yaml:"default_format,omitempty"`
-	ExcludeRepos              []string  `yaml:"exclude_repos,omitempty"`
-	ExcludeAuthors            []string  `yaml:"exclude_authors,omitempty"`
-	QuickWinLabels            []string  `yaml:"quick_win_labels,omitempty"`
-	BlockedLabels             *[]string `yaml:"blocked_labels,omitempty"`
-	IncludeReadNotifications  bool      `yaml:"include_read_notifications,omitempty"`
+	DefaultFormat            string    `yaml:"default_format,omitempty"`
+	ExcludeRepos             []string  `yaml:"exclude_repos,omitempty"`
+	ExcludeAuthors           []string  `yaml:"exclude_authors,omitempty"`
+	QuickWinLabels           []string  `yaml:"quick_win_labels,omitempty"`
+	BlockedLabels            *[]string `yaml:"blocked_labels,omitempty"`
+	IncludeReadNotifications bool      `yaml:"include_read_notifications,omitempty"`
 
 	// Top-level config sections
 	BaseScores *BaseScoreOverrides `yaml:"base_scores,omitempty"`
