@@ -123,6 +123,21 @@ type ListModel struct {
 	assignedCursor    int                      // Cursor for assigned pane
 	blockedCursor     int                      // Cursor for blocked pane
 	dependabotCursor  int                      // Cursor for dependabot pane
+	showDone          bool                     // Whether to show done items instead of active
+
+	// Done (resolved) items per pane
+	queueDoneItems     []triage.PrioritizedItem
+	orphanedDoneItems  []triage.PrioritizedItem
+	assignedDoneItems  []triage.PrioritizedItem
+	blockedDoneItems   []triage.PrioritizedItem
+	dependabotDoneItems []triage.PrioritizedItem
+
+	// Cursors for done view per pane
+	queueDoneCursor     int
+	orphanedDoneCursor  int
+	assignedDoneCursor  int
+	blockedDoneCursor   int
+	dependabotDoneCursor int
 	resolved          *resolved.Store
 	windowWidth       int
 	windowHeight      int
@@ -213,35 +228,66 @@ func NewListModel(items []triage.PrioritizedItem, store *resolved.Store, weights
 	return m
 }
 
-// splitItems separates items into queue, orphaned, assigned, blocked, and dependabot lists
+// splitItems separates items into queue, orphaned, assigned, blocked, and dependabot lists.
+// Items are further split into active and done (resolved) lists based on the resolved store.
 func (m *ListModel) splitItems() {
 	m.queueItems = nil
 	m.orphanedItems = nil
 	m.assignedItems = nil
 	m.blockedItems = nil
 	m.dependabotItems = nil
+	m.queueDoneItems = nil
+	m.orphanedDoneItems = nil
+	m.assignedDoneItems = nil
+	m.blockedDoneItems = nil
+	m.dependabotDoneItems = nil
+
 	for _, item := range m.items {
+		resolved := m.resolved != nil && !m.resolved.ShouldShow(item.ID, item.UpdatedAt)
+
 		// Check for blocked label AND assigned to current user - blocked items don't go to other panes
 		if m.hasBlockedLabel(item) && m.isAssignedToCurrentUser(item) {
-			m.blockedItems = append(m.blockedItems, item)
+			if resolved {
+				m.blockedDoneItems = append(m.blockedDoneItems, item)
+			} else {
+				m.blockedItems = append(m.blockedItems, item)
+			}
 			continue
 		}
 		// Dependabot PRs get their own pane
 		if isDependabot(item) {
-			m.dependabotItems = append(m.dependabotItems, item)
+			if resolved {
+				m.dependabotDoneItems = append(m.dependabotDoneItems, item)
+			} else {
+				m.dependabotItems = append(m.dependabotItems, item)
+			}
 			continue
 		}
 		// Check assignment - assigned items never go to orphaned
 		if m.isAssignedToCurrentUser(item) {
-			m.assignedItems = append(m.assignedItems, item)
+			if resolved {
+				m.assignedDoneItems = append(m.assignedDoneItems, item)
+			} else {
+				m.assignedItems = append(m.assignedItems, item)
+			}
 		} else if m.hasAnyAssignee(item) {
-			// Assigned to someone else - goes to queue (no longer orphaned)
-			m.queueItems = append(m.queueItems, item)
+			if resolved {
+				m.queueDoneItems = append(m.queueDoneItems, item)
+			} else {
+				m.queueItems = append(m.queueItems, item)
+			}
 		} else if item.Reason == model.ReasonOrphaned {
-			// Only truly unassigned items with orphaned reason go here
-			m.orphanedItems = append(m.orphanedItems, item)
+			if resolved {
+				m.orphanedDoneItems = append(m.orphanedDoneItems, item)
+			} else {
+				m.orphanedItems = append(m.orphanedItems, item)
+			}
 		} else {
-			m.queueItems = append(m.queueItems, item)
+			if resolved {
+				m.queueDoneItems = append(m.queueDoneItems, item)
+			} else {
+				m.queueItems = append(m.queueItems, item)
+			}
 		}
 	}
 	// Sort all lists based on configured column and direction
@@ -824,17 +870,32 @@ func itemIsPR(item triage.PrioritizedItem) bool {
 // activeItems returns the items for the active pane, filtered by the current type filter
 func (m *ListModel) activeItems() []triage.PrioritizedItem {
 	var items []triage.PrioritizedItem
-	switch m.activePane {
-	case paneOrphaned:
-		items = m.orphanedItems
-	case paneAssigned:
-		items = m.assignedItems
-	case paneBlocked:
-		items = m.blockedItems
-	case paneDependabot:
-		items = m.dependabotItems
-	default:
-		items = m.queueItems
+	if m.showDone {
+		switch m.activePane {
+		case paneOrphaned:
+			items = m.orphanedDoneItems
+		case paneAssigned:
+			items = m.assignedDoneItems
+		case paneBlocked:
+			items = m.blockedDoneItems
+		case paneDependabot:
+			items = m.dependabotDoneItems
+		default:
+			items = m.queueDoneItems
+		}
+	} else {
+		switch m.activePane {
+		case paneOrphaned:
+			items = m.orphanedItems
+		case paneAssigned:
+			items = m.assignedItems
+		case paneBlocked:
+			items = m.blockedItems
+		case paneDependabot:
+			items = m.dependabotItems
+		default:
+			items = m.queueItems
+		}
 	}
 
 	if m.typeFilter == typeFilterAll {
@@ -855,6 +916,20 @@ func (m *ListModel) activeItems() []triage.PrioritizedItem {
 
 // activeCursor returns the cursor position for the active pane
 func (m *ListModel) activeCursor() int {
+	if m.showDone {
+		switch m.activePane {
+		case paneOrphaned:
+			return m.orphanedDoneCursor
+		case paneAssigned:
+			return m.assignedDoneCursor
+		case paneBlocked:
+			return m.blockedDoneCursor
+		case paneDependabot:
+			return m.dependabotDoneCursor
+		default:
+			return m.queueDoneCursor
+		}
+	}
 	switch m.activePane {
 	case paneOrphaned:
 		return m.orphanedCursor
@@ -871,6 +946,21 @@ func (m *ListModel) activeCursor() int {
 
 // setActiveCursor sets the cursor position for the active pane
 func (m *ListModel) setActiveCursor(pos int) {
+	if m.showDone {
+		switch m.activePane {
+		case paneOrphaned:
+			m.orphanedDoneCursor = pos
+		case paneAssigned:
+			m.assignedDoneCursor = pos
+		case paneBlocked:
+			m.blockedDoneCursor = pos
+		case paneDependabot:
+			m.dependabotDoneCursor = pos
+		default:
+			m.queueDoneCursor = pos
+		}
+		return
+	}
 	switch m.activePane {
 	case paneOrphaned:
 		m.orphanedCursor = pos
@@ -979,7 +1069,13 @@ func (m ListModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case "d":
+		if m.showDone {
+			return m.undoDone()
+		}
 		return m.markDone()
+
+	case "u":
+		return m.toggleDoneView()
 
 	case "enter":
 		return m.openInBrowser()
@@ -1034,26 +1130,31 @@ func (m ListModel) markDone() (tea.Model, tea.Cmd) {
 	switch m.activePane {
 	case paneOrphaned:
 		m.orphanedItems = removeByID(m.orphanedItems, n.ID)
+		m.orphanedDoneItems = append(m.orphanedDoneItems, item)
 		if m.orphanedCursor >= len(m.orphanedItems) && m.orphanedCursor > 0 {
 			m.orphanedCursor = len(m.orphanedItems) - 1
 		}
 	case paneAssigned:
 		m.assignedItems = removeByID(m.assignedItems, n.ID)
+		m.assignedDoneItems = append(m.assignedDoneItems, item)
 		if m.assignedCursor >= len(m.assignedItems) && m.assignedCursor > 0 {
 			m.assignedCursor = len(m.assignedItems) - 1
 		}
 	case paneBlocked:
 		m.blockedItems = removeByID(m.blockedItems, n.ID)
+		m.blockedDoneItems = append(m.blockedDoneItems, item)
 		if m.blockedCursor >= len(m.blockedItems) && m.blockedCursor > 0 {
 			m.blockedCursor = len(m.blockedItems) - 1
 		}
 	case paneDependabot:
 		m.dependabotItems = removeByID(m.dependabotItems, n.ID)
+		m.dependabotDoneItems = append(m.dependabotDoneItems, item)
 		if m.dependabotCursor >= len(m.dependabotItems) && m.dependabotCursor > 0 {
 			m.dependabotCursor = len(m.dependabotItems) - 1
 		}
 	default:
 		m.queueItems = removeByID(m.queueItems, n.ID)
+		m.queueDoneItems = append(m.queueDoneItems, item)
 		if m.queueCursor >= len(m.queueItems) && m.queueCursor > 0 {
 			m.queueCursor = len(m.queueItems) - 1
 		}
@@ -1066,6 +1167,90 @@ func (m ListModel) markDone() (tea.Model, tea.Cmd) {
 	}
 
 	m.statusMsg = "Marked as done"
+	m.statusTime = time.Now()
+
+	return m, clearStatusAfter(2 * time.Second)
+}
+
+// toggleDoneView toggles showing done items for the current pane
+func (m ListModel) toggleDoneView() (tea.Model, tea.Cmd) {
+	m.showDone = !m.showDone
+	return m, nil
+}
+
+// undoDone restores a done item back to the active list
+func (m ListModel) undoDone() (tea.Model, tea.Cmd) {
+	items := m.activeItems()
+	cursor := m.activeCursor()
+
+	if len(items) == 0 {
+		return m, nil
+	}
+
+	item := items[cursor]
+	n := item.Item
+
+	if err := m.resolved.Unresolve(n.ID); err != nil {
+		m.statusMsg = "Error: " + err.Error()
+		m.statusTime = time.Now()
+		return m, clearStatusAfter(2 * time.Second)
+	}
+
+	removeByID := func(items []triage.PrioritizedItem, id string) []triage.PrioritizedItem {
+		for i, it := range items {
+			if it.ID == id {
+				return append(items[:i], items[i+1:]...)
+			}
+		}
+		return items
+	}
+
+	// Remove from done list, add back to active list
+	switch m.activePane {
+	case paneOrphaned:
+		m.orphanedDoneItems = removeByID(m.orphanedDoneItems, n.ID)
+		m.orphanedItems = append(m.orphanedItems, item)
+		m.sortOrphanedItems()
+		if m.orphanedDoneCursor >= len(m.orphanedDoneItems) && m.orphanedDoneCursor > 0 {
+			m.orphanedDoneCursor = len(m.orphanedDoneItems) - 1
+		}
+	case paneAssigned:
+		m.assignedDoneItems = removeByID(m.assignedDoneItems, n.ID)
+		m.assignedItems = append(m.assignedItems, item)
+		m.sortAssignedItems()
+		if m.assignedDoneCursor >= len(m.assignedDoneItems) && m.assignedDoneCursor > 0 {
+			m.assignedDoneCursor = len(m.assignedDoneItems) - 1
+		}
+	case paneBlocked:
+		m.blockedDoneItems = removeByID(m.blockedDoneItems, n.ID)
+		m.blockedItems = append(m.blockedItems, item)
+		m.sortBlockedItems()
+		if m.blockedDoneCursor >= len(m.blockedDoneItems) && m.blockedDoneCursor > 0 {
+			m.blockedDoneCursor = len(m.blockedDoneItems) - 1
+		}
+	case paneDependabot:
+		m.dependabotDoneItems = removeByID(m.dependabotDoneItems, n.ID)
+		m.dependabotItems = append(m.dependabotItems, item)
+		m.sortDependabotItems()
+		if m.dependabotDoneCursor >= len(m.dependabotDoneItems) && m.dependabotDoneCursor > 0 {
+			m.dependabotDoneCursor = len(m.dependabotDoneItems) - 1
+		}
+	default:
+		m.queueDoneItems = removeByID(m.queueDoneItems, n.ID)
+		m.queueItems = append(m.queueItems, item)
+		m.sortQueueItems()
+		if m.queueDoneCursor >= len(m.queueDoneItems) && m.queueDoneCursor > 0 {
+			m.queueDoneCursor = len(m.queueDoneItems) - 1
+		}
+	}
+
+	// Clamp cursor for the filtered view
+	filtered := m.activeItems()
+	if cursor >= len(filtered) && cursor > 0 {
+		m.setActiveCursor(len(filtered) - 1)
+	}
+
+	m.statusMsg = "Restored"
 	m.statusTime = time.Now()
 
 	return m, clearStatusAfter(2 * time.Second)

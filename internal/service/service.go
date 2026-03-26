@@ -218,7 +218,15 @@ func (s *ItemService) AssignedPRs(ctx context.Context) ([]model.Item, bool, erro
 
 // UnreadItems fetches items with incremental caching.
 // It returns cached items merged with any new ones since the last fetch.
-func (s *ItemService) UnreadItems(ctx context.Context) (*ItemFetchResult, error) {
+// listNotifications calls the appropriate notification fetcher based on includeRead.
+func (s *ItemService) listNotifications(ctx context.Context, since time.Time, includeRead bool) ([]model.Item, error) {
+	if includeRead {
+		return s.fetcher.ListAllNotifications(ctx, since)
+	}
+	return s.fetcher.ListUnreadNotifications(ctx, since)
+}
+
+func (s *ItemService) UnreadItems(ctx context.Context, includeRead bool) (*ItemFetchResult, error) {
 	result := &ItemFetchResult{}
 	opts := cache.ListOptions{SinceTime: s.since}
 
@@ -239,7 +247,7 @@ func (s *ItemService) UnreadItems(ctx context.Context) (*ItemFetchResult, error)
 	if s.cache != nil {
 		if entry, ok := s.cache.GetList(s.currentUser, cache.ListTypeNotifications, opts); ok {
 			// Fetch only NEW notifications since last fetch
-			newItems, err := s.fetcher.ListUnreadNotifications(ctx, entry.LastFetchTime)
+			newItems, err := s.listNotifications(ctx, entry.LastFetchTime, includeRead)
 			if err != nil {
 				// Return cached on error
 				log.Debug("failed to fetch new items, using cache", "error", err)
@@ -250,7 +258,7 @@ func (s *ItemService) UnreadItems(ctx context.Context) (*ItemFetchResult, error)
 			}
 
 			// Merge: new items replace old ones by ID
-			merged := mergeCachedItems(entry.Items, newItems, s.since)
+			merged := mergeCachedItems(entry.Items, newItems, s.since, includeRead)
 			result.Items = merged
 			result.FromCache = true
 			result.NewCount = len(newItems)
@@ -275,7 +283,7 @@ func (s *ItemService) UnreadItems(ctx context.Context) (*ItemFetchResult, error)
 	}
 
 	// No cache - full fetch
-	items, err := s.fetcher.ListUnreadNotifications(ctx, s.since)
+	items, err := s.listNotifications(ctx, s.since, includeRead)
 	if err != nil {
 		return nil, err
 	}
@@ -482,9 +490,9 @@ func buildCacheKey(item *model.Item) (cache.Key, bool) {
 }
 
 // mergeCachedItems merges cached and fresh items.
-// Fresh items replace cached ones by ID. Only unread items
-// within the since timeframe are kept.
-func mergeCachedItems(cached, fresh []model.Item, since time.Time) []model.Item {
+// Fresh items replace cached ones by ID. When includeRead is false,
+// only unread items are kept. Items outside the since timeframe are always filtered.
+func mergeCachedItems(cached, fresh []model.Item, since time.Time, includeRead bool) []model.Item {
 	byID := make(map[string]model.Item)
 
 	// Add cached items
@@ -500,8 +508,8 @@ func mergeCachedItems(cached, fresh []model.Item, since time.Time) []model.Item 
 	// Build result, filtering appropriately
 	result := make([]model.Item, 0, len(byID))
 	for _, n := range byID {
-		// Only keep unread items
-		if !n.Unread {
+		// Only keep unread items unless includeRead is set
+		if !includeRead && !n.Unread {
 			continue
 		}
 		// Only keep items within the since timeframe

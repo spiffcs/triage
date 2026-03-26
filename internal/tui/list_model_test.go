@@ -183,3 +183,132 @@ func TestViewHeightConstantAcrossSortAndClear(t *testing.T) {
 			beforeLines, afterSortLines, afterClearLines)
 	}
 }
+
+func TestToggleDoneView(t *testing.T) {
+	store := newTestStore(t)
+	now := time.Now()
+	items := []triage.PrioritizedItem{
+		makeItem("pr-1", model.ItemTypePullRequest, now),
+		makeItem("pr-2", model.ItemTypePullRequest, now.Add(-1*time.Hour)),
+	}
+
+	m := NewListModel(items, store, config.ScoreWeights{}, "testuser")
+
+	if len(m.assignedItems) != 2 {
+		t.Fatalf("expected 2 assigned items, got %d", len(m.assignedItems))
+	}
+
+	// Mark pr-2 as done
+	m.assignedCursor = 1
+	result, _ := m.markDone()
+	m = result.(ListModel)
+
+	if len(m.assignedItems) != 1 {
+		t.Fatalf("expected 1 active item after mark done, got %d", len(m.assignedItems))
+	}
+	if len(m.assignedDoneItems) != 1 {
+		t.Fatalf("expected 1 done item after mark done, got %d", len(m.assignedDoneItems))
+	}
+
+	// Toggle to done view
+	result, _ = m.toggleDoneView()
+	m = result.(ListModel)
+
+	if !m.showDone {
+		t.Fatal("expected showDone to be true after toggle")
+	}
+
+	// activeItems should return done items
+	doneItems := m.activeItems()
+	if len(doneItems) != 1 {
+		t.Fatalf("expected 1 done item in done view, got %d", len(doneItems))
+	}
+	if doneItems[0].Item.ID != "pr-2" {
+		t.Errorf("expected done item to be pr-2, got %s", doneItems[0].Item.ID)
+	}
+
+	// Toggle back
+	result, _ = m.toggleDoneView()
+	m = result.(ListModel)
+
+	if m.showDone {
+		t.Fatal("expected showDone to be false after second toggle")
+	}
+	activeItems := m.activeItems()
+	if len(activeItems) != 1 {
+		t.Fatalf("expected 1 active item after toggle back, got %d", len(activeItems))
+	}
+}
+
+func TestUndoDone(t *testing.T) {
+	store := newTestStore(t)
+	now := time.Now()
+	items := []triage.PrioritizedItem{
+		makeItem("pr-1", model.ItemTypePullRequest, now),
+		makeItem("pr-2", model.ItemTypePullRequest, now.Add(-1*time.Hour)),
+	}
+
+	m := NewListModel(items, store, config.ScoreWeights{}, "testuser")
+
+	// Mark pr-1 as done
+	m.assignedCursor = 0
+	result, _ := m.markDone()
+	m = result.(ListModel)
+
+	if len(m.assignedItems) != 1 {
+		t.Fatalf("expected 1 active item, got %d", len(m.assignedItems))
+	}
+	if len(m.assignedDoneItems) != 1 {
+		t.Fatalf("expected 1 done item, got %d", len(m.assignedDoneItems))
+	}
+
+	// Toggle to done view
+	result, _ = m.toggleDoneView()
+	m = result.(ListModel)
+
+	// Undo the done (restore pr-1)
+	m.assignedDoneCursor = 0
+	result, _ = m.undoDone()
+	m = result.(ListModel)
+
+	if len(m.assignedDoneItems) != 0 {
+		t.Fatalf("expected 0 done items after undo, got %d", len(m.assignedDoneItems))
+	}
+	if len(m.assignedItems) != 2 {
+		t.Fatalf("expected 2 active items after undo, got %d", len(m.assignedItems))
+	}
+
+	// Verify the item is no longer resolved in the store
+	if store.IsResolved("pr-1") {
+		t.Error("pr-1 should no longer be resolved after undo")
+	}
+}
+
+func TestSplitItemsWithResolvedItems(t *testing.T) {
+	store := newTestStore(t)
+	now := time.Now()
+
+	// Pre-resolve pr-2
+	if err := store.Resolve("pr-2", now.Add(-1*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+
+	items := []triage.PrioritizedItem{
+		makeItem("pr-1", model.ItemTypePullRequest, now),
+		makeItem("pr-2", model.ItemTypePullRequest, now.Add(-1*time.Hour)),
+		makeItem("pr-3", model.ItemTypePullRequest, now.Add(-2*time.Hour)),
+	}
+
+	m := NewListModel(items, store, config.ScoreWeights{}, "testuser")
+
+	// pr-2 was resolved, so it should be in the done list
+	if len(m.assignedItems) != 2 {
+		t.Fatalf("expected 2 active items, got %d", len(m.assignedItems))
+	}
+	if len(m.assignedDoneItems) != 1 {
+		t.Fatalf("expected 1 done item, got %d", len(m.assignedDoneItems))
+	}
+	if m.assignedDoneItems[0].Item.ID != "pr-2" {
+		t.Errorf("expected done item to be pr-2, got %s", m.assignedDoneItems[0].Item.ID)
+	}
+}

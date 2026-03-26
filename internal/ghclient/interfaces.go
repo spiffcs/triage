@@ -17,6 +17,7 @@ type GitHubFetcher interface {
 
 	// Notifications
 	ListUnreadNotifications(ctx context.Context, since time.Time) ([]model.Item, error)
+	ListAllNotifications(ctx context.Context, since time.Time) ([]model.Item, error)
 
 	// Search operations
 	ListReviewRequestedPRs(ctx context.Context, username string) ([]model.Item, error)

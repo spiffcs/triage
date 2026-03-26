@@ -207,20 +207,24 @@ func renderListView(m ListModel) string {
 	b.WriteString("\n\n")
 
 	if len(items) == 0 {
-		switch m.activePane {
-		case paneOrphaned:
-			b.WriteString(m.renderOrphanedEmptyState())
-		case paneAssigned:
-			b.WriteString(renderAssignedEmptyState())
-		case paneBlocked:
-			b.WriteString(renderBlockedEmptyState())
-		case paneDependabot:
-			b.WriteString(renderDependabotEmptyState())
-		default:
-			b.WriteString(renderEmptyState())
+		if m.showDone {
+			b.WriteString(renderDoneEmptyState())
+		} else {
+			switch m.activePane {
+			case paneOrphaned:
+				b.WriteString(m.renderOrphanedEmptyState())
+			case paneAssigned:
+				b.WriteString(renderAssignedEmptyState())
+			case paneBlocked:
+				b.WriteString(renderBlockedEmptyState())
+			case paneDependabot:
+				b.WriteString(renderDependabotEmptyState())
+			default:
+				b.WriteString(renderEmptyState())
+			}
 		}
 		b.WriteString("\n\n")
-		b.WriteString(renderHelp(m.TypeFilterLabel()))
+		b.WriteString(renderHelp(m.TypeFilterLabel(), m.showDone))
 		return b.String()
 	}
 
@@ -252,7 +256,7 @@ func renderListView(m ListModel) string {
 
 	// Render footer
 	b.WriteString("\n")
-	b.WriteString(renderHelp(m.TypeFilterLabel()))
+	b.WriteString(renderHelp(m.TypeFilterLabel(), m.showDone))
 
 	// Status message (always render the line to keep view height constant)
 	b.WriteString("\n")
@@ -286,10 +290,14 @@ func renderTabBar(m ListModel) string {
 
 	var parts []string
 	for _, t := range tabs {
+		label := t.label
+		if t.pane == m.activePane && m.showDone {
+			label = strings.Replace(label, "]", " DONE ]", 1)
+		}
 		if t.pane == m.activePane {
-			parts = append(parts, tabActiveStyle.Render(t.label))
+			parts = append(parts, tabActiveStyle.Render(label))
 		} else {
-			parts = append(parts, tabInactiveStyle.Render(t.label))
+			parts = append(parts, tabInactiveStyle.Render(label))
 		}
 	}
 
@@ -324,6 +332,11 @@ func renderDependabotEmptyState() string {
 // renderBlockedEmptyState renders the empty state message for the blocked pane
 func renderBlockedEmptyState() string {
 	return listEmptyStyle.Render("No blocked items.\nItems with the 'blocked' label will appear here.")
+}
+
+// renderDoneEmptyState renders the empty state message when viewing done items
+func renderDoneEmptyState() string {
+	return listEmptyStyle.Render("No done items.\nPress u to go back.")
 }
 
 // calculateScrollWindow determines which items to show based on cursor position
@@ -754,8 +767,11 @@ func renderAge(d time.Duration, selected bool) (string, int) {
 }
 
 // renderHelp renders the help text with the current type filter label
-func renderHelp(filterLabel string) string {
-	return listHelpStyle.Render("Tab/1-5: panes   j/k: nav   s/S: sort   r: reset   t: " + filterLabel + "   d: done   enter: open   q: quit")
+func renderHelp(filterLabel string, showDone bool) string {
+	if showDone {
+		return listHelpStyle.Render("Tab/1-5: panes   j/k: nav   s/S: sort   r: reset   t: " + filterLabel + "   d: restore   u: back   enter: open   q: quit")
+	}
+	return listHelpStyle.Render("Tab/1-5: panes   j/k: nav   s/S: sort   r: reset   t: " + filterLabel + "   d: done   u: show done   enter: open   q: quit")
 }
 
 // renderEmptyState renders the empty state message

@@ -28,13 +28,6 @@ const (
 	// tuiUpdateInterval is the minimum time between TUI progress updates.
 	tuiUpdateInterval = 50 * time.Millisecond
 
-	// progressSimulationInterval is how often simulated progress ticks.
-	progressSimulationInterval = 100 * time.Millisecond
-
-	// progressSimulationIncrement is the percentage (as a fraction) to
-	// increment simulated progress per tick.
-	progressSimulationIncrement = 0.02
-
 	// logThrottlePercent is the interval (in percent) at which progress
 	// logs are emitted when not using the TUI.
 	logThrottlePercent = 5
@@ -173,11 +166,15 @@ func runList(cmd *cobra.Command, opts *Options) error {
 	}
 
 	// Fetch
-	onProgress := func(completed, total int) {
+	onProgress := func(completed, total int, source string) {
 		progress := float64(completed) / float64(total)
-		msg := fmt.Sprintf("%s (%d/%d sources)", opts.Since, completed, total)
-		if completed == 0 {
+		var msg string
+		if completed == 0 && source == "" {
 			msg = fmt.Sprintf("for the past %s (0/%d sources)", opts.Since, total)
+		} else if source != "" {
+			msg = fmt.Sprintf("%s (%d/%d sources)", source, completed, total)
+		} else {
+			msg = fmt.Sprintf("(%d/%d sources)", completed, total)
 		}
 		sendTaskEvent(rt.events, tui.TaskFetch, tui.StatusRunning,
 			tui.WithProgress(progress), tui.WithMessage(msg))
@@ -197,7 +194,7 @@ func runList(cmd *cobra.Command, opts *Options) error {
 	runEnrichment(ctx, svc, result, rt)
 
 	// Process
-	items := processResults(result, cfg, svc.CurrentUser(), resolvedStore, rt.events)
+	items := processResults(result, cfg, svc.CurrentUser(), rt.events)
 	if len(items) == 0 {
 		rt.close()
 		fmt.Println("No unread notifications, pending reviews, or open PRs found.")
@@ -290,9 +287,10 @@ func buildFetchOptions(cfg *config.Config) service.FetchOptions {
 	}
 
 	return service.FetchOptions{
-		OrphanedRepos:       orphanedRepos,
-		StaleDays:           staleDays,
-		ConsecutiveComments: consecutiveComments,
+		OrphanedRepos:            orphanedRepos,
+		StaleDays:                staleDays,
+		ConsecutiveComments:      consecutiveComments,
+		IncludeReadNotifications: cfg.IncludeReadNotifications,
 	}
 }
 
@@ -316,7 +314,7 @@ func runEnrichment(ctx context.Context, svc *service.ItemService, result *servic
 }
 
 // processResults merges, prioritizes, and filters the fetched data.
-func processResults(result *service.FetchResult, cfg *config.Config, currentUser string, resolvedStore *resolved.Store, events chan tui.Event) []triage.PrioritizedItem {
+func processResults(result *service.FetchResult, cfg *config.Config, currentUser string, events chan tui.Event) []triage.PrioritizedItem {
 	// Merge all additional data sources into a single deduplicated list
 	merged, mergeStats := result.Merge()
 	if mergeStats.ReviewPRsAdded > 0 {
@@ -357,7 +355,7 @@ func processResults(result *service.FetchResult, cfg *config.Config, currentUser
 
 	engine := triage.NewEngine(currentUser, weights, quickWinLabels)
 	items := engine.Prioritize(merged)
-	items = applyFilters(items, cfg, resolvedStore)
+	items = applyFilters(items, cfg)
 
 	sendTaskEvent(events, tui.TaskProcess, tui.StatusComplete, tui.WithCount(len(items)))
 	return items
@@ -375,6 +373,11 @@ func renderOutput(items []triage.PrioritizedItem, opts *Options, cfg *config.Con
 		weights := cfg.GetScoreWeights()
 		blockedLabels := cfg.GetBlockedLabels()
 		return tui.RunListUI(items, resolvedStore, weights, currentUser, tui.WithConfig(cfg), tui.WithBlockedLabels(blockedLabels))
+	}
+
+	// Filter out resolved items for non-TUI output (TUI handles this internally)
+	if resolvedStore != nil {
+		items = triage.FilterResolved(items, resolvedStore)
 	}
 
 	weights := cfg.GetScoreWeights()
@@ -397,10 +400,6 @@ func enrichItems(
 	var lastTUIUpdate int64 = 0 // Unix nanoseconds
 	tuiThrottle := int64(tuiUpdateInterval)
 
-	// Simulated progress state for smooth TUI updates between batch completions
-	var simulatedProgress float64
-	var simulatedMu sync.Mutex
-
 	onProgress := func(delta int, _ int) {
 		completed := atomic.AddInt64(totalCompleted, int64(delta))
 		cacheHits := atomic.LoadInt64(totalCacheHits)
@@ -412,12 +411,6 @@ func enrichItems(
 			if now-lastUpdate >= tuiThrottle || completed == int64(totalToEnrich) {
 				if atomic.CompareAndSwapInt64(&lastTUIUpdate, lastUpdate, now) {
 					progress := float64(completed) / float64(totalToEnrich)
-					// Update simulated progress to match real progress
-					simulatedMu.Lock()
-					if progress > simulatedProgress {
-						simulatedProgress = progress
-					}
-					simulatedMu.Unlock()
 
 					msg := fmt.Sprintf("%d/%d", completed, totalToEnrich)
 					if cacheHits > 0 {
@@ -436,41 +429,6 @@ func enrichItems(
 				log.Progress("Enriching items: %d/%d (%d%%)...", completed, totalToEnrich, percent)
 			}
 		}
-	}
-
-	// Start progress simulation ticker for smooth TUI updates
-	simulationDone := make(chan struct{})
-	if useTUI {
-		go func() {
-			ticker := time.NewTicker(progressSimulationInterval)
-			defer ticker.Stop()
-			for {
-				select {
-				case <-simulationDone:
-					return
-				case <-ticker.C:
-					simulatedMu.Lock()
-					realProgress := float64(atomic.LoadInt64(totalCompleted)) / float64(totalToEnrich)
-					// Only simulate if we haven't caught up to real progress
-					if simulatedProgress < realProgress {
-						simulatedProgress = realProgress
-					} else if simulatedProgress < 0.95 {
-						// Increment slowly, capped at 95% to avoid jumping to 100% prematurely
-						simulatedProgress += progressSimulationIncrement
-						if simulatedProgress > 0.95 {
-							simulatedProgress = 0.95
-						}
-					}
-					progress := simulatedProgress
-					simulatedMu.Unlock()
-
-					// Send simulated progress update
-					sendTaskEvent(events, tui.TaskEnrich, tui.StatusRunning,
-						tui.WithProgress(progress),
-						tui.WithMessage("enriching..."))
-				}
-			}
-		}()
 	}
 
 	// Enrich all three sources concurrently
@@ -511,16 +469,13 @@ func enrichItems(
 
 	enrichWg.Wait()
 
-	// Stop the simulation ticker
-	close(simulationDone)
-
 	if !useTUI {
 		log.ProgressDone()
 	}
 }
 
 // applyFilters applies all configured filters to the items.
-func applyFilters(items []triage.PrioritizedItem, cfg *config.Config, resolvedStore *resolved.Store) []triage.PrioritizedItem {
+func applyFilters(items []triage.PrioritizedItem, cfg *config.Config) []triage.PrioritizedItem {
 	// Filter out merged and closed items by default
 	items = triage.FilterOutMerged(items)
 	items = triage.FilterOutClosed(items)
@@ -536,11 +491,6 @@ func applyFilters(items []triage.PrioritizedItem, cfg *config.Config, resolvedSt
 	// Filter out excluded repositories
 	if len(cfg.ExcludeRepos) > 0 {
 		items = triage.FilterByExcludedRepos(items, cfg.ExcludeRepos)
-	}
-
-	// Filter out resolved items (that haven't had new activity)
-	if resolvedStore != nil {
-		items = triage.FilterResolved(items, resolvedStore)
 	}
 
 	return items

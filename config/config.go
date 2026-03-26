@@ -11,11 +11,12 @@ import (
 
 // Config represents the application configuration
 type Config struct {
-	DefaultFormat  string    `yaml:"default_format,omitempty"`
-	ExcludeRepos   []string  `yaml:"exclude_repos,omitempty"`
-	ExcludeAuthors []string  `yaml:"exclude_authors,omitempty"`
-	QuickWinLabels []string  `yaml:"quick_win_labels,omitempty"`
-	BlockedLabels  *[]string `yaml:"blocked_labels,omitempty"`
+	DefaultFormat             string    `yaml:"default_format,omitempty"`
+	ExcludeRepos              []string  `yaml:"exclude_repos,omitempty"`
+	ExcludeAuthors            []string  `yaml:"exclude_authors,omitempty"`
+	QuickWinLabels            []string  `yaml:"quick_win_labels,omitempty"`
+	BlockedLabels             *[]string `yaml:"blocked_labels,omitempty"`
+	IncludeReadNotifications  bool      `yaml:"include_read_notifications,omitempty"`
 
 	// Top-level config sections
 	BaseScores *BaseScoreOverrides `yaml:"base_scores,omitempty"`
@@ -455,6 +456,9 @@ func mergeConfig(global, local *Config) *Config {
 		result.BlockedLabels = global.BlockedLabels
 	}
 
+	// Merge IncludeReadNotifications (local wins if true)
+	result.IncludeReadNotifications = local.IncludeReadNotifications || global.IncludeReadNotifications
+
 	// Merge pointer struct sections
 	result.BaseScores = mergePointerStruct(global.BaseScores, local.BaseScores)
 	result.Scoring = mergePointerStruct(global.Scoring, local.Scoring)
@@ -847,6 +851,11 @@ default_format: table
 # exclude_authors:
 #   - dependabot[bot]
 #   - renovate[bot]
+
+# Include read notifications (default: false)
+# When true, fetches all notifications including already-read ones.
+# Useful for seeing dependabot PRs you may have dismissed.
+# include_read_notifications: false
 
 # Blocked labels - items with these labels appear in the Blocked pane (optional)
 # Default: ["blocked"]. Set to empty list to disable the Blocked pane.
