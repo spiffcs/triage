@@ -43,11 +43,10 @@ type UIPreferences struct {
 
 // OrphanedConfig configures orphaned contribution detection
 type OrphanedConfig struct {
-	Enabled                   bool     `yaml:"enabled,omitempty"`
 	Repos                     []string `yaml:"repos,omitempty"`
 	StaleDays                 int      `yaml:"stale_days,omitempty"`                  // Default: 7
 	ConsecutiveAuthorComments int      `yaml:"consecutive_author_comments,omitempty"` // Default: 2
-	MaxItemsPerRepo           int      `yaml:"max_items_per_repo,omitempty"`          // Default: 50
+	MaxItemsPerRepo           int      `yaml:"max_items_per_repo,omitempty"`          // Default: 100
 }
 
 // BaseScoreOverrides allows customizing base scores for notification reasons
@@ -526,7 +525,6 @@ func mergeOrphanedConfig(global, local *OrphanedConfig) *OrphanedConfig {
 	result := &OrphanedConfig{}
 
 	if global != nil {
-		result.Enabled = global.Enabled
 		result.Repos = global.Repos
 		result.StaleDays = global.StaleDays
 		result.ConsecutiveAuthorComments = global.ConsecutiveAuthorComments
@@ -534,10 +532,6 @@ func mergeOrphanedConfig(global, local *OrphanedConfig) *OrphanedConfig {
 	}
 
 	if local != nil {
-		// Local enabled overrides global
-		if local.Enabled {
-			result.Enabled = local.Enabled
-		}
 		// Local repos replace global if non-empty
 		if len(local.Repos) > 0 {
 			result.Repos = local.Repos
@@ -555,7 +549,7 @@ func mergeOrphanedConfig(global, local *OrphanedConfig) *OrphanedConfig {
 	}
 
 	// Return nil if effectively empty
-	if !result.Enabled && len(result.Repos) == 0 && result.StaleDays == 0 &&
+	if len(result.Repos) == 0 && result.StaleDays == 0 &&
 		result.ConsecutiveAuthorComments == 0 && result.MaxItemsPerRepo == 0 {
 		return nil
 	}
@@ -791,7 +785,7 @@ func DefaultConfig() *Config {
 			Repos:                     []string{},
 			StaleDays:                 7,
 			ConsecutiveAuthorComments: 2,
-			MaxItemsPerRepo:           50,
+			MaxItemsPerRepo:           100,
 		},
 	}
 }
@@ -876,7 +870,7 @@ default_format: table
 #     - myorg/repo2
 #   stale_days: 7                       # Days without team response
 #   consecutive_author_comments: 2      # Consecutive unanswered comments
-#   max_items_per_repo: 50              # Limit per repository
+#   max_items_per_repo: 100             # Limit per repository
 
 # See README.md for full configuration options
 `

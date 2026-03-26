@@ -20,10 +20,17 @@ type ProgressFunc func(completed, total int, source string)
 
 // FetchOptions configures the fetch operation.
 type FetchOptions struct {
+<<<<<<< HEAD
 	OrphanedRepos              []string
 	StaleDays                  int
 	ConsecutiveComments        int
 	IncludeReadNotifications   bool
+=======
+	OrphanedRepos       []string
+	StaleDays           int
+	ConsecutiveComments int
+	MaxItemsPerRepo     int
+>>>>>>> main
 }
 
 // FetchResult contains all data fetched from GitHub.
@@ -238,12 +245,19 @@ func (f *Fetcher) FetchAll(ctx context.Context, opts FetchOptions) (*FetchResult
 	// Fetch orphaned contributions (if configured)
 	if len(opts.OrphanedRepos) > 0 {
 		g.Go(func() error {
+<<<<<<< HEAD
 			startSource("orphaned")
+=======
+			maxPerRepo := opts.MaxItemsPerRepo
+			if maxPerRepo <= 0 {
+				maxPerRepo = 100
+			}
+>>>>>>> main
 			searchOpts := ghclient.OrphanedSearchOptions{
 				Repos:                     opts.OrphanedRepos,
 				StaleDays:                 opts.StaleDays,
 				ConsecutiveAuthorComments: opts.ConsecutiveComments,
-				MaxPerRepo:                50,
+				MaxPerRepo:                maxPerRepo,
 			}
 			orphaned, _, err := f.svc.OrphanedContributions(gctx, searchOpts)
 			if err != nil {

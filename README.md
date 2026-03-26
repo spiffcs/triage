@@ -430,7 +430,7 @@ orphaned:
   # Detection thresholds
   stale_days: 7                      # Days without team response (default: 7)
   consecutive_author_comments: 2     # Consecutive unanswered comments (default: 2)
-  max_items_per_repo: 50             # Limit per repository (default: 50)
+  max_items_per_repo: 100            # Limit per repository (default: 100)
 ```
 
 With repos configured, orphaned contributions will appear in the Orphaned pane of the TUI (press `Tab` to switch panes).
