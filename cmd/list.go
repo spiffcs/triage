@@ -282,17 +282,19 @@ func initializeService(ctx context.Context, cfg *config.Config, sinceStr string,
 // buildFetchOptions constructs service.FetchOptions from config.
 func buildFetchOptions(cfg *config.Config) service.FetchOptions {
 	var orphanedRepos []string
-	var staleDays, consecutiveComments int
+	var staleDays, consecutiveComments, maxItemsPerRepo int
 	if cfg.Orphaned != nil {
 		orphanedRepos = cfg.Orphaned.Repos
 		staleDays = cfg.Orphaned.StaleDays
 		consecutiveComments = cfg.Orphaned.ConsecutiveAuthorComments
+		maxItemsPerRepo = cfg.Orphaned.MaxItemsPerRepo
 	}
 
 	return service.FetchOptions{
 		OrphanedRepos:       orphanedRepos,
 		StaleDays:           staleDays,
 		ConsecutiveComments: consecutiveComments,
+		MaxItemsPerRepo:     maxItemsPerRepo,
 	}
 }
 
