@@ -279,9 +279,9 @@ func renderTabBar(m ListModel) string {
 	tabs := []tab{
 		{paneAssigned, fmt.Sprintf("[ 1: Assigned (%d) %s%s ]", m.AssignedCount(), sortDir(m.AssignedSortDesc()), m.AssignedSortColumn())},
 		{paneBlocked, fmt.Sprintf("[ 2: Blocked (%d) %s%s ]", m.BlockedCount(), sortDir(m.BlockedSortDesc()), m.BlockedSortColumn())},
-		{paneQueue, fmt.Sprintf("[ 3: Queue (%d) %s%s ]", len(m.queueItems), sortDir(m.QueueSortDesc()), m.QueueSortColumn())},
+		{paneQueue, fmt.Sprintf("[ 3: Queue (%d) %s%s ]", m.filteredCount(m.queueItems), sortDir(m.QueueSortDesc()), m.QueueSortColumn())},
 		{paneDependabot, fmt.Sprintf("[ 4: Deps (%d) %s%s ]", m.DependabotCount(), sortDir(m.DependabotSortDesc()), m.DependabotSortColumn())},
-		{paneOrphaned, fmt.Sprintf("[ 5: Orphaned (%d) %s%s ]", len(m.orphanedItems), sortDir(m.OrphanedSortDesc()), m.OrphanedSortColumn())},
+		{paneOrphaned, fmt.Sprintf("[ 5: Orphaned (%d) %s%s ]", m.filteredCount(m.orphanedItems), sortDir(m.OrphanedSortDesc()), m.OrphanedSortColumn())},
 	}
 
 	var parts []string

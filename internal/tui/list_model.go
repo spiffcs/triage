@@ -1394,9 +1394,26 @@ func (m ListModel) AssignedSortDesc() bool {
 	return m.assignedSortDesc
 }
 
-// AssignedCount returns the number of assigned items
+// filteredCount returns the number of items in a slice that match the current type filter.
+func (m ListModel) filteredCount(items []triage.PrioritizedItem) int {
+	if m.typeFilter == typeFilterAll {
+		return len(items)
+	}
+	count := 0
+	for _, item := range items {
+		isPR := itemIsPR(item)
+		if m.typeFilter == typeFilterPR && isPR {
+			count++
+		} else if m.typeFilter == typeFilterIssue && !isPR {
+			count++
+		}
+	}
+	return count
+}
+
+// AssignedCount returns the number of assigned items matching the current type filter.
 func (m ListModel) AssignedCount() int {
-	return len(m.assignedItems)
+	return m.filteredCount(m.assignedItems)
 }
 
 // BlockedSortColumn returns the current blocked sort column for rendering
@@ -1409,9 +1426,9 @@ func (m ListModel) BlockedSortDesc() bool {
 	return m.blockedSortDesc
 }
 
-// BlockedCount returns the number of blocked items
+// BlockedCount returns the number of blocked items matching the current type filter.
 func (m ListModel) BlockedCount() int {
-	return len(m.blockedItems)
+	return m.filteredCount(m.blockedItems)
 }
 
 // DependabotSortColumn returns the current dependabot sort column for rendering
@@ -1424,9 +1441,9 @@ func (m ListModel) DependabotSortDesc() bool {
 	return m.dependabotSortDesc
 }
 
-// DependabotCount returns the number of dependabot items
+// DependabotCount returns the number of dependabot items matching the current type filter.
 func (m ListModel) DependabotCount() int {
-	return len(m.dependabotItems)
+	return m.filteredCount(m.dependabotItems)
 }
 
 // View implements tea.Model

@@ -35,7 +35,8 @@ GITHUB_TOKEN=$(gh auth token) triage
 The default interface is a multi-pane terminal UI with keyboard navigation. The panes are:
 - **Assigned Pane**: Items assigned to you
 - **Blocked Pane**: Items with a "blocked" label (configurable)
-- **Priority Pane**: Your notifications, review requests, authored PRs, and assigned issues sorted by priority
+- **Queue Pane**: Your notifications, review requests, authored PRs, and assigned issues sorted by priority
+- **Deps Pane**: PRs authored by Dependabot
 - **Orphaned Pane**: External contributions lacking team engagement
 
 | Key | Action |
@@ -46,11 +47,12 @@ The default interface is a multi-pane terminal UI with keyboard navigation. The 
 | `G` / `End` | Jump to bottom |
 | `Enter` | Open item in browser |
 | `d` | Mark item as done (removes from list) |
-| `Tab` | Cycle through panes (Assigned → Blocked → Priority → Orphaned) |
-| `1`-`4` | Jump directly to pane (1=Assigned, 2=Blocked, 3=Priority, 4=Orphaned) |
+| `Tab` | Cycle through panes (Assigned → Blocked → Queue → Deps → Orphaned) |
+| `1`-`5` | Jump directly to pane (1=Assigned, 2=Blocked, 3=Queue, 4=Deps, 5=Orphaned) |
 | `s` | Cycle sort column |
 | `S` | Toggle sort direction |
 | `r` | Reset sort to default |
+| `t` | Toggle type filter (All / PRs only / Issues only) |
 | `q` / `Esc` | Quit |
 
 The TUI displays color-coded priorities, PR review status, and size indicators (XS/S/M/L/XL based on lines changed). Items marked as done are persisted and will not reappear unless they have new activity.
@@ -178,7 +180,7 @@ Notifications are scored based on multiple factors to determine priority.
 |----------|-------|-----------|
 | Open state | +10 | Issue/PR is still open |
 | Closed state | -30 | Issue/PR was closed/merged |
-| Hot topic | +15 | More than 6 comments (threshold configurable) |
+| Hot topic | +15 | More than 7 comments (threshold configurable) |
 | Low-hanging fruit | +20 | Small PR or has quick-win label |
 | Age bonus | +2/day | Older unread items (capped at +30) |
 
@@ -323,7 +325,7 @@ scoring:
   old_unread_bonus: 2      # Per day
   max_age_bonus: 30
   hot_topic_bonus: 15
-  hot_topic_threshold: 6
+  hot_topic_threshold: 7
   fyi_promotion_threshold: 35       # FYI → Notable
   notable_promotion_threshold: 60   # Notable → Important
   important_promotion_threshold: 100 # Important → Urgent

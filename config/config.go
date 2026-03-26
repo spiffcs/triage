@@ -46,7 +46,7 @@ type OrphanedConfig struct {
 	Repos                     []string `yaml:"repos,omitempty"`
 	StaleDays                 int      `yaml:"stale_days,omitempty"`                  // Default: 7
 	ConsecutiveAuthorComments int      `yaml:"consecutive_author_comments,omitempty"` // Default: 2
-	MaxItemsPerRepo           int      `yaml:"max_items_per_repo,omitempty"`          // Default: 20
+	MaxItemsPerRepo           int      `yaml:"max_items_per_repo,omitempty"`          // Default: 50
 }
 
 // BaseScoreOverrides allows customizing base scores for notification reasons
@@ -859,7 +859,7 @@ default_format: table
 #   review_requested: 100
 #   mention: 90
 
-# Orphaned contribution detection (enabled by default, disable with --no-orphaned)
+# Orphaned contribution detection
 # Requires repos to be specified - no auto-discovery
 # orphaned:
 #   repos:                              # Repos to monitor for orphaned contributions (required)
