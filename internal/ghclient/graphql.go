@@ -195,7 +195,7 @@ func (c *Client) EnrichItemsGraphQL(ctx context.Context, items []model.Item, tok
 
 		// Apply PR results
 		if result.prErr != nil {
-			log.Debug("GraphQL PR enrichment failed", "batch", result.batchIdx, "error", result.prErr)
+			log.Warn("GraphQL PR enrichment failed", "batch", result.batchIdx, "error", result.prErr)
 		} else if result.prResults != nil {
 			for idx, prResult := range result.prResults {
 				log.Debug("applying PR result",
@@ -216,7 +216,7 @@ func (c *Client) EnrichItemsGraphQL(ctx context.Context, items []model.Item, tok
 
 		// Apply Issue results
 		if result.issueErr != nil {
-			log.Debug("GraphQL Issue enrichment failed", "batch", result.batchIdx, "error", result.issueErr)
+			log.Warn("GraphQL Issue enrichment failed", "batch", result.batchIdx, "error", result.issueErr)
 		} else if result.issueResults != nil {
 			for idx, issueResult := range result.issueResults {
 				applyIssueResult(&items[idx], issueResult)
@@ -382,7 +382,7 @@ func (c *Client) executeGraphQL(ctx context.Context, query string, token string)
 	if len(gqlResp.Errors) > 0 {
 		// Log errors but don't fail - some items might still be valid
 		for _, e := range gqlResp.Errors {
-			log.Debug("GraphQL error", "message", e.Message, "type", e.Type)
+			log.Warn("GraphQL error", "message", e.Message, "type", e.Type)
 		}
 	}
 
