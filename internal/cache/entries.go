@@ -8,7 +8,7 @@ import (
 
 // Version should be incremented when the cache format changes
 // or when enrichment data structure changes to invalidate old entries
-const Version = 3
+const Version = 4
 
 // Cache TTL constants
 const (
