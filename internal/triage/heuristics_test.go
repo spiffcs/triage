@@ -2,6 +2,7 @@ package triage
 
 import (
 	"testing"
+	"time"
 
 	"github.com/spiffcs/triage/config"
 	"github.com/spiffcs/triage/internal/model"
@@ -35,6 +36,34 @@ func TestBaseScore(t *testing.T) {
 				t.Errorf("baseScore(%s) = %d, want %d", tt.reason, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestAgeBonusScalesByBase(t *testing.T) {
+	weights := config.DefaultScoreWeights()
+	h := NewHeuristics("testuser", weights, config.DefaultQuickWinLabels())
+
+	// A stale "subscribed" item (base 10) sitting for 15 days must not
+	// outscore a fresh "team_mention" (base 85).
+	staleSubscribed := &model.Item{
+		Reason:    model.ReasonSubscribed,
+		UpdatedAt: time.Now().Add(-15 * 24 * time.Hour),
+	}
+	freshTeamMention := &model.Item{
+		Reason:    model.ReasonTeamMention,
+		UpdatedAt: time.Now(),
+	}
+
+	subscribedScore := h.Score(staleSubscribed)
+	teamMentionScore := h.Score(freshTeamMention)
+
+	if subscribedScore >= teamMentionScore {
+		t.Errorf("stale subscribed (%d) should not outscore fresh team_mention (%d)", subscribedScore, teamMentionScore)
+	}
+
+	// The stale subscribed score should stay well below the FYI promotion threshold (35)
+	if subscribedScore >= weights.FYIPromotionThreshold {
+		t.Errorf("stale subscribed score (%d) should not reach FYI promotion threshold (%d)", subscribedScore, weights.FYIPromotionThreshold)
 	}
 }
 
