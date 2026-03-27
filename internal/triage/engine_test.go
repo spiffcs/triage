@@ -460,7 +460,7 @@ func TestFilterOutUnenriched(t *testing.T) {
 		makePrioritizedItem("5", model.ReasonSubscribed, model.SubjectRelease, PriorityFYI, nil),                                      // Release without Details - kept (different type)
 	}
 
-	got := FilterOutUnenriched(items)
+	got, dropped := FilterOutUnenriched(items)
 
 	wantIDs := []string{"1", "3", "5"}
 	if len(got) != len(wantIDs) {
@@ -471,5 +471,8 @@ func TestFilterOutUnenriched(t *testing.T) {
 		if item.ID != wantIDs[i] {
 			t.Errorf("FilterOutUnenriched()[%d].ID = %s, want %s", i, item.ID, wantIDs[i])
 		}
+	}
+	if dropped != 2 {
+		t.Errorf("FilterOutUnenriched() dropped %d items, want 2", dropped)
 	}
 }

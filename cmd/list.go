@@ -304,14 +304,19 @@ func runEnrichment(ctx context.Context, svc *service.ItemService, result *servic
 	totalToEnrich := len(result.Notifications) + len(result.ReviewPRs) + len(result.AuthoredPRs)
 	var totalCacheHits int64
 	var totalCompleted int64
+	var totalFailed int64
 
 	if totalToEnrich > 0 {
-		enrichItems(ctx, svc, result.Notifications, result.ReviewPRs, result.AuthoredPRs, rt.useTUI, rt.events, totalToEnrich, &totalCompleted, &totalCacheHits)
+		enrichItems(ctx, svc, result.Notifications, result.ReviewPRs, result.AuthoredPRs, rt.useTUI, rt.events, totalToEnrich, &totalCompleted, &totalCacheHits, &totalFailed)
 	}
 
 	enrichCompleteMsg := fmt.Sprintf("%d/%d", totalCompleted, totalToEnrich)
 	if totalCacheHits > 0 {
 		enrichCompleteMsg = fmt.Sprintf("%d/%d (%d cached)", totalCompleted, totalToEnrich, totalCacheHits)
+	}
+	if totalFailed > 0 {
+		enrichCompleteMsg += fmt.Sprintf(", %d failed", totalFailed)
+		log.Warn("some items could not be enriched", "failed", totalFailed, "total", totalToEnrich)
 	}
 	rt.sendEvent(tui.TaskEnrich, tui.StatusComplete, tui.WithMessage(enrichCompleteMsg))
 }
@@ -396,7 +401,7 @@ func enrichItems(
 	useTUI bool,
 	events chan tui.Event,
 	totalToEnrich int,
-	totalCompleted, totalCacheHits *int64,
+	totalCompleted, totalCacheHits, totalFailed *int64,
 ) {
 	// Progress callback using atomic counter for concurrent updates
 	var lastLogPercent int64 = -1
@@ -440,33 +445,36 @@ func enrichItems(
 	// Enrich notifications
 	if len(notifications) > 0 {
 		enrichWg.Go(func() {
-			cacheHits, err := svc.Enrich(ctx, notifications, onProgress)
+			result, err := svc.Enrich(ctx, notifications, onProgress)
 			if err != nil {
 				log.Warn("some notifications could not be enriched", "error", err)
 			}
-			atomic.AddInt64(totalCacheHits, int64(cacheHits))
+			atomic.AddInt64(totalCacheHits, int64(result.CacheHits))
+			atomic.AddInt64(totalFailed, int64(result.Failed))
 		})
 	}
 
 	// Enrich review-requested PRs
 	if len(reviewPRs) > 0 {
 		enrichWg.Go(func() {
-			cacheHits, err := svc.Enrich(ctx, reviewPRs, onProgress)
+			result, err := svc.Enrich(ctx, reviewPRs, onProgress)
 			if err != nil {
 				log.Warn("some review PRs could not be enriched", "error", err)
 			}
-			atomic.AddInt64(totalCacheHits, int64(cacheHits))
+			atomic.AddInt64(totalCacheHits, int64(result.CacheHits))
+			atomic.AddInt64(totalFailed, int64(result.Failed))
 		})
 	}
 
 	// Enrich authored PRs
 	if len(authoredPRs) > 0 {
 		enrichWg.Go(func() {
-			cacheHits, err := svc.Enrich(ctx, authoredPRs, onProgress)
+			result, err := svc.Enrich(ctx, authoredPRs, onProgress)
 			if err != nil {
 				log.Warn("some authored PRs could not be enriched", "error", err)
 			}
-			atomic.AddInt64(totalCacheHits, int64(cacheHits))
+			atomic.AddInt64(totalCacheHits, int64(result.CacheHits))
+			atomic.AddInt64(totalFailed, int64(result.Failed))
 		})
 	}
 
@@ -484,7 +492,11 @@ func applyFilters(items []triage.PrioritizedItem, cfg *config.Config) []triage.P
 	items = triage.FilterOutClosed(items)
 
 	// Filter out unenriched (inaccessible) items - always applied
-	items = triage.FilterOutUnenriched(items)
+	var unenrichedCount int
+	items, unenrichedCount = triage.FilterOutUnenriched(items)
+	if unenrichedCount > 0 {
+		log.Warn("items could not be enriched (may be deleted or inaccessible)", "dropped", unenrichedCount)
+	}
 
 	// Filter out excluded authors (bots like dependabot, renovate, etc.)
 	if len(cfg.ExcludeAuthors) > 0 {

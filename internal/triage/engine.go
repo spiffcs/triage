@@ -238,8 +238,10 @@ func FilterByGreenCI(items []PrioritizedItem) []PrioritizedItem {
 // FilterOutUnenriched removes PR and Issue notifications that couldn't be enriched.
 // This typically indicates the item is deleted, inaccessible, or the user lost access.
 // Non-PR/Issue types (Release, Discussion) are kept since they don't require enrichment.
-func FilterOutUnenriched(items []PrioritizedItem) []PrioritizedItem {
+// Returns the filtered list and the number of items that were dropped.
+func FilterOutUnenriched(items []PrioritizedItem) ([]PrioritizedItem, int) {
 	filtered := make([]PrioritizedItem, 0, len(items))
+	dropped := 0
 	for _, item := range items {
 		subjectType := item.Subject.Type
 
@@ -252,7 +254,9 @@ func FilterOutUnenriched(items []PrioritizedItem) []PrioritizedItem {
 		// Keep PR/Issue items that were successfully enriched
 		if item.Details != nil {
 			filtered = append(filtered, item)
+		} else {
+			dropped++
 		}
 	}
-	return filtered
+	return filtered, dropped
 }

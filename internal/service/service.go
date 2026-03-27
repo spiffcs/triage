@@ -355,10 +355,16 @@ func (s *ItemService) OrphanedContributions(ctx context.Context, opts ghclient.O
 	return orphaned, false, nil
 }
 
+// EnrichResult contains stats from an enrichment run.
+type EnrichResult struct {
+	CacheHits int // Items served from cache
+	Enriched  int // Items enriched via GraphQL
+	Failed    int // Items that could not be enriched
+}
+
 // Enrich enriches items using GraphQL batch queries with caching.
 // Uses GraphQL API (separate quota from Core API) for efficient batch enrichment.
-// Returns the number of cache hits and any error.
-func (s *ItemService) Enrich(ctx context.Context, items []model.Item, onProgress func(completed, total int)) (int, error) {
+func (s *ItemService) Enrich(ctx context.Context, items []model.Item, onProgress func(completed, total int)) (EnrichResult, error) {
 	// Use provided cache or create one internally
 	c := s.cache
 	if c == nil {
@@ -414,7 +420,7 @@ func (s *ItemService) Enrich(ctx context.Context, items []model.Item, onProgress
 	}
 
 	if len(uncachedItems) == 0 {
-		return int(cacheHits), nil
+		return EnrichResult{CacheHits: int(cacheHits)}, nil
 	}
 
 	// Use GraphQL for batch enrichment (uses GraphQL quota, not Core API)
@@ -465,9 +471,14 @@ func (s *ItemService) Enrich(ctx context.Context, items []model.Item, onProgress
 		}
 	}
 
-	log.Debug("GraphQL enrichment complete", "enriched", enriched, "total", len(uncachedItems))
+	failed := len(uncachedItems) - enriched
+	log.Debug("GraphQL enrichment complete", "enriched", enriched, "failed", failed, "total", len(uncachedItems))
 
-	return int(cacheHits), nil
+	return EnrichResult{
+		CacheHits: int(cacheHits),
+		Enriched:  enriched,
+		Failed:    failed,
+	}, nil
 }
 
 // buildCacheKey creates a cache key from an item.
