@@ -26,18 +26,22 @@ func NewHeuristics(currentUser string, weights config.ScoreWeights, quickWinLabe
 
 // Score calculates the priority score for an item
 func (h *Heuristics) Score(n *model.Item) int {
-	score := h.baseScore(n.Reason)
+	base := h.baseScore(n.Reason)
+	score := base
 
 	// Apply modifiers based on enriched details
 	if n.Details != nil {
 		score += h.detailModifiers(n)
 	}
 
-	// Age modifier - older unread items get priority boost
+	// Age modifier - older unread items get priority boost, scaled by base score
+	// so low-priority items (e.g. subscribed=10) can't accumulate enough age
+	// bonus to outrank high-priority items (e.g. team_mention=85).
 	age := time.Since(n.UpdatedAt)
 	daysOld := int(age.Hours() / 24)
 	if daysOld > 0 {
-		score += min(daysOld*h.Weights.OldUnreadBonus, h.Weights.MaxAgeBonus)
+		rawBonus := min(daysOld*h.Weights.OldUnreadBonus, h.Weights.MaxAgeBonus)
+		score += rawBonus * base / 100
 	}
 
 	return max(score, 0)
