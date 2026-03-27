@@ -41,10 +41,11 @@ func NewCache() (*Cache, error) {
 	return &Cache{dir: cacheDir}, nil
 }
 
-// cacheKeyString generates a file name for a cache key
+// cacheKeyString generates a file name for a cache key.
+// The "/" in RepoFullName is replaced with "~" (not valid in GitHub
+// owner/repo names) to avoid collisions like "a/b_c" vs "a_b/c".
 func (c *Cache) cacheKeyString(key Key) string {
-	// Replace slashes with underscores to avoid path issues while preserving uniqueness
-	safeName := strings.ReplaceAll(key.RepoFullName, "/", "_")
+	safeName := strings.ReplaceAll(key.RepoFullName, "/", "~")
 	return fmt.Sprintf("%s_%s_%d.json",
 		safeName,
 		key.SubjectType,
