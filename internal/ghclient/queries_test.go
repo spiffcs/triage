@@ -5,8 +5,18 @@ import (
 	"testing"
 )
 
+func mustLoadQueries(t *testing.T) *queries {
+	t.Helper()
+	q, err := loadQueries()
+	if err != nil {
+		t.Fatalf("loadQueries: %v", err)
+	}
+	return q
+}
+
 func TestBuildOrphanedQuery(t *testing.T) {
-	query := BuildOrphanedQuery("testowner", "testrepo")
+	q := mustLoadQueries(t)
+	query := q.BuildOrphanedQuery("testowner", "testrepo")
 
 	// Verify owner and repo are substituted
 	if !strings.Contains(query, `"testowner"`) {
@@ -41,12 +51,13 @@ func TestBuildOrphanedQuery(t *testing.T) {
 }
 
 func TestBuildPRBatchQuery(t *testing.T) {
+	q := mustLoadQueries(t)
 	items := []BatchItem{
 		{Alias: "pr0", Owner: "owner1", Repo: "repo1", Number: 123},
 		{Alias: "pr1", Owner: "owner2", Repo: "repo2", Number: 456},
 	}
 
-	query, err := BuildPRBatchQuery(items)
+	query, err := q.BuildPRBatchQuery(items)
 	if err != nil {
 		t.Fatalf("BuildPRBatchQuery failed: %v", err)
 	}
@@ -104,11 +115,12 @@ func TestBuildPRBatchQuery(t *testing.T) {
 }
 
 func TestBuildIssueBatchQuery(t *testing.T) {
+	q := mustLoadQueries(t)
 	items := []BatchItem{
 		{Alias: "issue0", Owner: "myorg", Repo: "myrepo", Number: 789},
 	}
 
-	query, err := BuildIssueBatchQuery(items)
+	query, err := q.BuildIssueBatchQuery(items)
 	if err != nil {
 		t.Fatalf("BuildIssueBatchQuery failed: %v", err)
 	}
@@ -154,7 +166,8 @@ func TestBuildIssueBatchQuery(t *testing.T) {
 }
 
 func TestBuildPRBatchQueryEmpty(t *testing.T) {
-	query, err := BuildPRBatchQuery([]BatchItem{})
+	q := mustLoadQueries(t)
+	query, err := q.BuildPRBatchQuery([]BatchItem{})
 	if err != nil {
 		t.Fatalf("BuildPRBatchQuery failed: %v", err)
 	}
@@ -166,7 +179,8 @@ func TestBuildPRBatchQueryEmpty(t *testing.T) {
 }
 
 func TestBuildIssueBatchQueryEmpty(t *testing.T) {
-	query, err := BuildIssueBatchQuery([]BatchItem{})
+	q := mustLoadQueries(t)
+	query, err := q.BuildIssueBatchQuery([]BatchItem{})
 	if err != nil {
 		t.Fatalf("BuildIssueBatchQuery failed: %v", err)
 	}
