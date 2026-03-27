@@ -29,7 +29,7 @@ const (
 
 	// defaultConsecutiveAuthorComments is the threshold of unanswered consecutive
 	// comments from the author that indicates the contribution needs attention.
-	defaultConsecutiveAuthorComments = 2
+	defaultConsecutiveAuthorComments = 3
 
 	// defaultMaxPerRepo limits the number of orphaned contributions fetched per repository.
 	defaultMaxPerRepo = 20
@@ -379,16 +379,23 @@ func parseOrphanedResponse(data json.RawMessage, owner, repo string, opts Orphan
 }
 
 // analyzeComments analyzes the comment pattern to find last team activity
-// and count consecutive comments from the original author
+// and count consecutive comments from the original author.
+// Bot comments (logins ending in [bot]) are skipped so automated replies
+// don't break the consecutive-author-comment count.
 func analyzeComments(comments []commentNode, originalAuthor string) (*time.Time, int) {
 	var lastTeamActivity *time.Time
 	consecutiveAuthor := 0
 	foundNonAuthor := false
 
-	// Comments are ordered by time (last 10), iterate in reverse to count consecutive from end
+	// Comments are ordered by time, iterate in reverse to count consecutive from end
 	for i := len(comments) - 1; i >= 0; i-- {
 		c := comments[i]
 		if c.Author == nil {
+			continue
+		}
+
+		// Skip bot comments entirely — they don't represent human engagement
+		if strings.HasSuffix(c.Author.Login, "[bot]") {
 			continue
 		}
 
