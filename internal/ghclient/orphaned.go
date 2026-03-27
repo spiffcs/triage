@@ -123,7 +123,7 @@ func (c *Client) ListOrphanedContributions(ctx context.Context, opts OrphanedSea
 
 // fetchOrphanedForRepo fetches orphaned contributions for a single repository
 func (c *Client) fetchOrphanedForRepo(ctx context.Context, owner, repo string, opts OrphanedSearchOptions) ([]model.Item, error) {
-	query := BuildOrphanedQuery(owner, repo)
+	query := c.queries.BuildOrphanedQuery(owner, repo)
 	respData, err := c.executeGraphQL(ctx, query, c.token)
 	if err != nil {
 		return nil, err

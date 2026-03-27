@@ -302,7 +302,7 @@ func (c *Client) batchEnrichPRs(ctx context.Context, items []enrichmentItem, tok
 		}
 	}
 
-	query, err := BuildPRBatchQuery(batchItems)
+	query, err := c.queries.BuildPRBatchQuery(batchItems)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build PR query: %w", err)
 	}
@@ -331,7 +331,7 @@ func (c *Client) batchEnrichIssues(ctx context.Context, items []enrichmentItem, 
 		}
 	}
 
-	query, err := BuildIssueBatchQuery(batchItems)
+	query, err := c.queries.BuildIssueBatchQuery(batchItems)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build Issue query: %w", err)
 	}

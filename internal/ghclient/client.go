@@ -83,7 +83,8 @@ func parseRateLimitHeaders(resp *http.Response) (remaining, limit int, resetAt t
 
 // Client wraps the GitHub API client
 type Client struct {
-	client *gh.Client
+	client  *gh.Client
+	queries *queries
 	// token is intentionally unexported. NEVER add String(), MarshalJSON(),
 	// or any method that could expose this value in logs or serialized output.
 	token string
@@ -108,11 +109,17 @@ func NewClient(ctx context.Context, token string) (*Client, error) {
 		base: tc.Transport,
 	}
 
+	q, err := loadQueries()
+	if err != nil {
+		return nil, fmt.Errorf("loading graphql queries: %w", err)
+	}
+
 	client := gh.NewClient(tc)
 
 	return &Client{
-		client: client,
-		token:  token,
+		client:  client,
+		queries: q,
+		token:   token,
 	}, nil
 }
 
