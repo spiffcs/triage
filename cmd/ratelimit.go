@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spiffcs/triage/config"
 	"github.com/spiffcs/triage/internal/ghclient"
+	"github.com/spiffcs/triage/internal/setup"
 )
 
 // NewCmdRateLimit creates the ratelimit command.
@@ -40,7 +41,7 @@ func runRateLimitStatus(cmd *cobra.Command, args []string) error {
 
 	token := cfg.GetGitHubToken()
 	if token == "" {
-		return fmt.Errorf("GitHub token not configured. Set the GITHUB_TOKEN environment variable")
+		return setup.TokenMissing()
 	}
 
 	client, err := ghclient.NewClient(ctx, token)

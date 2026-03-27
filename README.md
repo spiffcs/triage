@@ -26,9 +26,27 @@ go build -o triage ./cmd/triage
 
 ## Quick Start
 
+triage only reads data — it never writes, comments, or modifies anything. However, GitHub's Notifications API requires a classic token with broad scopes (`notifications`, `repo`). To keep credentials secure, use the GitHub CLI to manage your token:
+
 ```bash
+# One-time setup (if you haven't already)
+gh auth login
+
+# Run triage
 GITHUB_TOKEN=$(gh auth token) triage
 ```
+
+This avoids long-lived tokens in your shell profile — `gh` stores credentials in your OS keychain.
+
+<details>
+<summary>Manual token setup (if you don't use the GitHub CLI)</summary>
+
+1. Visit https://github.com/settings/tokens/new
+2. Select scopes: `notifications`, `repo`
+3. Set an expiration — avoid long-lived tokens
+4. Pass it to triage: `GITHUB_TOKEN=ghp_xxx triage`
+
+</details>
 
 ## Interactive TUI
 

@@ -190,6 +190,13 @@ func runConfigInit(global, local bool) error {
 	fmt.Println("Edit this file to customize triage behavior.")
 	fmt.Println("Run 'triage config defaults' to see all available options.")
 
+	if os.Getenv("GITHUB_TOKEN") == "" {
+		fmt.Println()
+		fmt.Println("Note: GITHUB_TOKEN is not set. To authenticate:")
+		fmt.Println("  gh auth login")
+		fmt.Println("  GITHUB_TOKEN=$(gh auth token) triage")
+	}
+
 	return nil
 }
 

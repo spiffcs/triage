@@ -38,5 +38,6 @@ Instead, please report them via GitHub's private vulnerability reporting:
 
 - Always use the latest version of triage
 - Never commit your GitHub token to version control
-- Use environment variables or secure credential storage for tokens
-- Review the permissions requested by the tool
+- Use `gh auth login` and `GITHUB_TOKEN=$(gh auth token) triage` to avoid long-lived tokens in shell profiles — `gh` stores credentials in your OS keychain
+- If you must create a classic token manually, set an expiration and use the minimum scopes: `notifications` and `repo`
+- triage only reads data — it never writes, comments, or modifies anything. A classic token is required because GitHub's Notifications API does not support fine-grained tokens
