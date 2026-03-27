@@ -19,6 +19,7 @@ import (
 	"github.com/spiffcs/triage/internal/output"
 	"github.com/spiffcs/triage/internal/resolved"
 	"github.com/spiffcs/triage/internal/service"
+	"github.com/spiffcs/triage/internal/setup"
 	"github.com/spiffcs/triage/internal/triage"
 	"github.com/spiffcs/triage/internal/tui"
 )
@@ -252,7 +253,7 @@ func initializeService(ctx context.Context, cfg *config.Config, sinceStr string,
 
 	token := cfg.GetGitHubToken()
 	if token == "" {
-		return nil, fmt.Errorf("GitHub token not configured. Set the GITHUB_TOKEN environment variable")
+		return nil, setup.TokenMissing()
 	}
 
 	ghClient, err := ghclient.NewClient(ctx, token)
@@ -264,7 +265,7 @@ func initializeService(ctx context.Context, cfg *config.Config, sinceStr string,
 	currentUser, err := ghClient.AuthenticatedUser(ctx)
 	if err != nil {
 		rt.sendEvent(tui.TaskAuth, tui.StatusError, tui.WithError(err))
-		return nil, fmt.Errorf("failed to get authenticated user: %w", err)
+		return nil, setup.TokenInvalid(err)
 	}
 	rt.sendEvent(tui.TaskAuth, tui.StatusComplete, tui.WithMessage(currentUser))
 

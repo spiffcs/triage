@@ -1,7 +1,6 @@
 package ghclient
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -130,14 +129,6 @@ func TestRepoFromURL(t *testing.T) {
 			t.Errorf("repoFromURL(%q): expected (%q, %q), got (%q, %q)",
 				tt.url, tt.expectedOwner, tt.expectedRepo, owner, repo)
 		}
-	}
-}
-
-func TestNewClientRequiresToken(t *testing.T) {
-	// Don't actually modify env in tests - just test with empty string
-	_, err := NewClient(context.Background(), "")
-	if err == nil {
-		t.Error("expected error when creating client without token")
 	}
 }
 

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -91,14 +90,8 @@ type Client struct {
 }
 
 // NewClient creates a new GitHub client using a personal access token.
+// Callers are responsible for validating that token is non-empty before calling.
 func NewClient(ctx context.Context, token string) (*Client, error) {
-	if token == "" {
-		token = os.Getenv("GITHUB_TOKEN")
-	}
-	if token == "" {
-		return nil, fmt.Errorf("GitHub token not provided. Set the GITHUB_TOKEN environment variable")
-	}
-
 	ts := oauth2.StaticTokenSource(
 		&oauth2.Token{AccessToken: token},
 	)
