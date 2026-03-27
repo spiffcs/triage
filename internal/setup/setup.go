@@ -17,7 +17,7 @@ const tokenGuidance = `triage only reads data — it never writes, comments, or 
 However, GitHub's Notifications API requires a classic token with broad scopes.
 
 Recommended — use the GitHub CLI to manage credentials securely:
-  gh auth login --scopes notifications,repo
+  gh auth login
   GITHUB_TOKEN=$(gh auth token) triage
 
 Or create a classic token manually:
@@ -45,7 +45,7 @@ func TokenInvalid(err error) error {
 The token was rejected by GitHub: %s
 
 To fix:
-  - If using gh CLI: run "gh auth login --scopes notifications,repo"
+  - If using gh CLI: run "gh auth login"
   - If using a classic token: check expiration at https://github.com/settings/tokens
 
 %s`, ghErr.Message, tokenGuidance)
