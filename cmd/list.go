@@ -48,7 +48,31 @@ func sendFetchCompleteEvent(result *service.FetchResult, err error, sinceLabel s
 	} else if stats.NotifFromCache {
 		fetchMsg = fmt.Sprintf("for the past %s (%d items, cached)", sinceLabel, totalFetched)
 	}
+
+	if stats.AnyFromCache() {
+		age := stats.CacheAge()
+		fetchMsg += fmt.Sprintf(" — showing cached data from %s ago", formatCacheAge(age))
+		log.Warn("showing cached data", "age", formatCacheAge(age))
+	}
+
 	sendTaskEvent(events, tui.TaskFetch, tui.StatusComplete, tui.WithMessage(fetchMsg))
+}
+
+// formatCacheAge formats a duration into a human-readable age string.
+func formatCacheAge(d time.Duration) string {
+	switch {
+	case d < time.Minute:
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	case d < time.Hour:
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	default:
+		h := int(d.Hours())
+		m := int(d.Minutes()) % 60
+		if m == 0 {
+			return fmt.Sprintf("%dh", h)
+		}
+		return fmt.Sprintf("%dh%dm", h, m)
+	}
 }
 
 // sendRateLimitEvent sends a rate limit TUI event if the result indicates rate limiting.
@@ -204,7 +228,7 @@ func runList(cmd *cobra.Command, opts *Options) error {
 
 	// Output
 	rt.close()
-	return renderOutput(items, opts, cfg, svc.CurrentUser(), resolvedStore)
+	return renderOutput(items, opts, cfg, svc.CurrentUser(), resolvedStore, stats)
 }
 
 // setupRuntime creates the runtime struct and returns a cleanup function for profiling.
@@ -370,7 +394,7 @@ func processResults(result *service.FetchResult, cfg *config.Config, currentUser
 }
 
 // renderOutput determines the format and outputs the results.
-func renderOutput(items []triage.PrioritizedItem, opts *Options, cfg *config.Config, currentUser string, resolvedStore *resolved.Store) error {
+func renderOutput(items []triage.PrioritizedItem, opts *Options, cfg *config.Config, currentUser string, resolvedStore *resolved.Store, stats service.FetchStats) error {
 	format := output.Format(opts.Format)
 	if format == "" {
 		format = output.Format(cfg.DefaultFormat)
@@ -380,7 +404,13 @@ func renderOutput(items []triage.PrioritizedItem, opts *Options, cfg *config.Con
 	if shouldUseTUI(opts) && (format == "" || format == output.FormatTable) {
 		weights := cfg.GetScoreWeights()
 		blockedLabels := cfg.GetBlockedLabels()
-		return tui.RunListUI(items, resolvedStore, weights, currentUser, tui.WithConfig(cfg), tui.WithBlockedLabels(blockedLabels))
+		tuiOpts := []tui.ListOption{tui.WithConfig(cfg), tui.WithBlockedLabels(blockedLabels)}
+		if stats.AnyFromCache() {
+			tuiOpts = append(tuiOpts, tui.WithCacheStatus(
+				fmt.Sprintf("Showing cached data from %s ago", formatCacheAge(stats.CacheAge())),
+			))
+		}
+		return tui.RunListUI(items, resolvedStore, weights, currentUser, tuiOpts...)
 	}
 
 	// Filter out resolved items for non-TUI output (TUI handles this internally)

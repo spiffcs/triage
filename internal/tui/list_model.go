@@ -143,6 +143,7 @@ type ListModel struct {
 	windowHeight         int
 	statusMsg            string
 	statusTime           time.Time
+	cacheMsg             string // persistent cache staleness indicator
 	quitting             bool
 	hotTopicThreshold    int
 	prSizeXS             int
@@ -178,6 +179,13 @@ type ListOption func(*ListModel)
 func WithConfig(cfg *config.Config) ListOption {
 	return func(m *ListModel) {
 		m.config = cfg
+	}
+}
+
+// WithCacheStatus sets a persistent cache staleness message shown in the footer.
+func WithCacheStatus(msg string) ListOption {
+	return func(m *ListModel) {
+		m.cacheMsg = msg
 	}
 }
 
