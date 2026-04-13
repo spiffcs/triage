@@ -254,15 +254,15 @@ func renderListView(m ListModel) string {
 		b.WriteString("\n")
 	}
 
-	// Render footer
-	b.WriteString("\n")
-	b.WriteString(renderHelp(m.TypeFilterLabel(), m.showDone))
-
-	// Status message (always render the line to keep view height constant)
+	// Render footer: cache/status line above help
 	b.WriteString("\n")
 	if m.statusMsg != "" {
 		b.WriteString(listStatusStyle.Render(m.statusMsg))
+	} else if m.cacheMsg != "" {
+		b.WriteString(listCacheStyle.Render(m.cacheMsg))
 	}
+	b.WriteString("\n")
+	b.WriteString(renderHelp(m.TypeFilterLabel(), m.showDone))
 
 	return b.String()
 }
@@ -862,6 +862,9 @@ var (
 
 	listStatusStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#60A5FA"))
+
+	listCacheStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#F59E0B"))
 
 	listEmptyStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#6B7280")).

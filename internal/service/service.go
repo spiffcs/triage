@@ -22,6 +22,23 @@ type FetchStats struct {
 	AssignedFromCache    bool
 	AssignedPRsFromCache bool
 	OrphanedFromCache    bool
+	// OldestCachedAt is the oldest CachedAt timestamp across all cache-served
+	// sources. Zero if nothing was served from cache.
+	OldestCachedAt time.Time
+}
+
+// AnyFromCache returns true if any data source was served from cache.
+func (s FetchStats) AnyFromCache() bool {
+	return s.NotifFromCache || s.ReviewFromCache || s.AuthoredFromCache ||
+		s.AssignedFromCache || s.AssignedPRsFromCache || s.OrphanedFromCache
+}
+
+// CacheAge returns the age of the oldest cached data. Zero if nothing was cached.
+func (s FetchStats) CacheAge() time.Duration {
+	if s.OldestCachedAt.IsZero() {
+		return 0
+	}
+	return time.Since(s.OldestCachedAt)
 }
 
 // ItemService orchestrates data flow between GitHub API and cache.
@@ -65,6 +82,15 @@ func (s *ItemService) recordStat(fn func(*FetchStats)) {
 	s.statsMu.Unlock()
 }
 
+// recordCachedAt updates OldestCachedAt if t is older than the current value.
+func (s *ItemService) recordCachedAt(t time.Time) {
+	s.statsMu.Lock()
+	if s.fetchStats.OldestCachedAt.IsZero() || t.Before(s.fetchStats.OldestCachedAt) {
+		s.fetchStats.OldestCachedAt = t
+	}
+	s.statsMu.Unlock()
+}
+
 // ItemFetchResult contains the result of a cached item fetch.
 type ItemFetchResult struct {
 	Items     []model.Item
@@ -79,6 +105,7 @@ func (s *ItemService) ReviewRequestedPRs(ctx context.Context) ([]model.Item, boo
 	if s.cache != nil {
 		if entry, ok := s.cache.GetList(s.currentUser, cache.ListTypeReviewRequested, cache.ListOptions{}); ok {
 			s.recordStat(func(st *FetchStats) { st.ReviewFromCache = true })
+			s.recordCachedAt(entry.CachedAt)
 			return entry.Items, true, nil
 		}
 	}
@@ -115,6 +142,7 @@ func (s *ItemService) AuthoredPRs(ctx context.Context) ([]model.Item, bool, erro
 	if s.cache != nil {
 		if entry, ok := s.cache.GetList(s.currentUser, cache.ListTypeAuthored, cache.ListOptions{}); ok {
 			s.recordStat(func(st *FetchStats) { st.AuthoredFromCache = true })
+			s.recordCachedAt(entry.CachedAt)
 			return entry.Items, true, nil
 		}
 	}
@@ -151,6 +179,7 @@ func (s *ItemService) AssignedIssues(ctx context.Context) ([]model.Item, bool, e
 	if s.cache != nil {
 		if entry, ok := s.cache.GetList(s.currentUser, cache.ListTypeAssignedIssues, cache.ListOptions{}); ok {
 			s.recordStat(func(st *FetchStats) { st.AssignedFromCache = true })
+			s.recordCachedAt(entry.CachedAt)
 			return entry.Items, true, nil
 		}
 	}
@@ -187,6 +216,7 @@ func (s *ItemService) AssignedPRs(ctx context.Context) ([]model.Item, bool, erro
 	if s.cache != nil {
 		if entry, ok := s.cache.GetList(s.currentUser, cache.ListTypeAssignedPRs, cache.ListOptions{}); ok {
 			s.recordStat(func(st *FetchStats) { st.AssignedPRsFromCache = true })
+			s.recordCachedAt(entry.CachedAt)
 			return entry.Items, true, nil
 		}
 	}
@@ -237,6 +267,7 @@ func (s *ItemService) UnreadItems(ctx context.Context, includeRead bool) (*ItemF
 				result.Items = entry.Items
 				result.FromCache = true
 				s.recordStat(func(st *FetchStats) { st.NotifFromCache = true })
+				s.recordCachedAt(entry.CachedAt)
 				return result, nil
 			}
 		}
@@ -254,6 +285,7 @@ func (s *ItemService) UnreadItems(ctx context.Context, includeRead bool) (*ItemF
 				result.Items = entry.Items
 				result.FromCache = true
 				s.recordStat(func(st *FetchStats) { st.NotifFromCache = true })
+				s.recordCachedAt(entry.CachedAt)
 				return result, nil
 			}
 
@@ -266,6 +298,7 @@ func (s *ItemService) UnreadItems(ctx context.Context, includeRead bool) (*ItemF
 				st.NotifFromCache = true
 				st.NotifNewCount = len(newItems)
 			})
+			s.recordCachedAt(entry.CachedAt)
 
 			// Update cache with merged result
 			if err := s.cache.SetList(s.currentUser, cache.ListTypeNotifications, &cache.ListCacheEntry{
@@ -329,6 +362,7 @@ func (s *ItemService) OrphanedContributions(ctx context.Context, opts ghclient.O
 	if s.cache != nil {
 		if entry, ok := s.cache.GetList(s.currentUser, cache.ListTypeOrphaned, cacheOpts); ok {
 			s.recordStat(func(st *FetchStats) { st.OrphanedFromCache = true })
+			s.recordCachedAt(entry.CachedAt)
 			return entry.Items, true, nil
 		}
 	}
