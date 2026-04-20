@@ -404,7 +404,11 @@ func renderOutput(items []triage.PrioritizedItem, opts *Options, cfg *config.Con
 	if shouldUseTUI(opts) && (format == "" || format == output.FormatTable) {
 		weights := cfg.GetScoreWeights()
 		blockedLabels := cfg.GetBlockedLabels()
-		tuiOpts := []tui.ListOption{tui.WithConfig(cfg), tui.WithBlockedLabels(blockedLabels)}
+		tuiOpts := []tui.ListOption{
+			tui.WithConfig(cfg),
+			tui.WithBlockedLabels(blockedLabels),
+			tui.WithDependencyAuthors(cfg.GetDependencyAuthors()),
+		}
 		if stats.AnyFromCache() {
 			tuiOpts = append(tuiOpts, tui.WithCacheStatus(
 				fmt.Sprintf("Showing cached data from %s ago", formatCacheAge(stats.CacheAge())),

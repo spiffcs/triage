@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -14,6 +15,7 @@ type Config struct {
 	DefaultFormat            string    `yaml:"default_format,omitempty"`
 	ExcludeRepos             []string  `yaml:"exclude_repos,omitempty"`
 	ExcludeAuthors           []string  `yaml:"exclude_authors,omitempty"`
+	DependencyAuthors        []string  `yaml:"dependency_authors,omitempty"`
 	QuickWinLabels           []string  `yaml:"quick_win_labels,omitempty"`
 	BlockedLabels            *[]string `yaml:"blocked_labels,omitempty"`
 	IncludeReadNotifications bool      `yaml:"include_read_notifications,omitempty"`
@@ -352,16 +354,59 @@ func (c *Config) GetScoreWeights() ScoreWeights {
 	return weights
 }
 
-// defaultConfigDir returns the default config directory
-func defaultConfigDir() string {
-	configDir, err := os.UserConfigDir()
-	if err != nil {
-		return ".triage"
+// xdgConfigDir returns the XDG-style config directory ($XDG_CONFIG_HOME/triage,
+// or $HOME/.config/triage when XDG_CONFIG_HOME is unset). Returns "" when
+// neither env var is available.
+func xdgConfigDir() string {
+	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
+		return filepath.Join(xdg, "triage")
 	}
-	return filepath.Join(configDir, "triage")
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return ""
+	}
+	return filepath.Join(home, ".config", "triage")
 }
 
-// configPath returns the path to the config file
+// legacyConfigDir returns the platform default from os.UserConfigDir. On macOS
+// this is ~/Library/Application Support/triage; on Linux it matches
+// xdgConfigDir; on Windows it's %AppData%/triage.
+func legacyConfigDir() string {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(dir, "triage")
+}
+
+// defaultConfigDir picks the directory that should hold the global config.
+// An existing XDG config wins; otherwise we keep writing to a legacy config
+// if one is already there so users aren't silently migrated. Fresh installs
+// default to the XDG path.
+func defaultConfigDir() string {
+	xdg := xdgConfigDir()
+	legacy := legacyConfigDir()
+
+	if xdg != "" {
+		if _, err := os.Stat(filepath.Join(xdg, "config.yaml")); err == nil {
+			return xdg
+		}
+	}
+	if legacy != "" {
+		if _, err := os.Stat(filepath.Join(legacy, "config.yaml")); err == nil {
+			return legacy
+		}
+	}
+	if xdg != "" {
+		return xdg
+	}
+	if legacy != "" {
+		return legacy
+	}
+	return ".triage"
+}
+
+// configPath returns the path to the global config file.
 func configPath() string {
 	return filepath.Join(defaultConfigDir(), "config.yaml")
 }
@@ -440,6 +485,12 @@ func mergeConfig(global, local *Config) *Config {
 		result.ExcludeAuthors = local.ExcludeAuthors
 	} else {
 		result.ExcludeAuthors = global.ExcludeAuthors
+	}
+
+	if len(local.DependencyAuthors) > 0 {
+		result.DependencyAuthors = local.DependencyAuthors
+	} else {
+		result.DependencyAuthors = global.DependencyAuthors
 	}
 
 	if len(local.QuickWinLabels) > 0 {
@@ -722,6 +773,37 @@ func (c *Config) GetBlockedLabels() []string {
 	return *c.BlockedLabels // returns empty slice if explicitly disabled
 }
 
+// DefaultDependencyAuthors returns the always-on list of authors whose PRs are
+// routed to the Deps pane. Configured authors are added on top of these; the
+// defaults cannot be removed to preserve safe, known-good dependency bot routing.
+func DefaultDependencyAuthors() []string {
+	return []string{
+		"dependabot[bot]",
+	}
+}
+
+// GetDependencyAuthors returns the combined list of dependency-bot authors:
+// the built-in defaults plus any authors added via config.
+func (c *Config) GetDependencyAuthors() []string {
+	authors := DefaultDependencyAuthors()
+	if len(c.DependencyAuthors) == 0 {
+		return authors
+	}
+	seen := make(map[string]bool, len(authors)+len(c.DependencyAuthors))
+	for _, a := range authors {
+		seen[strings.ToLower(a)] = true
+	}
+	for _, a := range c.DependencyAuthors {
+		key := strings.ToLower(strings.TrimSpace(a))
+		if key == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		authors = append(authors, a)
+	}
+	return authors
+}
+
 // DefaultConfig returns a fully populated config with all default values.
 // This is useful for generating a complete config file template.
 func DefaultConfig() *Config {
@@ -845,6 +927,12 @@ default_format: table
 # exclude_authors:
 #   - dependabot[bot]
 #   - renovate[bot]
+
+# Additional authors whose PRs are routed to the Deps pane.
+# dependabot[bot] is always included; add more here.
+# dependency_authors:
+#   - renovate[bot]
+#   - anchore-oss-update-bot
 
 # Include read notifications (default: false)
 # When true, fetches all notifications including already-read ones.
