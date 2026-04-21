@@ -54,7 +54,7 @@ The default interface is a multi-pane terminal UI with keyboard navigation. The 
 - **Assigned Pane**: Items assigned to you
 - **Blocked Pane**: Items with a "blocked" label (configurable)
 - **Queue Pane**: Your notifications, review requests, authored PRs, and assigned issues sorted by priority
-- **Deps Pane**: PRs authored by Dependabot
+- **Deps Pane**: PRs authored by dependency bots (Dependabot by default; extendable via `dependency_authors`)
 - **Orphaned Pane**: External contributions lacking team engagement
 
 | Key | Action |
@@ -433,6 +433,17 @@ exclude_authors:
 ```
 
 This removes items authored by these accounts from your triage list, reducing noise from automated dependency updates.
+
+### Extending the Deps Pane
+
+PRs authored by known dependency bots are routed to the Deps pane instead of the Queue. `dependabot[bot]` is always included; use `dependency_authors` to add more. Matching is case-insensitive, and the built-in default cannot be removed so known-good routing is preserved.
+
+```yaml
+dependency_authors:
+  - renovate[bot]
+  - anchore-oss-update-bot
+  - my-internal-deps-bot
+```
 
 ### Configuring Orphaned Detection
 

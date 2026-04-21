@@ -3,7 +3,6 @@ package config
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -181,6 +180,50 @@ func TestGetQuickWinLabels(t *testing.T) {
 	})
 }
 
+func TestGetDependencyAuthors(t *testing.T) {
+	contains := func(list []string, want string) bool {
+		for _, a := range list {
+			if a == want {
+				return true
+			}
+		}
+		return false
+	}
+
+	t.Run("returns built-in defaults when not configured", func(t *testing.T) {
+		cfg := &Config{}
+		authors := cfg.GetDependencyAuthors()
+		if !contains(authors, "dependabot[bot]") {
+			t.Errorf("GetDependencyAuthors() missing dependabot[bot]; got %v", authors)
+		}
+	})
+
+	t.Run("extends defaults with configured authors", func(t *testing.T) {
+		cfg := &Config{DependencyAuthors: []string{"renovate[bot]"}}
+		authors := cfg.GetDependencyAuthors()
+		if !contains(authors, "dependabot[bot]") {
+			t.Errorf("defaults dropped; got %v", authors)
+		}
+		if !contains(authors, "renovate[bot]") {
+			t.Errorf("configured author not added; got %v", authors)
+		}
+	})
+
+	t.Run("deduplicates case-insensitively", func(t *testing.T) {
+		cfg := &Config{DependencyAuthors: []string{"Dependabot[bot]", "renovate[bot]"}}
+		authors := cfg.GetDependencyAuthors()
+		count := 0
+		for _, a := range authors {
+			if strings.EqualFold(a, "dependabot[bot]") {
+				count++
+			}
+		}
+		if count != 1 {
+			t.Errorf("expected dependabot[bot] once, got %d in %v", count, authors)
+		}
+	})
+}
+
 func TestDefaultQuickWinLabels(t *testing.T) {
 	labels := DefaultQuickWinLabels()
 
@@ -208,40 +251,67 @@ func TestDefaultQuickWinLabels(t *testing.T) {
 }
 
 func TestDefaultConfigDir_XDG(t *testing.T) {
-	// Only test XDG on Linux where it's the standard
-	if runtime.GOOS != "linux" {
-		t.Skip("XDG_CONFIG_HOME is only used on Linux")
-	}
-
-	t.Run("respects XDG_CONFIG_HOME", func(t *testing.T) {
-		// Save and restore original value
-		original := os.Getenv("XDG_CONFIG_HOME")
-		defer os.Setenv("XDG_CONFIG_HOME", original)
-
-		customDir := "/tmp/custom-xdg-config"
-		os.Setenv("XDG_CONFIG_HOME", customDir)
+	// Isolate from the real filesystem: point both $HOME and $XDG_CONFIG_HOME
+	// at temp dirs so os.UserConfigDir() and xdgConfigDir() resolve to
+	// controllable locations and a real user config can't interfere.
+	t.Run("fresh install picks XDG path", func(t *testing.T) {
+		home := t.TempDir()
+		xdg := filepath.Join(home, "xdg")
+		t.Setenv("HOME", home)
+		t.Setenv("XDG_CONFIG_HOME", xdg)
 
 		got := defaultConfigDir()
-		want := filepath.Join(customDir, "triage")
-
+		want := filepath.Join(xdg, "triage")
 		if got != want {
 			t.Errorf("defaultConfigDir() = %q, want %q", got, want)
 		}
 	})
 
-	t.Run("uses default when XDG_CONFIG_HOME unset", func(t *testing.T) {
-		// Save and restore original value
-		original := os.Getenv("XDG_CONFIG_HOME")
-		defer os.Setenv("XDG_CONFIG_HOME", original)
+	t.Run("existing XDG config wins over legacy", func(t *testing.T) {
+		home := t.TempDir()
+		xdg := filepath.Join(home, "xdg")
+		t.Setenv("HOME", home)
+		t.Setenv("XDG_CONFIG_HOME", xdg)
 
-		os.Unsetenv("XDG_CONFIG_HOME")
+		// Seed both legacy and XDG configs.
+		if err := os.MkdirAll(filepath.Join(xdg, "triage"), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(xdg, "triage", "config.yaml"), []byte("x"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		legacyDir := legacyConfigDir()
+		if err := os.MkdirAll(legacyDir, 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(legacyDir, "config.yaml"), []byte("x"), 0600); err != nil {
+			t.Fatal(err)
+		}
 
 		got := defaultConfigDir()
-		home, _ := os.UserHomeDir()
-		want := filepath.Join(home, ".config", "triage")
-
+		want := filepath.Join(xdg, "triage")
 		if got != want {
 			t.Errorf("defaultConfigDir() = %q, want %q", got, want)
+		}
+	})
+
+	t.Run("legacy config kept when only legacy exists", func(t *testing.T) {
+		home := t.TempDir()
+		xdg := filepath.Join(home, "xdg")
+		t.Setenv("HOME", home)
+		t.Setenv("XDG_CONFIG_HOME", xdg)
+
+		legacyDir := legacyConfigDir()
+		if err := os.MkdirAll(legacyDir, 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(legacyDir, "config.yaml"), []byte("x"), 0600); err != nil {
+			t.Fatal(err)
+		}
+
+		got := defaultConfigDir()
+		if got != legacyDir {
+			t.Errorf("defaultConfigDir() = %q, want %q", got, legacyDir)
 		}
 	})
 }

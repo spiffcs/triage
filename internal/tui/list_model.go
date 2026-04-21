@@ -170,6 +170,9 @@ type ListModel struct {
 
 	// Configurable labels for blocked pane
 	blockedLabels []string
+
+	// Authors whose PRs are routed to the Deps pane (lowercased for comparison).
+	dependencyAuthors map[string]bool
 }
 
 // ListOption is a functional option for configuring ListModel
@@ -194,6 +197,22 @@ func WithCacheStatus(msg string) ListOption {
 func WithBlockedLabels(labels []string) ListOption {
 	return func(m *ListModel) {
 		m.blockedLabels = labels
+	}
+}
+
+// WithDependencyAuthors sets the authors whose PRs are routed to the Deps pane.
+// Matching is case-insensitive.
+func WithDependencyAuthors(authors []string) ListOption {
+	return func(m *ListModel) {
+		set := make(map[string]bool, len(authors))
+		for _, a := range authors {
+			key := strings.ToLower(strings.TrimSpace(a))
+			if key == "" {
+				continue
+			}
+			set[key] = true
+		}
+		m.dependencyAuthors = set
 	}
 }
 
@@ -262,8 +281,8 @@ func (m *ListModel) splitItems() {
 			}
 			continue
 		}
-		// Dependabot PRs get their own pane
-		if isDependabot(item) {
+		// Dependency-bot PRs get their own pane
+		if m.isDependencyBot(item) {
 			if resolved {
 				m.dependabotDoneItems = append(m.dependabotDoneItems, item)
 			} else {
@@ -306,10 +325,21 @@ func (m *ListModel) splitItems() {
 	m.sortDependabotItems()
 }
 
-// isDependabot checks if an item was authored by dependabot.
-func isDependabot(item triage.PrioritizedItem) bool {
-	return strings.EqualFold(item.Author, "dependabot") ||
-		strings.EqualFold(item.Author, "dependabot[bot]")
+// isDependencyBot reports whether the item is authored by a known
+// dependency-management bot. The set always includes dependabot and any
+// additional authors supplied via WithDependencyAuthors. Matching is
+// case-insensitive.
+func (m *ListModel) isDependencyBot(item triage.PrioritizedItem) bool {
+	if item.Author == "" {
+		return false
+	}
+	author := strings.ToLower(item.Author)
+	if m.dependencyAuthors[author] {
+		return true
+	}
+	// Fall back to built-in defaults so the Deps pane still works when
+	// WithDependencyAuthors is not provided (e.g. in tests).
+	return author == "dependabot" || author == "dependabot[bot]"
 }
 
 // isAssignedToCurrentUser checks if the item is assigned to the current user
